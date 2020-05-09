@@ -168,6 +168,7 @@ struct netmap_mem_d {
 	u_int flags;
 #define NETMAP_MEM_FINALIZED	0x1	/* preallocation done */
 #define NETMAP_MEM_HIDDEN	0x8	/* beeing prepared */
+#define NETMAP_MEM_NOMAP	0x10	/* do not map/unmap pdevs */
 	int lasterr;		/* last error for curr config */
 	int active;		/* active users */
 	int refcount;
@@ -372,7 +373,7 @@ netmap_mem_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 
 	nmd->lasterr = nmd->ops->nmd_finalize(nmd, na);
 
-	if (!nmd->lasterr && na->pdev) {
+	if (!nmd->lasterr && !(nmd->flags & NETMAP_MEM_NOMAP)) {
 		nmd->lasterr = netmap_mem_map(&nmd->pools[NETMAP_BUF_POOL], na);
 	}
 
@@ -476,7 +477,7 @@ netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	int last_user = 0;
 	NMA_LOCK(nmd);
-	if (na->active_fds <= 0)
+	if (na->active_fds <= 0 && !(nmd->flags & NETMAP_MEM_NOMAP))
 		netmap_mem_unmap(&nmd->pools[NETMAP_BUF_POOL], na);
 	if (nmd->active == 1) {
 		last_user = 1;
@@ -1547,7 +1548,7 @@ netmap_mem_unmap(struct netmap_obj_pool *p, struct netmap_adapter *na)
 	nm_prerr("unsupported on Windows");
 #else /* linux */
 	nm_prdis("unmapping and freeing plut for %s", na->name);
-	if (lut->plut == NULL)
+	if (lut->plut == NULL || na->pdev == NULL)
 		return 0;
 	for (i = 0; i < lim; i += p->_clustentries) {
 		if (lut->plut[i].paddr)
