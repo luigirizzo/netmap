@@ -1858,6 +1858,22 @@ netmap_mem_fini(void)
 	netmap_mem_put(&nm_mem);
 }
 
+static int
+netmap_mem_ring_needed(struct netmap_kring *kring)
+{
+	return kring->ring == NULL &&
+		(kring->users > 0 ||
+		 (kring->nr_kflags & NKR_NEEDRING));
+}
+
+static int
+netmap_mem_ring_todelete(struct netmap_kring *kring)
+{
+	return kring->ring != NULL &&
+		kring->users == 0 &&
+		!(kring->nr_kflags & NKR_NEEDRING);
+}
+
 
 /* call with NMA_LOCK held *
  *
@@ -1879,7 +1895,7 @@ netmap_mem2_rings_create(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 			struct netmap_ring *ring = kring->ring;
 			u_int len, ndesc;
 
-			if (ring || (!kring->users && !(kring->nr_kflags & NKR_NEEDRING))) {
+			if (!netmap_mem_ring_needed(kring)) {
 				/* uneeded, or already created by somebody else */
 				if (netmap_debug & NM_DEBUG_MEM)
 					nm_prinf("NOT creating ring %s (ring %p, users %d neekring %d)",
@@ -1956,7 +1972,7 @@ netmap_mem2_rings_delete(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 			struct netmap_kring *kring = NMR(na, t)[i];
 			struct netmap_ring *ring = kring->ring;
 
-			if (ring == NULL || kring->users > 0 || (kring->nr_kflags & NKR_NEEDRING)) {
+			if (!netmap_mem_ring_todelete(kring)) {
 				if (netmap_debug & NM_DEBUG_MEM)
 					nm_prinf("NOT deleting ring %s (ring %p, users %d neekring %d)",
 						kring->name, ring, kring->users, kring->nr_kflags & NKR_NEEDRING);
