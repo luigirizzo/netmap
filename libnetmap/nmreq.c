@@ -620,6 +620,8 @@ nmreq_option_name(uint32_t nro_reqtype)
 		return "csb";
 	case NETMAP_REQ_OPT_SYNC_KLOOP_MODE:
 		return "sync-kloop-mode";
+	case NETMAP_REQ_OPT_OFFSETS:
+		return "offsets";
 	default:
 		return "unknown";
 	}
