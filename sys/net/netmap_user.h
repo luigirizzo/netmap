@@ -130,7 +130,7 @@
 /* update the offset field in a ring's slot */
 #define NETMAP_WOFFSET(ring, slot, offset)		\
 	do { (slot)->ptr = ((slot)->ptr & ~(ring)->offset_mask) | \
-		((offset) & (ring)->offset_mask) } while (0)
+		((offset) & (ring)->offset_mask); } while (0)
 
 /* obtain the start of the buffer pointed to by  a ring's slot, taking the
  * offset field into accout
