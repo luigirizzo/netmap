@@ -252,11 +252,11 @@ int nmport_inject(struct nmport_d *d, const void *buf, size_t size);
  * The relation among the functions is as follows:
  *
  *				   |nmport_new
- * 		|nport_prepare	 = |
+ * 		|nmport_prepare	 = |
  *		|		   |nmport_parse
  * nmport_open =|
  *		|		   |nmport_register
- *		|nport_open_desc = |
+ *		|nmport_open_desc =|
  *				   |nmport_mmap
  *
  */
@@ -449,7 +449,7 @@ struct nmreq_pools_info* nmport_extmem_getinfo(struct nmport_d *d);
  * The user may also declare a @mingap (ignored if zero) if she plans to use
  * offsets to share the same buffer among several slots. Netmap will guarantee
  * that it will never write more than @mingap bytes for each slot, irrespective
- * of the buffer lenght.
+ * of the buffer length.
  */
 int nmport_offset(struct nmport_d *d, uint64_t initial, uint64_t maxoff,
 		uint64_t bits, uint64_t mingap);
