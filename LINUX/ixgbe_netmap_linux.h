@@ -865,9 +865,6 @@ ixgbe_netmap_config(struct netmap_adapter *na, struct nm_config_info *info)
 static int
 ixgbe_netmap_bufcfg(struct netmap_kring *kring, uint64_t target)
 {
-	struct netmap_adapter *na = kring->na;
-	struct ifnet *ifp = na->ifp;
-
 	kring->buf_align = 0;
 
 	if (kring->tx == NR_TX) {
