@@ -230,7 +230,6 @@ i40e_netmap_reg(struct netmap_adapter *na, int onoff)
 static int
 i40e_netmap_bufcfg(struct netmap_kring *kring, uint64_t target)
 {
-	struct netmap_adapter *na = kring->na;
 	uint64_t incr;
 
 	kring->buf_align = 0;
