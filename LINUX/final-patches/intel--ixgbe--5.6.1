@@ -62,7 +62,7 @@ index e613859..8ca5eaa 100644
  clean:
  	@+$(call devkernelbuild,clean)
 diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
-index c2bcd19..72bcd0f 100644
+index c2bcd19..ce130fd 100644
 --- a/ixgbe/ixgbe_main.c
 +++ b/ixgbe/ixgbe_main.c
 @@ -706,6 +706,23 @@ struct ixgbe_adapter *adapter = netdev_priv(netdev);
@@ -107,9 +107,9 @@ index c2bcd19..72bcd0f 100644
  	tx_buffer = &tx_ring->tx_buffer_info[i];
  	tx_desc = IXGBE_TX_DESC(tx_ring, i);
  	i -= tx_ring->count;
-@@ -2195,6 +2223,16 @@ static int ixgbe_clean_rx_irq(struct ixgbe_q_vector *q_vector,
- 	xdp.rxq = &rx_ring->xdp_rxq;
- #endif
+@@ -2189,6 +2217,16 @@ static int ixgbe_clean_rx_irq(struct ixgbe_q_vector *q_vector,
+ 	unsigned int xdp_xmit = 0;
+ 	struct xdp_buff xdp;
  
 +#ifdef DEV_NETMAP
 +	/*
@@ -121,9 +121,9 @@ index c2bcd19..72bcd0f 100644
 +		return (nm_irq == NM_IRQ_RESCHED) ? budget : 1;
 +#endif /* DEV_NETMAP */
 +
- 	while (likely(total_rx_packets < budget)) {
- 		union ixgbe_adv_rx_desc *rx_desc;
- 		struct ixgbe_rx_buffer *rx_buffer;
+ 	xdp.data = NULL;
+ 	xdp.data_end = NULL;
+ #ifdef HAVE_XDP_BUFF_RXQ
 @@ -3656,6 +3694,10 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
  	memset(ring->tx_buffer_info, 0,
  	       sizeof(struct ixgbe_tx_buffer) * ring->count);
@@ -165,7 +165,7 @@ index c2bcd19..72bcd0f 100644
  	netdev = adapter->netdev;
 +
 +#ifdef DEV_NETMAP
-+	netmap_detach(netdev);
++	ixgbe_netmap_detach(adapter);
 +#endif /* DEV_NETMAP */
 +
  #ifdef HAVE_IXGBE_DEBUG_FS
