@@ -1,8 +1,36 @@
 diff --git a/e1000e/Makefile b/e1000e/Makefile
-index 9af58b1..8cd5edb 100644
+index 9af58b1..00ca1e8 100644
 --- a/e1000e/Makefile
 +++ b/e1000e/Makefile
-@@ -36,7 +36,7 @@ e1000e-y += kcompat.o
+@@ -9,9 +9,9 @@ ifneq ($(KERNELRELEASE),)
+ # Makefile for the @SUMMARY@
+ #
+ 
+-obj-$(CONFIG_E1000E) += e1000e.o
++obj-$(CONFIG_E1000E) += e1000e$(NETMAP_DRIVER_SUFFIX).o
+ 
+-define e1000e-y
++define e1000e$(NETMAP_DRIVER_SUFFIX)-y
+ 	netdev.o
+ 	ethtool.o
+ 	ich8lan.o
+@@ -23,20 +23,20 @@ define e1000e-y
+ 	82571.o
+ 	param.o
+ endef
+-e1000e-y := $(strip ${e1000e-y})
++e1000e$(NETMAP_DRIVER_SUFFIX)-y := $(strip ${e1000e$(NETMAP_DRIVER_SUFFIX)-y})
+ 
+ #ifdef BUILD_PTP_SUPPORT
+-e1000e-$(CONFIG_PTP_1588_CLOCK:m=y) += ptp.o
++e1000e$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_PTP_1588_CLOCK:m=y) += ptp.o
+ #endif
+ 
+ #ifndef REMOVE_COMPAT
+ 
+-e1000e-y += kcompat.o
++e1000e$(NETMAP_DRIVER_SUFFIX)-y += kcompat.o
+ 
  else	# ifneq($(KERNELRELEASE),)
  # normal makefile
  
