@@ -78,7 +78,8 @@ endef
 e1000e@cflags := -fno-pie
 igb@cflags := -DDISABLE_PACKET_SPLIT -fno-pie
 ixgbe@cflags := @REC_DISABLED_WARNINGS@
-igb@prepare := $(if $(filter $(igb@v),5.3.5.61),@SRCDIR@/igb-fix.sh,)
+igb@prepare := $(if $(filter $(igb@v),5.3.5.61),@SRCDIR@/intel-fix.sh igb,)
+e1000e@prepare := $(if $(filter $(e1000e@v),3.8.4),@SRCDIR@/intel-fix.sh e1000e,)
 
 # set all the default versions (can be overrided by --select-version=)
 $(eval $(call default,ixgbe,5.3.8))
