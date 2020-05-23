@@ -144,7 +144,6 @@ e1000e_netmap_get_rctl(uint32_t bufsize)
 static int
 e1000e_netmap_bufcfg(struct netmap_kring *kring, uint64_t target)
 {
-	struct netmap_adapter *na = kring->na;
 	uint64_t bufsz;
 	struct e1000e_netmap_szdesc *sz;
 
