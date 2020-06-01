@@ -2493,4 +2493,15 @@ void netmap_uninit_bridges(void);
 #define CSB_WRITE(csb, field, v) (suword32(&csb->field, v))
 #endif /* ! linux */
 
+/* some macros that may not be defined */
+#ifndef ETH_HLEN
+#define ETH_HLEN 6
+#endif
+#ifndef ETH_FCS_LEN
+#define ETH_FCS_LEN 4
+#endif
+#ifndef VLAN_HLEN
+#define VLAN_HLEN 4
+#endif
+
 #endif /* _NET_NETMAP_KERN_H_ */

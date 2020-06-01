@@ -437,9 +437,9 @@ netmap_pipe_reg_both(struct netmap_adapter *na, struct netmap_adapter *ona)
 				       sizeof(struct netmap_slot) *
 						kring->nkr_num_slots);
 				/* copy the offset-related fields */
-				*(uint64_t *)&kring->pipe->ring->offset_mask =
+				*(uint64_t *)(uintptr_t)&kring->pipe->ring->offset_mask =
 					kring->ring->offset_mask;
-				*(uint64_t *)&kring->pipe->ring->buf_align =
+				*(uint64_t *)(uintptr_t)&kring->pipe->ring->buf_align =
 					kring->ring->buf_align;
 				/* mark both rings as fake and needed,
 				 * so that buffers will not be

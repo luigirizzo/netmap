@@ -2267,7 +2267,8 @@ netmap_offsets_init(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 	if (bits > maxbits) {
 		if (netmap_verbose)
 			nm_prerr("bits: %llu too large (max %llu)",
-				bits, maxbits);
+				(unsigned long long)bits,
+				(unsigned long long)maxbits);
 		error = EINVAL;
 		goto out;
 	}
@@ -2282,21 +2283,23 @@ netmap_offsets_init(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 	if (max_offset > NETMAP_BUF_SIZE(na)) {
 		if (netmap_verbose)
 			nm_prerr("max offset %llu > buf size %u",
-				max_offset, NETMAP_BUF_SIZE(na));
+				(unsigned long long)max_offset, NETMAP_BUF_SIZE(na));
 		error = EINVAL;
 		goto out;
 	}
 	if ((max_offset & mask) != max_offset) {
 		if (netmap_verbose)
 			nm_prerr("max offset %llu to large for %llu bits",
-				max_offset, bits);
+				(unsigned long long)max_offset,
+				(unsigned long long)bits);
 		error = EINVAL;
 		goto out;
 	}
 	if (initial_offset > max_offset) {
 		if (netmap_verbose)
 			nm_prerr("initial offset %llu > max offset %llu",
-				initial_offset, max_offset);
+				(unsigned long long)initial_offset,
+				(unsigned long long)max_offset);
 		error = EINVAL;
 		goto out;
 	}
@@ -2318,8 +2321,8 @@ netmap_offsets_init(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 						 "offset mask and/or max"
 						 "(current: mask=%llx,max=%llu",
 							kring->name,
-							kring->offset_mask,
-							kring->offset_max);
+							(unsigned long long)kring->offset_mask,
+							(unsigned long long)kring->offset_max);
 				error = EBUSY;
 				goto out;
 			}
@@ -2327,7 +2330,7 @@ netmap_offsets_init(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 			max_offset = kring->offset_max;
 		} else {
 			kring->offset_mask = mask;
-			*(uint64_t *)&ring->offset_mask = mask;
+			*(uint64_t *)(uintptr_t)&ring->offset_mask = mask;
 			kring->offset_max = max_offset;
 			kring->offset_gap = min_gap;
 		}
@@ -2386,7 +2389,7 @@ netmap_compute_buf_len(struct netmap_priv_d *priv)
 
 		if (mtu) {
 			maxframe = mtu + ETH_HLEN +
-				ETH_FCS_LEN + 4; /* VLAN_HLEN */
+				ETH_FCS_LEN + VLAN_HLEN;
 			if (maxframe < target) {
 				target = kring->offset_gap;
 			}
@@ -2396,7 +2399,7 @@ netmap_compute_buf_len(struct netmap_priv_d *priv)
 		if (error)
 			goto out;
 
-		*(uint64_t *)&kring->ring->buf_align = kring->buf_align;
+		*(uint64_t *)(uintptr_t)&kring->ring->buf_align = kring->buf_align;
 
 		if (mtu && t == NR_RX && kring->hwbuf_len < mtu) {
 			if (!(na->na_flags & NAF_MOREFRAG)) {
@@ -2411,7 +2414,8 @@ netmap_compute_buf_len(struct netmap_priv_d *priv)
 					 "%s needs to support "
 					 "NS_MOREFRAG "
 					 "(MTU=%u,buf_size=%llu)",
-					 kring->name, mtu, kring->hwbuf_len);
+					 kring->name, mtu,
+					 (unsigned long long)kring->hwbuf_len);
 			}
 		}
 	}
