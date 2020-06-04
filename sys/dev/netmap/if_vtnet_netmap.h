@@ -52,37 +52,6 @@ vtnet_netmap_queue_on(struct vtnet_softc *sc, enum txrx t, int idx)
 		na->tx_rings[idx]->nr_mode == NKR_NETMAP_ON);
 }
 
-static void
-vtnet_free_used(struct virtqueue *vq, int netmap_bufs, enum txrx t, int idx)
-{
-	void *cookie;
-	int deq = 0;
-
-	while ((cookie = virtqueue_dequeue(vq, NULL)) != NULL) {
-		if (netmap_bufs) {
-			/* These are netmap buffers: there is nothing to do. */
-		} else {
-			/* These are mbufs that we need to free. */
-			struct mbuf *m;
-
-			if (t == NR_TX) {
-				struct vtnet_tx_header *txhdr = cookie;
-				m = txhdr->vth_mbuf;
-				m_freem(m);
-				uma_zfree(vtnet_tx_header_zone, txhdr);
-			} else {
-				m = cookie;
-				m_freem(m);
-			}
-		}
-		deq++;
-	}
-
-	if (deq)
-		nm_prinf("%d sgs dequeued from %s-%d (netmap=%d)",
-			 deq, nm_txrx2str(t), idx, netmap_bufs);
-}
-
 /* Register and unregister. */
 static int
 vtnet_netmap_reg(struct netmap_adapter *na, int state)
@@ -113,18 +82,13 @@ vtnet_netmap_reg(struct netmap_adapter *na, int state)
 	for (i = 0; i < sc->vtnet_act_vq_pairs; i++) {
 		struct vtnet_txq *txq = &sc->vtnet_txqs[i];
 		struct vtnet_rxq *rxq = &sc->vtnet_rxqs[i];
-		struct netmap_kring *kring;
 
 		VTNET_TXQ_LOCK(txq);
-		kring = NMR(na, NR_TX)[i];
-		vtnet_free_used(txq->vtntx_vq,
-				kring->nr_mode == NKR_NETMAP_ON, NR_TX, i);
+		vtnet_txq_free_mbufs(txq);
 		VTNET_TXQ_UNLOCK(txq);
 
 		VTNET_RXQ_LOCK(rxq);
-		kring = NMR(na, NR_RX)[i];
-		vtnet_free_used(rxq->vtnrx_vq,
-				kring->nr_mode == NKR_NETMAP_ON, NR_RX, i);
+		vtnet_rxq_free_mbufs(rxq);
 		VTNET_RXQ_UNLOCK(rxq);
 	}
 	vtnet_init_locked(sc);
@@ -165,7 +129,6 @@ vtnet_netmap_txsync(struct netmap_kring *kring, int flags)
 	/*
 	 * First part: process new packets to send.
 	 */
-	rmb();
 
 	nm_i = kring->nr_hwcur;
 	if (nm_i != head) {	/* we have new packets to send */
@@ -232,14 +195,20 @@ vtnet_netmap_txsync(struct netmap_kring *kring, int flags)
 	return 0;
 }
 
+/*
+ * Publish (up to) num netmap receive buffers to the host,
+ * starting from the first one that the user made available
+ * (kring->nr_hwcur).
+ */
 static int
-vtnet_netmap_kring_refill(struct netmap_kring *kring, u_int nm_i, u_int head)
+vtnet_netmap_kring_refill(struct netmap_kring *kring, u_int num)
 {
 	struct netmap_adapter *na = kring->na;
 	struct ifnet *ifp = na->ifp;
 	struct netmap_ring *ring = kring->ring;
 	u_int ring_nr = kring->ring_id;
 	u_int const lim = kring->nkr_num_slots - 1;
+	u_int nm_i = kring->nr_hwcur;
 
 	/* device-specific */
 	struct vtnet_softc *sc = ifp->if_softc;
@@ -250,7 +219,7 @@ vtnet_netmap_kring_refill(struct netmap_kring *kring, u_int nm_i, u_int head)
 	struct sglist_seg ss[2];
 	struct sglist sg = { ss, 0, 0, 2 };
 
-	for (; nm_i != head; nm_i = nm_next(nm_i, lim)) {
+	for (; num > 0; nm_i = nm_next(nm_i, lim), num--) {
 		struct netmap_slot *slot = &ring->slot[nm_i];
 		uint64_t paddr;
 		void *addr = PNMB(na, slot, &paddr);
@@ -302,10 +271,11 @@ vtnet_netmap_rxq_populate(struct vtnet_rxq *rxq)
 			kring->nr_pending_mode == NKR_NETMAP_ON))
 		return -1;
 
-	/* Expose all the RX netmap buffers. Note that the number of
-	 * netmap slots in the RX ring matches the maximum number of
-	 * 2-elements sglist that the RX virtqueue can accommodate. */
-	error = vtnet_netmap_kring_refill(kring, 0, na->num_rx_desc);
+	/* Expose all the RX netmap buffers we can. In case of no indirect
+	 * buffers, the number of netmap slots in the RX ring matches the
+	 * maximum number of 2-elements sglist that the RX virtqueue can
+	 * accommodate (minus 1 to avoid netmap ring wraparound). */
+	error = vtnet_netmap_kring_refill(kring, na->num_rx_desc - 1);
 	virtqueue_notify(rxq->vtnrx_vq);
 
 	return error < 0 ? ENXIO : 0;
@@ -331,7 +301,6 @@ vtnet_netmap_rxsync(struct netmap_kring *kring, int flags)
 	struct vtnet_rxq *rxq = &sc->vtnet_rxqs[ring_nr];
 	struct virtqueue *vq = rxq->vtnrx_vq;
 
-	rmb();
 	/*
 	 * First part: import newly received packets.
 	 * Only accept our own buffers (matching the token). We should only get
@@ -381,7 +350,12 @@ vtnet_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 */
 	nm_i = kring->nr_hwcur; /* netmap ring index */
 	if (nm_i != head) {
-		int nm_j = vtnet_netmap_kring_refill(kring, nm_i, head);
+		int howmany = head - nm_i;
+		int nm_j;
+
+		if (howmany < 0)
+			howmany += kring->nkr_num_slots;
+		nm_j = vtnet_netmap_kring_refill(kring, howmany);
 		if (nm_j < 0)
 			return nm_j;
 		kring->nr_hwcur = nm_j;

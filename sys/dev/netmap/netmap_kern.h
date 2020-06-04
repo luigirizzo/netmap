@@ -76,7 +76,6 @@
 #define WITH_PIPES
 #define WITH_MONITOR
 #define WITH_GENERIC
-#define WITH_PTNETMAP	/* ptnetmap guest support */
 #define WITH_EXTMEM
 #define WITH_NMNULL
 #endif
@@ -625,6 +624,7 @@ nm_prev(uint32_t i, uint32_t lim)
 {
 	return unlikely (i == 0) ? lim : i - 1;
 }
+
 
 /*
  *

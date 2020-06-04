@@ -1034,7 +1034,7 @@ nm_vale_flush(struct nm_bdg_fwd *ft, u_int n, struct netmap_vp_adapter *na,
 		}
 
 		nm_prdis(5, "pass 2 dst %d is %x %s",
-			i, d_i, is_vp ? "virtual" : "nic/host");
+			i, d_i, nm_is_bwrap(&dst_na->up) ? "nic/host" : "virtual");
 		dst_nr = d_i & (NM_BDG_MAXRINGS-1);
 		nrings = dst_na->up.num_rx_rings;
 		if (dst_nr >= nrings)
