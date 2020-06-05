@@ -312,9 +312,9 @@ struct netmap_ring {
 
 	/* opaque room for a mutex or similar object */
 #if !defined(_WIN32) || defined(__CYGWIN__)
-	uint8_t	__attribute__((__aligned__(NM_CACHE_ALIGN))) sem[112];
+	uint8_t	__attribute__((__aligned__(NM_CACHE_ALIGN))) sem[128];
 #else
-	uint8_t	__declspec(align(NM_CACHE_ALIGN)) sem[112];
+	uint8_t	__declspec(align(NM_CACHE_ALIGN)) sem[128];
 #endif
 
 	/* the slots follow. This struct has variable size */
