@@ -1124,7 +1124,8 @@ nm_os_set_mbuf_data_destructor(struct mbuf *m,
 	ui->ubuf.callback = cb;
 	if (cb != NULL) {
 #ifdef NETMAP_LINUX_SKB_ZCOPY_SET_3ARGS
-		skb_zcopy_set(m, (struct ubuf_info *)ui, NULL);
+		bool ref = true;
+		skb_zcopy_set(m, (struct ubuf_info *)ui, &ref);
 #else
 		skb_zcopy_set(m, (struct ubuf_info *)ui);
 #endif
