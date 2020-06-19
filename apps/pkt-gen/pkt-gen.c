@@ -3289,7 +3289,7 @@ main(int arc, char **argv)
 		}
 		g.nmd->reg.nr_ringid = 0;
 	}
-	if (nmport_open_desc(g.nmd) < 0)
+	if (nmport_open_desc(g.nmd) < 0) {
 		goto out;
 	}
 	if (!strncmp(g.ifname, "stack", 5) && g.transport) {
@@ -3432,7 +3432,7 @@ main(int arc, char **argv)
 		error = ioctl(g.main_fd, NIOCGINFO, &req);
 		if (error < 0) {
 			perror("ioctl");
-			nm_close(g.nmd);
+			nmport_close(g.nmd);
 			g.main_fd = -1;
 		}
 		memid = req.nr_arg2;
@@ -3447,7 +3447,7 @@ main(int arc, char **argv)
 		memcpy(req.nr_name, g.ifname2, sizeof(req.nr_name));
 		error = ioctl(g.main_fd, NIOCREGIF, &req);
 		if (error < 0) {
-			nm_close(g.nmd);
+			nmport_close(g.nmd);
 			g.main_fd = -1;
 		}
 	}

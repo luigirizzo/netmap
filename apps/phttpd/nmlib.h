@@ -4,16 +4,18 @@
 #ifdef __FreeBSD__
 #include<sys/cpuset.h>
 #include <pthread_np.h> /* pthread w/ affinity */
+#include<sys/sysctl.h>	/* sysctl */
 #endif
 #include <x86intrin.h>
 #include<net/netmap.h>
 #include<net/netmap_user.h>
 #include<ctrs.h>
 #include<pthread.h>
-#include<sys/sysctl.h>	/* sysctl */
 #include <netinet/tcp.h>	/* SOL_TCP */
 #include <sys/poll.h>
 #ifdef __linux__
+#include <linux/sysctl.h>	/* sysctl */
+#include <netinet/tcp.h>	/* SOL_TCP */
 #include <sys/epoll.h>
 #include <bsd/string.h>
 #endif /* __linux__ */
