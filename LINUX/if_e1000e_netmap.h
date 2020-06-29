@@ -112,6 +112,66 @@ e1000_netmap_reg(struct netmap_adapter *na, int onoff)
 	return (0);
 }
 
+struct e1000e_netmap_szdesc {
+	uint32_t bufsize;
+	uint32_t rctl;
+};
+
+#define E1000_NETMAP_RCTL_MASK	0x7A030000
+static struct e1000e_netmap_szdesc e1000e_netmap_bufsize[] = {
+	{ 16384,	0x02010000},
+	{ 8192,		0x02020000},
+	{ 4096,		0x02030000},
+	{ 2048,		0x00000000},
+	{ 1024,		0x00010000},
+	{ 512,		0x00020000},
+	{ 256,		0x00030000},
+	{ 0,		0},
+};
+
+static uint32_t
+e1000e_netmap_get_rctl(uint32_t bufsize)
+{
+	struct e1000e_netmap_szdesc *sz;
+
+	for (sz = e1000e_netmap_bufsize; sz->bufsize; sz++)
+		if (bufsize == sz->bufsize)
+			return sz->rctl;
+
+	return ((bufsize >> 10) & 0xF) << 27;
+}
+
+static int
+e1000e_netmap_bufcfg(struct netmap_kring *kring, uint64_t target)
+{
+	uint64_t bufsz;
+	struct e1000e_netmap_szdesc *sz;
+
+	if (kring->tx == NR_TX) {
+		kring->hwbuf_len = target;
+		return 0;
+	}
+
+	bufsz = 0;
+	for (sz = e1000e_netmap_bufsize; sz->bufsize; sz++)
+		if (sz->bufsize <= target) {
+			bufsz = sz->bufsize;
+			break;
+		}
+	if (!bufsz)
+		return EINVAL;
+	/* check if we can find a better size using 1K increments */
+	target >>= 10;
+	if (target >= 1 && target <= 15) {
+		target <<= 10;
+		if (target > bufsz)
+			bufsz = target;
+	}
+	kring->hwbuf_len = bufsz;
+	kring->buf_align = 0; /* no alignment */
+	nm_prinf("%s: hwbuf_len %llu", kring->name, kring->hwbuf_len);
+	return 0;
+}
 
 /*
  * Reconcile kernel and user view of the transmit ring.
@@ -336,13 +396,16 @@ static void e1000e_no_rx_alloc(struct SOFTC_T *a, int n)
  */
 static int e1000e_netmap_init_buffers(struct SOFTC_T *adapter)
 {
+	struct e1000_hw *hw = &adapter->hw;
 	struct ifnet *ifp = adapter->netdev;
 	struct netmap_adapter* na = NA(ifp);
+	struct netmap_kring *kring;
 	struct netmap_slot* slot;
 	struct e1000_ring *rxr = adapter->rx_ring;
 	struct e1000_ring *txr = adapter->tx_ring;
 	int i, si;
 	uint64_t paddr;
+	uint32_t rctl;
 
 	if (!nm_native_on(na))
 		return 0;
@@ -362,6 +425,14 @@ static int e1000e_netmap_init_buffers(struct SOFTC_T *adapter)
 		rxr->next_to_use = 0;
 		/* preserve buffers already made available to clients */
 		i = rxr->count - 1 - nm_kr_rxspace(na->rx_rings[0]);
+
+		/* program the RCTL */
+		kring = na->rx_rings[0];
+		rctl = er32(RCTL);
+		rctl = (rctl & ~E1000_NETMAP_RCTL_MASK) |
+			e1000e_netmap_get_rctl(kring->hwbuf_len);
+		ew32(RCTL, rctl);
+
 		wmb();	/* Force memory writes to complete */
 		NM_WR_RX_TAIL(i);
 	}
@@ -412,6 +483,7 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 	na.nm_txsync = e1000_netmap_txsync;
 	na.nm_rxsync = e1000_netmap_rxsync;
 	na.nm_config = e1000e_netmap_config;
+	na.nm_bufcfg = e1000e_netmap_bufcfg;
 	netmap_attach(&na);
 }
 

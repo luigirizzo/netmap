@@ -48,7 +48,7 @@ index 81f5ab9..85bfb8c 100644
  clean:
  	@+$(call kernelbuild,clean)
 diff --git a/i40e/i40e_main.c b/i40e/i40e_main.c
-index bd4b467..3e461eb 100644
+index b67de06..ce19f27 100644
 --- a/i40e/i40e_main.c
 +++ b/i40e/i40e_main.c
 @@ -146,6 +146,11 @@ bool i40e_is_l4mode_enabled(void)

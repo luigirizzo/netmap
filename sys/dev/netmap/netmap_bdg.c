@@ -1417,12 +1417,6 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 		hwna->na_lut.objtotal = 0;
 		hwna->na_lut.objsize = 0;
 
-		/* pass ownership of the netmap rings to the hwna */
-		for_rx_tx(t) {
-			for (i = 0; i < netmap_all_rings(na, t); i++) {
-				NMR(na, t)[i]->ring = NULL;
-			}
-		}
 		/* reset the number of host rings to default */
 		for_rx_tx(t) {
 			nma_set_host_nrings(hwna, t, 1);
@@ -1477,10 +1471,13 @@ netmap_bwrap_krings_create_common(struct netmap_adapter *na)
 		return error;
 	}
 
-	/* increment the usage counter for all the hwna krings */
+	/* increment the usage counter for all the hwna and na krings */
 	for_rx_tx(t) {
 		for (i = 0; i < netmap_all_rings(hwna, t); i++) {
 			NMR(hwna, t)[i]->users++;
+			/* this to prevent deleation of the rings through
+			 * our krings, instead of through the hwna ones */
+			NMR(na, t)[i]->users++;
 		}
 	}
 
@@ -1522,6 +1519,7 @@ err_dec_users:
 	for_rx_tx(t) {
 		for (i = 0; i < netmap_all_rings(hwna, t); i++) {
 			NMR(hwna, t)[i]->users--;
+			NMR(na, t)[i]->users--;
 		}
 	}
 	hwna->nm_krings_delete(hwna);
@@ -1544,6 +1542,7 @@ netmap_bwrap_krings_delete_common(struct netmap_adapter *na)
 	for_rx_tx(t) {
 		for (i = 0; i < netmap_all_rings(hwna, t); i++) {
 			NMR(hwna, t)[i]->users--;
+			NMR(na, t)[i]->users--;
 		}
 	}
 
@@ -1644,8 +1643,7 @@ netmap_bwrap_bdg_ctl(struct nmreq_header *hdr, struct netmap_adapter *na)
 		if (npriv == NULL)
 			return ENOMEM;
 		npriv->np_ifp = na->ifp; /* let the priv destructor release the ref */
-		error = netmap_do_regif(npriv, na, req->reg.nr_mode,
-					req->reg.nr_ringid, req->reg.nr_flags);
+		error = netmap_do_regif(npriv, na, hdr);
 		if (error) {
 			netmap_priv_delete(npriv);
 			return error;

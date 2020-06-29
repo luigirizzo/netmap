@@ -57,6 +57,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <signal.h>
+#include <stddef.h>
 #include "libnetmap.h"
 
 #ifdef __FreeBSD__
@@ -1954,6 +1955,37 @@ nmreq_parsing(struct TestContext *ctx)
 	return ret;
 }
 
+static int
+binarycomp(struct TestContext *ctx)
+{
+#define ckroff(f, o) do {\
+	if (offsetof(struct netmap_ring, f) != (o)) {\
+		printf("offset of netmap_ring.%s is %zd, but it should be %d",\
+				#f, offsetof(struct netmap_ring, f), (o));\
+		return -1;\
+	}\
+} while (0)
+
+	(void)ctx;
+
+	ckroff(buf_ofs, 0);
+	ckroff(num_slots, 8);
+	ckroff(nr_buf_size, 12);
+	ckroff(ringid, 16);
+	ckroff(dir, 18);
+	ckroff(head, 20);
+	ckroff(cur, 24);
+	ckroff(tail, 28);
+	ckroff(flags, 32);
+	ckroff(ts, 40);
+	ckroff(offset_mask, 56);
+	ckroff(buf_align, 64);
+	ckroff(sem, 128);
+	ckroff(slot, 256);
+
+	return 0;
+}
+
 static void
 usage(const char *prog)
 {
@@ -2023,6 +2055,7 @@ static struct mytest tests[] = {
 	decltest(legacy_regif_extra_bufs_pipe),
 	decltest(legacy_regif_extra_bufs_pipe_vale),
 	decltest(nmreq_parsing),
+	decltest(binarycomp),
 };
 
 static void

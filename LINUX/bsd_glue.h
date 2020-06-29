@@ -451,8 +451,8 @@ struct nm_linux_selrecord_t;
 
 #ifndef NETMAP_LINUX_HAVE_STRUCT_TIMEVAL
 struct timeval {
-        long    tv_sec;         /* seconds */
-        long    tv_usec;        /* microseconds */
+	long	tv_sec;		/* seconds */
+	long	tv_usec;	/* microseconds */
 };
 #endif /* !NETMAP_LINUX_HAVE_STRUCT_TIMEVAL */
 

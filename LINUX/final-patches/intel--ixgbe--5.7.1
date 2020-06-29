@@ -1,5 +1,5 @@
 diff --git a/ixgbe/Makefile b/ixgbe/Makefile
-index e613859..8ca5eaa 100644
+index 01e67d7..91f53e1 100644
 --- a/ixgbe/Makefile
 +++ b/ixgbe/Makefile
 @@ -7,9 +7,9 @@ ifneq ($(KERNELRELEASE),)
@@ -47,7 +47,7 @@ index e613859..8ca5eaa 100644
  
  ifeq (,$(wildcard common.mk))
    $(error Cannot find common.mk build rules)
-@@ -107,9 +107,12 @@ ccc: clean
+@@ -119,9 +119,12 @@ ccc: clean
  	@+$(call devkernelbuild,modules,coccicheck MODE=report))
  
  # Build manfiles
@@ -62,10 +62,10 @@ index e613859..8ca5eaa 100644
  clean:
  	@+$(call devkernelbuild,clean)
 diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
-index af1af52..0be976d 100644
+index f6eb944..82325f1 100644
 --- a/ixgbe/ixgbe_main.c
 +++ b/ixgbe/ixgbe_main.c
-@@ -706,6 +706,23 @@ struct ixgbe_adapter *adapter = netdev_priv(netdev);
+@@ -711,6 +711,23 @@ static void ixgbe_tx_timeout(struct net_device *netdev)
  	}
  }
  
@@ -89,7 +89,7 @@ index af1af52..0be976d 100644
  /**
   * ixgbe_clean_tx_irq - Reclaim resources after transmit completes
   * @q_vector: structure containing interrupt and ring information
-@@ -725,6 +742,17 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
+@@ -730,6 +747,17 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
  	if (test_bit(__IXGBE_DOWN, &adapter->state))
  		return true;
  
@@ -107,7 +107,7 @@ index af1af52..0be976d 100644
  	tx_buffer = &tx_ring->tx_buffer_info[i];
  	tx_desc = IXGBE_TX_DESC(tx_ring, i);
  	i -= tx_ring->count;
-@@ -2189,6 +2217,16 @@ static int ixgbe_clean_rx_irq(struct ixgbe_q_vector *q_vector,
+@@ -2194,6 +2222,16 @@ static int ixgbe_clean_rx_irq(struct ixgbe_q_vector *q_vector,
  	unsigned int xdp_xmit = 0;
  	struct xdp_buff xdp;
  
@@ -124,7 +124,7 @@ index af1af52..0be976d 100644
  	xdp.data = NULL;
  	xdp.data_end = NULL;
  #ifdef HAVE_XDP_BUFF_RXQ
-@@ -3656,6 +3694,10 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
+@@ -3661,6 +3699,10 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
  	memset(ring->tx_buffer_info, 0,
  	       sizeof(struct ixgbe_tx_buffer) * ring->count);
  
@@ -135,7 +135,7 @@ index af1af52..0be976d 100644
  	/* enable queue */
  	IXGBE_WRITE_REG(hw, IXGBE_TXDCTL(reg_idx), txdctl);
  
-@@ -4332,6 +4374,12 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
+@@ -4337,6 +4379,12 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
  	IXGBE_WRITE_REG(hw, IXGBE_RXDCTL(reg_idx), rxdctl);
  
  	ixgbe_rx_desc_queue_enable(adapter, ring);
@@ -148,7 +148,7 @@ index af1af52..0be976d 100644
  #ifdef HAVE_AF_XDP_ZC_SUPPORT
  	if (ring->xsk_umem)
  		ixgbe_alloc_rx_buffers_zc(ring, ixgbe_desc_unused(ring));
-@@ -12894,6 +12942,10 @@ no_info_string:
+@@ -12916,6 +12964,10 @@ no_info_string:
  		hw->mac.ops.setup_eee(hw, eee_enable);
  	}
  
@@ -159,7 +159,7 @@ index af1af52..0be976d 100644
  	return 0;
  
  err_register:
-@@ -12949,6 +13001,11 @@ static void ixgbe_remove(struct pci_dev *pdev)
+@@ -12971,6 +13023,11 @@ static void ixgbe_remove(struct pci_dev *pdev)
  		return;
  
  	netdev = adapter->netdev;

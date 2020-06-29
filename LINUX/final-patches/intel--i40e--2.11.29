@@ -48,10 +48,10 @@ index 81f5ab9..85bfb8c 100644
  clean:
  	@+$(call kernelbuild,clean)
 diff --git a/i40e/i40e_main.c b/i40e/i40e_main.c
-index bd4b467..3e461eb 100644
+index 7ad12f4..2768a89 100644
 --- a/i40e/i40e_main.c
 +++ b/i40e/i40e_main.c
-@@ -146,6 +146,11 @@ bool i40e_is_l4mode_enabled(void)
+@@ -147,6 +147,11 @@ bool i40e_is_l4mode_enabled(void)
  	return l4mode > L4_MODE_DISABLED;
  }
  
@@ -63,7 +63,7 @@ index bd4b467..3e461eb 100644
  /**
   * i40e_get_lump - find a lump of free generic resource
   * @pf: board private structure
-@@ -3539,6 +3544,10 @@ static int i40e_configure_tx_ring(struct i40e_ring *ring)
+@@ -3555,6 +3560,10 @@ static int i40e_configure_tx_ring(struct i40e_ring *ring)
  	/* cache tail off for easier writes later */
  	ring->tail = hw->hw_addr + I40E_QTX_TAIL(pf_q);
  
@@ -74,7 +74,7 @@ index bd4b467..3e461eb 100644
  	return 0;
  }
  
-@@ -3592,6 +3601,10 @@ static int i40e_configure_rx_ring(struct i40e_ring *ring)
+@@ -3608,6 +3617,10 @@ static int i40e_configure_rx_ring(struct i40e_ring *ring)
  	/* set the prefena field to 1 because the manual says to */
  	rx_ctx.prefena = 1;
  
@@ -85,7 +85,7 @@ index bd4b467..3e461eb 100644
  	/* clear the context in the HMC */
  	err = i40e_clear_lan_rx_queue_context(hw, pf_q);
  	if (err) {
-@@ -3620,6 +3633,11 @@ static int i40e_configure_rx_ring(struct i40e_ring *ring)
+@@ -3636,6 +3649,11 @@ static int i40e_configure_rx_ring(struct i40e_ring *ring)
  	ring->tail = hw->hw_addr + I40E_QRX_TAIL(pf_q);
  	writel(0, ring->tail);
  
@@ -97,10 +97,11 @@ index bd4b467..3e461eb 100644
  	i40e_alloc_rx_buffers(ring, I40E_DESC_UNUSED(ring));
  
  	return 0;
-@@ -13959,6 +13977,11 @@ int i40e_vsi_release(struct i40e_vsi *vsi)
- 		return -ENODEV;
+@@ -14000,6 +14018,12 @@ int i40e_vsi_release(struct i40e_vsi *vsi)
  	}
  
+ 	set_bit(__I40E_VSI_RELEASING, vsi->state);
++
 +#ifdef DEV_NETMAP
 +	if (vsi->netdev_registered)
 +		netmap_detach(vsi->netdev);
@@ -109,7 +110,7 @@ index bd4b467..3e461eb 100644
  	uplink_seid = vsi->uplink_seid;
  	if (vsi->type != I40E_VSI_SRIOV) {
  		if (vsi->netdev_registered) {
-@@ -14331,6 +14354,12 @@ struct i40e_vsi *i40e_vsi_setup(struct i40e_pf *pf, u8 type,
+@@ -14372,6 +14396,12 @@ struct i40e_vsi *i40e_vsi_setup(struct i40e_pf *pf, u8 type,
  	    (vsi->type == I40E_VSI_VMDQ2)) {
  		ret = i40e_vsi_config_rss(vsi);
  	}

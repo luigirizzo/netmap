@@ -123,6 +123,21 @@
 	( ((char *)(buf) - ((char *)(ring) + (ring)->buf_ofs) ) / \
 		(ring)->nr_buf_size )
 
+/* read the offset field in a ring's slot */
+#define NETMAP_ROFFSET(ring, slot)			\
+	((slot)->ptr & (ring)->offset_mask)
+
+/* update the offset field in a ring's slot */
+#define NETMAP_WOFFSET(ring, slot, offset)		\
+	do { (slot)->ptr = ((slot)->ptr & ~(ring)->offset_mask) | \
+		((offset) & (ring)->offset_mask); } while (0)
+
+/* obtain the start of the buffer pointed to by  a ring's slot, taking the
+ * offset field into accout
+ */
+#define NETMAP_BUF_OFFSET(ring, slot)			\
+	(NETMAP_BUF(ring, (slot)->buf_idx) + NETMAP_ROFFSET(ring, slot))
+
 
 static inline uint32_t
 nm_ring_next(struct netmap_ring *r, uint32_t i)

@@ -79,7 +79,6 @@
 #define WITH_PIPES
 #define WITH_MONITOR
 #define WITH_GENERIC
-#define WITH_PTNETMAP	/* ptnetmap guest support */
 #define WITH_EXTMEM
 #define WITH_STACK
 #define WITH_NMNULL
@@ -565,6 +564,36 @@ struct netmap_kring {
 	uint32_t pipe_tail;		/* hwtail updated by the other end */
 #endif /* WITH_PIPES */
 
+	/* mask for the offset-related part of the ptr field in the slots */
+	uint64_t offset_mask;
+	/* maximum user-specified offset, as stipulated at bind time.
+	 * Larger offset requests will be silently capped to offset_max.
+	 */
+	uint64_t offset_max;
+	/* minimum gap between two consecutive offsets into the same
+	 * buffer, as stipulated at bind time. This is used to choose
+	 * the hwbuf_len, but is not otherwise checked for compliance
+	 * at runtime.
+	 */
+	uint64_t offset_gap;
+
+	/* size of hardware buffer. This may be less than the size of
+	 * the netmap buffers because of non-zero offsets, or because
+	 * the netmap buffer size exceeds the capability of the hardware.
+	 */
+	uint64_t hwbuf_len;
+
+	/* required aligment (in bytes) for the buffers used by this ring.
+	 * Netmap buffers are aligned to cachelines, which should suffice
+	 * for most NICs. If the user is passing offsets, though, we need
+	 * to check that the resulting buf address complies with any
+	 * alignment restriction.
+	 */
+	uint64_t buf_align;
+
+	/* harware specific logic for the selection of the hwbuf_len */
+	int (*nm_bufcfg)(struct netmap_kring *kring, uint64_t target);
+
 	int (*save_notify)(struct netmap_kring *kring, int flags);
 
 #ifdef WITH_MONITOR
@@ -754,7 +783,8 @@ struct netmap_adapter {
 #define NAF_FORCE_NATIVE 128	/* the adapter is always NATIVE */
 /* free */
 #define NAF_MOREFRAG	512	/* the adapter supports NS_MOREFRAG */
-#define NAF_CSUM	1024
+#define NAF_OFFSETS	1024	/* the adapter supports the slot offsets */
+#define NAF_CSUM	2048	/* the adapter supports checksum offload */
 #define NAF_ZOMBIE	(1U<<30) /* the nic driver has been unloaded */
 #define	NAF_BUSY	(1U<<31) /* the adapter is used internally and
 				  * cannot be registered from userspace
@@ -818,6 +848,22 @@ struct netmap_adapter {
 	 * nm_config() returns configuration information from the OS
 	 *	Called with NMG_LOCK held.
 	 *
+	 * nm_bufcfg()
+	 *      the purpose of this callback is to fill the kring->hwbuf_len
+	 *      (l) and kring->buf_align fields. The l value is most important
+	 *      for RX rings, where we want to disallow writes outside of the
+	 *      netmap buffer. The l value must be computed taking into account
+	 *      the stipulated max_offset (o), possibily increased if there are
+	 *      alignemnt constrains, the maxframe (m), if known, and the
+	 *      current NETMAP_BUF_SIZE (b) of the memory region used by the
+	 *      adapter. We want the largest supported l such that o + l <= b.
+	 *      If m is known to be <= b - o, the callback may also choose the
+	 *      largest l <= b, ignoring the offset.  The buf_align field is
+	 *      most important for TX rings when there are offsets.  The user
+	 *      will see this value in the ring->buf_align field.  Misaligned
+	 *      offsets will cause the corresponding packets to be silently
+	 *      dropped.
+	 *
 	 * nm_krings_create() create and init the tx_rings and
 	 * 	rx_rings arrays of kring structures. In particular,
 	 * 	set the nm_sync callbacks for each ring.
@@ -847,6 +893,7 @@ struct netmap_adapter {
 	int (*nm_txsync)(struct netmap_kring *kring, int flags);
 	int (*nm_rxsync)(struct netmap_kring *kring, int flags);
 	int (*nm_notify)(struct netmap_kring *kring, int flags);
+	int (*nm_bufcfg)(struct netmap_kring *kring, uint64_t target);
 #define NAF_FORCE_READ      1
 #define NAF_FORCE_RECLAIM   2
 #define NAF_CAN_FORWARD_DOWN 4
@@ -1622,6 +1669,12 @@ uint32_t nm_rxsync_prologue(struct netmap_kring *, struct netmap_ring *);
 	} while (0)
 #endif
 
+#define NM_CHECK_ADDR_LEN_OFF(na_, l_, o_) do {				\
+	if ((l_) + (o_) < (l_) || 					\
+	    (l_) + (o_) > NETMAP_BUF_SIZE(na_)) {			\
+		(l_) = NETMAP_BUF_SIZE(na_) - (o_);			\
+	} } while (0)
+
 
 /*---------------------------------------------------------------*/
 /*
@@ -1640,8 +1693,7 @@ int netmap_attach_common(struct netmap_adapter *);
 /* fill priv->np_[tr]xq{first,last} using the ringid and flags information
  * coming from a struct nmreq_register
  */
-int netmap_interp_ringid(struct netmap_priv_d *priv, uint32_t nr_mode,
-			uint16_t nr_ringid, uint64_t nr_flags);
+int netmap_interp_ringid(struct netmap_priv_d *priv, struct nmreq_header *hdr);
 /* update the ring parameters (number and size of tx and rx rings).
  * It calls the nm_config callback, if available.
  */
@@ -1676,7 +1728,7 @@ void netmap_enable_all_rings(struct ifnet *);
 
 int netmap_buf_size_validate(const struct netmap_adapter *na, unsigned mtu);
 int netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
-		uint32_t nr_mode, uint16_t nr_ringid, uint64_t nr_flags);
+		struct nmreq_header *);
 void netmap_do_unregif(struct netmap_priv_d *priv);
 
 u_int nm_bound_var(u_int *v, u_int dflt, u_int lo, u_int hi, const char *msg);
@@ -2091,6 +2143,9 @@ struct plut_entry {
 
 struct netmap_obj_pool;
 
+/* alignment for netmap buffers */
+#define NM_BUF_ALIGN	64
+
 /*
  * NMB return the virtual address of a buffer (buffer 0 on bad index)
  * PNMB also fills the physical address
@@ -2119,6 +2174,40 @@ PNMB(struct netmap_adapter *na, struct netmap_slot *slot, uint64_t *pp)
 	*pp = (i >= na->na_lut.objtotal) ? plut[0].paddr + offset : plut[i].paddr + offset;
 #endif
 	return ret;
+}
+
+static inline void
+nm_write_offset(struct netmap_kring *kring,
+		struct netmap_slot *slot, uint64_t offset)
+{
+	slot->ptr = (slot->ptr & ~kring->offset_mask) |
+		(offset & kring->offset_mask);
+}
+
+static inline uint64_t
+nm_get_offset(struct netmap_kring *kring, struct netmap_slot *slot)
+{
+	uint64_t offset = (slot->ptr & kring->offset_mask);
+	if (unlikely(offset > kring->offset_max))
+		offset = kring->offset_max;
+	return offset;
+}
+
+static inline void *
+NMB_O(struct netmap_kring *kring, struct netmap_slot *slot)
+{
+	void *addr = NMB(kring->na, slot);
+	return (char *)addr + nm_get_offset(kring, slot);
+}
+
+static inline void *
+PNMB_O(struct netmap_kring *kring, struct netmap_slot *slot, uint64_t *pp)
+{
+	void *addr = PNMB(kring->na, slot, pp);
+	uint64_t offset = nm_get_offset(kring, slot);
+	addr = (char *)addr + offset;
+	*pp += offset;
+	return addr;
 }
 
 
@@ -2619,5 +2708,16 @@ void netmap_uninit_bridges(void);
 #define CSB_READ(csb, field, r) (r = fuword32(&csb->field))
 #define CSB_WRITE(csb, field, v) (suword32(&csb->field, v))
 #endif /* ! linux */
+
+/* some macros that may not be defined */
+#ifndef ETH_HLEN
+#define ETH_HLEN 6
+#endif
+#ifndef ETH_FCS_LEN
+#define ETH_FCS_LEN 4
+#endif
+#ifndef VLAN_HLEN
+#define VLAN_HLEN 4
+#endif
 
 #endif /* _NET_NETMAP_KERN_H_ */

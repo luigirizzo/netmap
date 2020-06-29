@@ -62,7 +62,6 @@ define intel_driver
 $(1)@fetch	:= test -e @SRCDIR@/ext-drivers/$(1)-$(2).tar.gz || wget https://sourceforge.net/projects/e1000/files/$(1)%20stable/$(2)/$(1)-$(2).tar.gz -P @SRCDIR@/ext-drivers/
 $(1)@src 	:= tar xf @SRCDIR@/ext-drivers/$(1)-$(2).tar.gz && ln -s $(1)-$(2)/src $(1)
 $(1)@patch 	:= patches/intel--$(1)--$(2)
-$(1)@prepare	:=
 $(1)@build 	 = make -C $(1) CFLAGS_EXTRA="$$($(1)@cflags) $(EXTRA_CFLAGS)" @KOPTS@ NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@
 $(1)@install 	 = make -C $(1) install INSTALL_MOD_PATH=@MODPATH@ CFLAGS_EXTRA="$$($(1)@cflags) $(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@
 $(1)@clean 	 = if [ -d $(1) ]; then make -C $(1) clean CFLAGS_EXTRA="$$($(1)@cflags) $(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@; fi
@@ -75,10 +74,13 @@ define default
 $(1)@v := $(if $($(1)@v),$($(1)@v),$(2))
 endef
 
-# some additional, driver-specific CFLAGS (used in the @build variable above)
+# some additional, driver-specific CFLAGS (used in the @build variable above) and fixes
 e1000e@cflags := -fno-pie
 igb@cflags := -DDISABLE_PACKET_SPLIT -fno-pie
 ixgbe@cflags := @REC_DISABLED_WARNINGS@
+igb@prepare := $(if $(filter $(igb@v),5.3.5.61),@SRCDIR@/intel-fix.sh igb,)
+e1000e@prepare := $(if $(filter $(e1000e@v),3.8.4),@SRCDIR@/intel-fix.sh e1000e,)
+ixgbevf@prepare := $(if $(filter $(ixgbevf@v),4.7.1),@SRCDIR@/intel-fix.sh ixgbevf,)
 
 # set all the default versions (can be overrided by --select-version=)
 $(eval $(call default,ixgbe,5.3.8))
@@ -89,6 +91,7 @@ $(eval $(call default,i40e,2.4.6))
 
 # only define the drivers that are selected after the --(no-)ext-drivers= processing (variable E_DRIVERS)
 $(foreach d,$(filter ixgbe ixgbevf e1000e igb i40e,$(E_DRIVERS)),$(eval $(call intel_driver,$d,$($(d)@v))))
+
 
 define mellanox_driver
 $(1)@fetch	:= test -e @SRCDIR@/ext-drivers/mlnx-en-$(2)-ubuntu18.04-x86_64.tgz || wget http://content.mellanox.com/ofed/MLNX_EN-$(2)/mlnx-en-$(2)-ubuntu18.04-x86_64.tgz -P @SRCDIR@/ext-drivers

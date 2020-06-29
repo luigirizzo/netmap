@@ -612,6 +612,25 @@ nmreq_free_options(struct nmreq_header *h)
 	}
 }
 
+const char*
+nmreq_option_name(uint32_t nro_reqtype)
+{
+	switch (nro_reqtype) {
+	case NETMAP_REQ_OPT_EXTMEM:
+		return "extmem";
+	case NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS:
+		return "sync-kloop-eventfds";
+	case NETMAP_REQ_OPT_CSB:
+		return "csb";
+	case NETMAP_REQ_OPT_SYNC_KLOOP_MODE:
+		return "sync-kloop-mode";
+	case NETMAP_REQ_OPT_OFFSETS:
+		return "offsets";
+	default:
+		return "unknown";
+	}
+}
+
 #if 0
 #include <inttypes.h>
 static void
