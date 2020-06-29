@@ -1655,11 +1655,17 @@ static int
 nm_kctx_worker(void *data)
 {
 	struct nm_kctx *nmk = data;
+#ifndef NETMAP_LINUX_HAVE_KTHREAD_USE_MM
 	mm_segment_t oldfs = get_fs();
+#endif /* NETMAP_LINUX_HAVE_KTHREAD_USE_MM */
 
 	if (nmk->mm) {
+#ifndef NETMAP_LINUX_HAVE_KTHREAD_USE_MM
 		set_fs(USER_DS);
 		use_mm(nmk->mm);
+#else
+		kthread_use_mm(nmk->mm);
+#endif /* NETMAP_LINUX_HAVE_KTHREAD_USE_MM */
 	}
 
 	while (!kthread_should_stop()) {
@@ -1669,10 +1675,16 @@ nm_kctx_worker(void *data)
 	}
 
 	if (nmk->mm) {
+#ifndef NETMAP_LINUX_HAVE_KTHREAD_USE_MM
 		unuse_mm(nmk->mm);
+#else
+		kthread_unuse_mm(nmk->mm);
+#endif /* NETMAP_LINUX_HAVE_KTHREAD_USE_MM */
 	}
 
+#ifndef NETMAP_LINUX_HAVE_KTHREAD_USE_MM
 	set_fs(oldfs);
+#endif /* NETMAP_LINUX_HAVE_KTHREAD_USE_MM */
 	return 0;
 }
 
