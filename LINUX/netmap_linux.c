@@ -2006,7 +2006,7 @@ nm_kctx_worker(void *data)
 
 	if (nmk->mm) {
 		set_fs(USER_DS);
-		use_mm(nmk->mm);
+		kthread_use_mm(nmk->mm);
 	}
 
 	while (!kthread_should_stop()) {
@@ -2016,7 +2016,7 @@ nm_kctx_worker(void *data)
 	}
 
 	if (nmk->mm) {
-		unuse_mm(nmk->mm);
+		kthread_unuse_mm(nmk->mm);
 	}
 
 	set_fs(oldfs);
