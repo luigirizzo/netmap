@@ -1147,8 +1147,6 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	void *file;
 	struct pst_so_adapter *soa;
 	struct netmap_stack_adapter *sna = tosna(na);
-	int on = 1;
-	struct sockopt sopt;
 	int error;
 
 	if (unlikely(fd > NM_PST_FD_MAX)) {
@@ -1179,12 +1177,7 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	so = nm_os_sock_fget(fd, &file);
 	if (!so)
 		return EINVAL;
-	sopt.sopt_dir = SOPT_SET;
-	sopt.sopt_level = SOL_SOCKET;
-	sopt.sopt_name = TCP_NODELAY;
-	sopt.sopt_val = &on;
-	sopt.sopt_valsize = sizeof(on);
-	if (sosetopt(so, &sopt) < 0) {
+	if (nm_os_set_nodelay(so) < 0) {
 		PST_DBG_LIM("failed to set TCP_NODELAY");
 	}
 	/*serialize simultaneous accept/config */

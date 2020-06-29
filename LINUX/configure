@@ -1627,6 +1627,20 @@ EOF
 	}
 EOF
 
+  # check for kernel_setsockopt
+  add_test 'have KERNEL_SETSOCKOPT' <<EOF
+	#include <linux/net.h>
+	#include <linux/tcp.h>
+	#include <net/sock.h>
+	#include <net/ip.h>
+
+	int
+	dummy(struct sock *sk) {
+		int on = 1;
+		return kernel_setsockopt(sk->sk_socket, SOL_TCP, TCP_NODELAY,
+					 &on, sizeof(on));
+	}
+EOF
 # check for fault arguments
   add_test 'have FAULT_VMA_ARG' <<EOF
         #include <linux/mm.h>

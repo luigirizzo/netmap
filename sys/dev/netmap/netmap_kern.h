@@ -1332,6 +1332,7 @@ extern int stack_no_runtocomp;
 /* these functions are non-static just beause netmap_linux.c refers them */
 int nm_os_pst_rx(struct netmap_kring *, struct netmap_slot *);
 int nm_os_pst_tx(struct netmap_kring *, struct netmap_slot *);
+int nm_os_set_nodelay(NM_SOCK_T *);
 struct pst_so_adapter * pst_soa_from_fd(struct netmap_adapter *, int);
 int pst_extra_enq(struct netmap_kring *, struct netmap_slot *);
 void pst_extra_deq(struct netmap_kring *, struct netmap_slot *);

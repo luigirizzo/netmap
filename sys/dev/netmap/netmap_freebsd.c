@@ -1283,6 +1283,20 @@ nm_os_st_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	}
 	return 0;
 }
+
+int
+nm_os_set_nodelay(NM_SOCK_T *so)
+{
+	struct sockopt sopt;
+	int error;
+
+	sopt.sopt_dir = SOPT_SET;
+	sopt.sopt_level = SOL_SOCKET;
+	sopt.sopt_name = TCP_NODELAY;
+	sopt.sopt_val = &on;
+	sopt.sopt_valsize = sizeof(on);
+	return sosetopt(so, &sopt);
+}
 #endif /* WITH_STACK */
 
 /*

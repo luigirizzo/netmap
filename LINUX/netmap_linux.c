@@ -1417,6 +1417,18 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	} /* usually MB_TXREF (TCP) or MB_NOREF (UDP) */
 	return 0;
 }
+
+int
+nm_os_set_nodelay(NM_SOCK_T *so)
+{
+#ifdef NETMAP_LINUX_HAVE_KERNEL_SETSOCKOPT
+	kernel_setsockopt(so->sk_socket, SOL_TCP, TCP_NODELAY,
+			&int{1}, sizeof(int));
+#else
+	tcp_sock_set_nodelay(so);
+#endif
+	return 0; // FreeBSD returns status
+}
 #endif /* WITH_STACK */
 
 /* Use ethtool to find the current NIC rings lengths, so that the netmap
