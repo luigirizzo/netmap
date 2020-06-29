@@ -43,6 +43,7 @@
 #include <linux/sched/mm.h>
 #endif /* NETMAP_LINUX_HAVE_SCHED_MM */
 #ifdef WITH_STACK
+#include <linux/tcp.h>
 #include <net/sock.h> // sock_owned_by_user
 #endif /* WITH_STACK */
 
@@ -1421,9 +1422,9 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 int
 nm_os_set_nodelay(NM_SOCK_T *so)
 {
-#ifdef NETMAP_LINUX_HAVE_KERNEL_SETSOCKOPT
-	kernel_setsockopt(so->sk_socket, SOL_TCP, TCP_NODELAY,
-			&int{1}, sizeof(int));
+#ifndef NETMAP_LINUX_HAVE_TCP_SOCK_SET_NODELAY
+	char on = 1;
+	kernel_setsockopt(so->sk_socket, SOL_TCP, TCP_NODELAY, &on, sizeof(on));
 #else
 	tcp_sock_set_nodelay(so);
 #endif

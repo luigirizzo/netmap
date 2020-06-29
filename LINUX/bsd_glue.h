@@ -657,18 +657,6 @@ pst_wso(struct pst_so_adapter *soa, NM_SOCK_T *sk)
 #define MBUF_TAIL_POINTER(m)		skb_tail_pointer(m)
 #define MBUF_CLUSTERS(m)		skb_shinfo((m))->nr_frags
 #define MBUF_DATA(m)			(m)->data
-enum sopt_dir { SOPT_GET, SOPT_SET };
-struct sockopt {
-	enum    sopt_dir sopt_dir; /* is this a get or a set? */
-	int     sopt_level;     /* second arg of [gs]etsockopt */
-	int     sopt_name;      /* third arg of [gs]etsockopt */
-	void   *sopt_val;       /* fourth arg of [gs]etsockopt */
-	size_t  sopt_valsize;   /* (almost) fifth arg of [gs]etsockopt */
-	struct  thread *sopt_td; /* calling thread or null if kernel */
-};
-#define sosetopt(_a, _b)	\
-	kernel_setsockopt((_a)->sk_socket, SOL_TCP, (_b)->sopt_name, \
-			(_b)->sopt_val, (_b)->sopt_valsize)
 #define	MBUF_PROTO_HEADERS(m)
 
 #ifndef NETMAP_LINUX_HAVE_NETIF_RECEIVE_SKB_CORE

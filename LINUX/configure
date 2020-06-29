@@ -1639,17 +1639,13 @@ EOF
 EOF
 
   # check for kernel_setsockopt
-  add_test 'have KERNEL_SETSOCKOPT' <<EOF
-	#include <linux/net.h>
-	#include <linux/tcp.h>
+  add_test 'have TCP_SOCK_SET_NODELAY' <<EOF
 	#include <net/sock.h>
-	#include <net/ip.h>
+	#include <linux/tcp.h>
 
-	int
+	void
 	dummy(struct sock *sk) {
-		int on = 1;
-		return kernel_setsockopt(sk->sk_socket, SOL_TCP, TCP_NODELAY,
-					 &on, sizeof(on));
+		return tcp_sock_set_nodelay(sk);
 	}
 EOF
 # check for fault arguments
