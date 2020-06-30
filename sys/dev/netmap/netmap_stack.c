@@ -582,7 +582,8 @@ nombq(struct netmap_adapter *na, struct mbuf *m)
 		return ENXIO;
 	}
 	hslot = &kring->ring->slot[nm_i];
-	m_copydata(m, 0, len, (char *)NMB(na, hslot) + VHLEN(na));
+	m_copydata(m, 0, len,
+		   (char *)NMB(na, hslot) + nm_get_offset(kring, hslot));
 	hslot->len = len;
 	kring->nr_hwtail = nm_next(nm_i, lim);
 
@@ -763,10 +764,12 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 	mismatch = MBUF_HEADLEN(m) - (int)slot->offset;
 	if (!mismatch) {
 		/* Length has already been validated */
-		memcpy(nmb + VHLEN(na), MBUF_DATA(m), slot->offset);
+		memcpy(nmb + nm_get_offset(nmcb_kring(cb), slot), MBUF_DATA(m),
+		       slot->offset);
 		PST_DBG_LIM("zero copy tx");
 	} else {
-		m_copydata(m, 0, MBUF_LEN(m), nmb + VHLEN(na));
+		m_copydata(m, 0, MBUF_LEN(m),
+			   nmb + nm_get_offset(nmcb_kring(cb), slot));
 		slot->len += mismatch;
 		PST_DBG_LIM("copy tx");
 	}
@@ -775,7 +778,7 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 		struct nm_iphdr *iph;
 		struct nm_tcphdr *tcph;
 		uint16_t *check;
-		int len, v = VHLEN(na);
+		int len, v = nm_get_offset(nmcb_kring(cb), slot);
 
 		mbuf_proto_headers(m);
 		iph = (struct nm_iphdr *)(nmb + v + MBUF_NETWORK_OFFSET(m));
@@ -896,6 +899,9 @@ pst_extra_alloc(struct netmap_adapter *na)
 				exs = &extra_slots[j];
 				exs->slot.buf_idx = next;
 				exs->slot.len = 0;
+				exs->slot.ptr =
+				  (exs->slot.ptr & ~kring->offset_mask) |
+				  (sizeof(struct nmcb) & kring->offset_mask);
 				exs->prev = j == 0 ? NM_EXT_NULL : j - 1;
 				exs->next = j + 1 == n ? NM_EXT_NULL : j + 1;
 				next = *(uint32_t *)NMB(na, &tmp);
@@ -967,6 +973,30 @@ pst_mbufpool_free(struct netmap_adapter *na)
 	}
 }
 
+static void
+pst_write_offset(struct netmap_adapter *na, bool noring)
+{
+	enum txrx t;
+	u_int i, j;
+	const u_int offset = sizeof(struct nmcb);
+	const u_int mask = 0xff;
+
+	for_rx_tx(t) {
+		for (i = 0; i < netmap_real_rings(na, t); i++) {
+			struct netmap_kring *kring = NMR(na, t)[i];
+			struct netmap_ring *ring = kring->ring;
+
+			kring->offset_max = offset;
+			kring->offset_mask = mask;
+			if (noring)
+				continue;
+			*(uint64_t *)(uintptr_t)&ring->offset_mask = mask;
+			for (j = 0; j < kring->nkr_num_slots; j++) {
+				nm_write_offset(kring, ring->slot + j, offset);
+			}
+		}
+	}
+}
 
 static int
 netmap_stack_bwrap_reg(struct netmap_adapter *na, int onoff)
@@ -984,18 +1014,17 @@ netmap_stack_bwrap_reg(struct netmap_adapter *na, int onoff)
 			PST_ASSERT("%s: only one NIC is supported", na->name);
 			return ENOTSUP;
 		}
-
-		/* DMA offset */
-		VHLEN(na) = VHLEN(&bna->up.na_bdg->bdg_ports[0]->up);
-		VHLEN(hwna) = VHLEN(na);
-		if (hwna->na_flags & NAF_HOST_RINGS)
-			VHLEN(&bna->host.up) = VHLEN(hwna);
 		if (hwna->na_flags & NAF_CSUM) {
 			struct netmap_adapter *mna = stna(na);
 			if (!mna)
 				panic("x");
 			mna->na_flags |= NAF_CSUM;
 		}
+		/* netmap_do_regif just created rings. As we cannot rely on
+		 * netmap_offsets_init, we set offsets here.
+		 */
+		pst_write_offset(na, 0);
+		pst_write_offset(hwna, 1);
 
 		error = netmap_bwrap_reg(na, onoff);
 		if (error)
@@ -1236,16 +1265,14 @@ static int
 netmap_stack_reg(struct netmap_adapter *na, int onoff)
 {
 	struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter *)na;
+	int err;
 
 	if (onoff) {
-		int err;
-
 		if (na->active_fds > 0)
 			return 0;
 		err = pst_extra_alloc(na);
 		if (err)
 			return err;
-		VHLEN(na) = sizeof(struct nmcb);
 	}
 	if (!onoff) {
 		struct nm_bridge *b = vpna->na_bdg;
@@ -1275,7 +1302,11 @@ netmap_stack_reg(struct netmap_adapter *na, int onoff)
 		}
 		pst_extra_free(na);
 	}
-	return netmap_vp_reg(na, onoff);
+	err = netmap_vp_reg(na, onoff);
+	if (!err && onoff) {
+		pst_write_offset(na, 0);
+	}
+	return err;
 }
 
 static int
@@ -1471,7 +1502,6 @@ netmap_stack_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 			req->nr_extra_bufs, npipes, &error);
 	if (na->nm_mem == NULL)
 		goto err;
-	VHLEN(na) = sizeof(struct nmcb);
 	/* We have no na->nm_bdg_attach */
 	/* other nmd fields are set in the common routine */
 	error = netmap_attach_common(na);

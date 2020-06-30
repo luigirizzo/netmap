@@ -150,7 +150,7 @@ static uint64_t stat_vnfds;
 #endif /* 0 */
 
 static int
-copy_to_nm(struct netmap_ring *ring, int virt_header, const char *data,
+copy_to_nm(struct netmap_ring *ring, const char *data,
 		int len, int off0, int off, int fd)
 {
 	u_int const tail = ring->tail;
@@ -165,7 +165,7 @@ copy_to_nm(struct netmap_ring *ring, int virt_header, const char *data,
 
 	while (likely(cur != tail) && copied < len) {
 		struct netmap_slot *slot = &ring->slot[cur];
-		char *p = NETMAP_BUF(ring, slot->buf_idx) + virt_header + off0;
+		char *p = NETMAP_BUF_OFFSET(ring, slot) + off0;
 		/* off0 contains some payload */
 		int l = min(MAX_PAYLOAD - (off0 - off), len - copied);
 
@@ -224,18 +224,18 @@ generate_http(int content_length, char *buf, char *content)
 }
 
 int
-generate_http_nm(int content_length, struct netmap_ring *ring, int virt_header,
+generate_http_nm(int content_length, struct netmap_ring *ring,
 		int off, int fd, char *header, int hlen, char *content)
 {
 	int len, cur = ring->cur;
 	struct netmap_slot *slot = &ring->slot[cur];
-	char *p = NETMAP_BUF(ring, slot->buf_idx) + virt_header + off;
+	char *p = NETMAP_BUF_OFFSET(ring, slot) + off;
 
 	if (header)
 		memcpy(p, header, hlen);
 	else
 		hlen = generate_httphdr(content_length, p);
-	len = copy_to_nm(ring, virt_header, content, content_length,
+	len = copy_to_nm(ring, content, content_length,
 			off + hlen, off, fd);
 	return len < content_length ? -1 : hlen + len;
 }
@@ -585,7 +585,7 @@ leftover(int *fde, const ssize_t len, int *is_leftover, int *thisclen)
 	}
 	*fde -= len;
 	if (unlikely(*fde < 0)) {
-		RD(1, "bad leftover %d", *fde);
+		D("bad leftover %d (len %ld)", *fde, len);
 		*fde = 0;
 	} else if (*fde > 0) {
 		D("still have leftover %d", *fde);
@@ -759,8 +759,8 @@ phttpd_data(struct nm_msg *m)
 	struct timespec ts1, ts2, ts3;
 	user_clock_gettime(&ts1);
 #endif
-	off = g->virt_header + rxs->offset;
-	rxbuf = NETMAP_BUF(rxr, rxs->buf_idx) + off;
+	off = rxs->offset;
+	rxbuf = NETMAP_BUF_OFFSET(rxr, rxs) + off;
 	len = rxs->len - rxs->offset;
 	if (unlikely(len == 0)) {
 		close(rxs->fd);
@@ -773,7 +773,7 @@ phttpd_data(struct nm_msg *m)
 		return error;
 	}
 	if (!no_ok) {
-		generate_http_nm(msglen, txr, g->virt_header, IPV4TCP_HDRLEN,
+		generate_http_nm(msglen, txr, IPV4TCP_HDRLEN,
 				 rxs->fd, pg->http, pg->httplen, content);
 	}
 #ifdef MYHZ

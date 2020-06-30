@@ -1136,6 +1136,9 @@ nm_os_set_mbuf_data_destructor(struct mbuf *m,
 }
 
 extern int stack_no_runtocomp;
+/*
+ * The socket is locked when it is detached from us.
+ */
 void
 nm_os_pst_upcall(NM_SOCK_T *sk)
 {
@@ -1182,7 +1185,7 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 			continue;
 		}
 		slot->fd = pst_so(sk)->fd;
-		slot->offset = skb_headroom(m) - VHLEN(kring->na); // XXX
+		slot->offset = skb_headroom(m) - nm_get_offset(kring, slot);
 		slot->len = skb_headlen(m) + slot->offset;
 		/*
 		 * We might have leftover for the previous connection with
@@ -1254,13 +1257,15 @@ nm_os_build_mbuf(struct netmap_kring *kring, char *buf, u_int len)
 	struct netmap_adapter *na = kring->na;
 	struct mbuf *m;
 	struct page *page;
-	int alen = NETMAP_BUF_SIZE(na) - sizeof(struct nmcb);
+	const int alen = NETMAP_BUF_SIZE(na) - sizeof(struct nmcb);
+	const u_int offset = nm_get_offset(kring, nmcb_slot(NMCB_BUF(buf)));
 
 #ifdef PST_MB_RECYCLE
 	m = kring->tx_pool[1];
 	if (m) {
 		struct skb_shared_info *shinfo;
 
+		/* XXX maybe build_skb_around with some overheads */
 		*m = *kring->tx_pool[0];
 		m->head = m->data = buf;
 		skb_reset_tail_pointer(m);
@@ -1282,8 +1287,8 @@ nm_os_build_mbuf(struct netmap_kring *kring, char *buf, u_int len)
 #endif
 	page = virt_to_page(buf);
 	get_page(page); // survive __kfree_skb()
-	skb_reserve(m, VHLEN(na)); // m->data and tail
-	skb_put(m, len - VHLEN(na)); // advance m->tail and m->len
+	skb_reserve(m, offset); // m->data and tail
+	skb_put(m, len - offset); // advance m->tail and m->len
 	return m;
 }
 
@@ -1291,12 +1296,12 @@ int
 nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 {
 	struct netmap_adapter *na = kring->na;
-	char *nmb = NMB(na, slot);
-	struct nmcb *cb = NMCB_BUF(nmb);
+	char *p = NMB(na, slot);
+	struct nmcb *cb = NMCB_BUF(p);
 	struct mbuf *m;
 	int ret = 0;
 
-	m = nm_os_build_mbuf(kring, nmb, VHLEN(na) + slot->len);
+	m = nm_os_build_mbuf(kring, p, nm_get_offset(kring, slot) + slot->len);
 	if (unlikely(!m))
 		return 0; // drop and skip
 
@@ -1361,6 +1366,7 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	NM_SOCK_T *sk;
 	void *nmb;
 	int err, pageref = 0;
+	const u_int offset = nm_get_offset(kring, slot);
 
 	nmb = NMB(na, slot);
 	soa = pst_soa_from_fd(na, slot->fd);
@@ -1373,9 +1379,9 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	page = virt_to_page(nmb);
 	get_page(page); // survive __kfree_skb()
 	pageref = page_ref_count(page);
-	poff = nmb - page_to_virt(page) + VHLEN(na) + slot->offset;
-	len = slot->len - slot->offset;
 	cb = NMCB_BUF(nmb);
+	poff = nmb - page_to_virt(page) + offset + slot->offset;
+	len = slot->len - slot->offset;
 	nmcb_wstate(cb, MB_STACK);
 
 	if (unlikely(!sk)) {

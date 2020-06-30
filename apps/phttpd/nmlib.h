@@ -121,7 +121,6 @@ struct nm_garg {
 	int main_fd;
 	int system_cpus;
 	int cpus;
-	int virt_header;	/* send also the virt_header */
 	int extra_bufs;		/* goes in nr_arg3 */
 	uint64_t extmem_siz;
 	int extra_pipes;	/* goes in nr_arg1 */
@@ -233,31 +232,6 @@ system_ncpus(void)
 	ncpus = 1;
 #endif /* others */
 	return (ncpus);
-}
-
-static void
-get_vnet_hdr_len(struct nm_garg *g)
-{
-	struct nmreq_header hdr;
-	struct nmreq_port_hdr req = {0};
-	int err;
-
-	bzero(&hdr, sizeof(hdr));
-	hdr.nr_body = (uintptr_t)&req;
-	strncpy(hdr.nr_name, g->nmd->hdr.nr_name, sizeof(hdr.nr_name));
-	hdr.nr_version = NETMAP_API;
-	hdr.nr_reqtype = NETMAP_REQ_PORT_HDR_GET;
-
-	err = ioctl(g->main_fd, NIOCCTRL, &hdr);
-	if (err) {
-		D("Unable to get virtio-net header length");
-		return;
-	}
-	g->virt_header = req.nr_hdr_len;
-	if (g->virt_header) {
-		D("Port requires virtio-net header, length = %d",
-		  g->virt_header);
-	}
 }
 
 static void *
@@ -588,10 +562,6 @@ nm_start(struct nm_garg *g)
 	g->main_fd = g->nmd->fd;
 	D("mapped %lu at %p", (unsigned long)g->nmd->reg.nr_memsize>>10, g->nmd->mem);
 
-	/* Check whether the netmap port we opened requires us to send
-	 * and receive frames with virtio-net header. */
-	get_vnet_hdr_len(g);
-
 	/* get num of queues in tx or rx */
 	if (g->td_type == TD_TYPE_SENDER)
 		devqueues = g->nmd->reg.nr_tx_rings;
@@ -710,12 +680,10 @@ out:
 static inline int
 netmap_sendmsg (struct nm_msg *msgp, void *data, size_t len)
 {
-	struct nm_targ *t = msgp->targ;
 	struct netmap_ring *ring = (struct netmap_ring *) msgp->txring;
 	u_int cur = ring->cur;
-	int virt_header = t->g->virt_header;
 	struct netmap_slot *slot = &ring->slot[cur];
-	char *p = NETMAP_BUF(ring, slot->buf_idx) + virt_header + IPV4TCP_HDRLEN;
+	char *p = NETMAP_BUF_OFFSET(ring, slot) + IPV4TCP_HDRLEN;
 
 	memcpy (p, data, len);
 	slot->len = IPV4TCP_HDRLEN + len;
@@ -756,15 +724,17 @@ netmap_copy_out(struct nm_msg *nmsg)
 	char *p, *ep;
 	uint32_t i = slot->buf_idx;
 	uint32_t extra_i = netmap_extra_next(t, (size_t *)&t->extra_cur, 0);
-	u_int off = t->g->virt_header + slot->offset;
-	u_int len = slot->len - off;
+	u_int off = slot->offset;
+	u_int len = slot->len;
+	const struct netmap_slot tmp =
+		{.buf_idx = extra_i, .nm_offset = slot->nm_offset};
 
 	if (extra_i == NM_NOEXTRA)
 		return -1;
-	p = NETMAP_BUF(ring, i) + off;
-	ep = NETMAP_BUF(ring, extra_i) + off;
-	memcpy(ep, p, len);
-	for (i = 0; i < len; i += 64) {
+	p = NETMAP_BUF_OFFSET(ring, slot) + off;
+	ep = NETMAP_BUF_OFFSET(ring, &tmp) + off;
+	memcpy(ep, p, len - off);
+	for (i = 0; i < len - off; i += 64) {
 		_mm_clflush(ep + i);
 	}
 	return 0;
@@ -856,7 +826,7 @@ do_nm_ring(struct nm_targ *t, int ring_nr)
 		m.targ = t;
 		*/
 		t->g->data(&m);
-		nm_update_ctr(t, 1, rxs->len - t->g->virt_header - rxs->offset);
+		nm_update_ctr(t, 1, rxs->len - rxs->offset);
 	}
 	rxr->head = rxr->cur = rxcur;
 #ifdef WITH_CLFLUSHOPT

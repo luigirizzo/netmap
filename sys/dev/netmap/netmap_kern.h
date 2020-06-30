@@ -1233,7 +1233,6 @@ struct netmap_pipe_adapter {
 	} while (0)
 #define PST_ASSERT(format, ...) nm_prinf(format, ##__VA_ARGS__)
 #define PST_MB_RECYCLE
-#define VHLEN(_na)	((_na)->virt_hdr_len)
 struct pst_extra_pool;
 
 struct pst_so_adapter {
@@ -1264,6 +1263,7 @@ struct netmap_stack_adapter {
 	void *eventso[64];
 #endif
 };
+
 struct netmap_adapter *stna(const struct netmap_adapter *slave);
 
 /* to be embedded in the buf */

@@ -167,9 +167,10 @@ struct netmap_slot {
 	union {
 		uint64_t ptr;		/* pointer for indirect buffers */
 		struct {
+			uint8_t nm_offset;
 			int32_t fd;
 			uint16_t offset;
-			uint16_t unused;
+			uint8_t unused;
 		};
 	};
 };
