@@ -81,8 +81,7 @@ nm_swap_reset(struct netmap_slot *s, struct netmap_slot *d)
 {
 	nm_swap(s, d);
 	s->len = 0;
-	nm_pst_setuoff(s, 0);
-	nm_pst_setfd(s, 0);
+	nm_pst_reset_fduoff(s);
 }
 
 static inline u_int
@@ -520,12 +519,15 @@ pst_prestack(struct netmap_kring *kring)
 	int k = kring->nr_hwcur;
 	u_int lim_tx = kring->nkr_num_slots - 1;
 	const int rhead = kring->rhead;
-	int tx = 0;
+	//int tx = 0;
+	const bool tx = na == stna(na) ? 1 : 0;
 	struct pst_fdtable *ft = pst_fdt(kring);
 
-	if (na == stna(na))
-		tx = 1;
-	else if (is_host(na))
+	//if (na == stna(na))
+	//	tx = 1;
+	//else if (is_host(na))
+	//	kring->nkr_hwlease = rhead; // skip loop below
+	if (!tx && is_host(na))
 		kring->nkr_hwlease = rhead; // skip loop below
 	for (k = kring->nkr_hwlease; k != rhead; k = nm_next(k, lim_tx)) {
 		struct netmap_slot *slot = &kring->ring->slot[k];
@@ -702,6 +704,7 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 {
 	struct netmap_adapter *na = NA(ifp);
 	struct nmcb *cb = NULL;
+	struct netmap_kring *kring;
 	struct netmap_slot *slot;
 	char *nmb;
 	int mismatch;
@@ -734,10 +737,10 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 		return 0;
 	}
 
+	kring = nmcb_kring(cb);
 	if (unlikely(nmcb_rstate(cb) != MB_STACK) ||
 	    /* FreeBSD ARP reply recycles the request mbuf */
-	    unlikely(nmcb_kring(cb) &&
-	    nmcb_kring(cb)->na->na_private == na->na_private)) {
+	    unlikely(kring && kring->na->na_private == na->na_private)) {
 		MBUF_LINEARIZE(m); // XXX
 		csum_transmit(na, m);
 		return 0;
@@ -766,12 +769,11 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 	mismatch = MBUF_HEADLEN(m) - (int)nm_pst_getuoff(slot);
 	if (!mismatch) {
 		/* Length has already been validated */
-		memcpy(nmb + nm_get_offset(nmcb_kring(cb), slot), MBUF_DATA(m),
+		memcpy(nmb + nm_get_offset(kring, slot), MBUF_DATA(m),
 		       nm_pst_getuoff(slot));
 		PST_DBG_LIM("zero copy tx");
 	} else {
-		m_copydata(m, 0, MBUF_LEN(m),
-			   nmb + nm_get_offset(nmcb_kring(cb), slot));
+		m_copydata(m, 0, MBUF_LEN(m), nmb + nm_get_offset(kring, slot));
 		slot->len += mismatch;
 		PST_DBG_LIM("copy tx");
 	}
@@ -780,7 +782,7 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 		struct nm_iphdr *iph;
 		struct nm_tcphdr *tcph;
 		uint16_t *check;
-		int len, v = nm_get_offset(nmcb_kring(cb), slot);
+		int len, v = nm_get_offset(kring, slot);
 
 		mbuf_proto_headers(m);
 		iph = (struct nm_iphdr *)(nmb + v + MBUF_NETWORK_OFFSET(m));
@@ -802,7 +804,7 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 #ifdef linux
 csum_done:
 #endif
-	pst_fdtable_add(cb, nmcb_kring(cb));
+	pst_fdtable_add(cb, kring);
 
 	/* the stack might hold reference via clone, so let's see */
 	nmcb_wstate(cb, MB_TXREF);

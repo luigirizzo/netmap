@@ -2166,12 +2166,11 @@ PNMB(struct netmap_adapter *na, struct netmap_slot *slot, uint64_t *pp)
 	struct lut_entry *lut = na->na_lut.lut;
 	struct plut_entry *plut = na->na_lut.plut;
 	void *ret = (i >= na->na_lut.objtotal) ? lut[0].vaddr : lut[i].vaddr;
-	u_int offset = na->virt_hdr_len;
 
 #ifdef _WIN32
 	*pp = (i >= na->na_lut.objtotal) ? (uint64_t)plut[0].paddr.QuadPart : (uint64_t)plut[i].paddr.QuadPart;
 #else
-	*pp = (i >= na->na_lut.objtotal) ? plut[0].paddr + offset : plut[i].paddr + offset;
+	*pp = (i >= na->na_lut.objtotal) ? plut[0].paddr : plut[i].paddr;
 #endif
 	return ret;
 }

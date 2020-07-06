@@ -32,4 +32,10 @@ nm_pst_setuoff(struct netmap_slot *slot, uint16_t ofst)
 	slot->ptr = (slot->ptr & ~NS_PST_OFST_MASK) |
 		    (( (uint64_t)ofst << NS_PST_OFST_SHIFT) & NS_PST_OFST_MASK);
 }
+
+static inline void
+nm_pst_reset_fduoff(struct netmap_slot *slot)
+{
+	slot->ptr = (slot->ptr & ~(NS_PST_FD_MASK | NS_PST_OFST_MASK));
+}
 #endif /* NETMAP_PASTE_H */
