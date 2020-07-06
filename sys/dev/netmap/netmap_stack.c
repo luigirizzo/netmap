@@ -48,6 +48,7 @@
 #include <dev/netmap/netmap_bdg.h>
 
 #ifdef WITH_STACK
+#include <net/netmap_paste.h>
 
 int stack_no_runtocomp = 0;
 int stack_host_batch = 1;
@@ -79,8 +80,9 @@ static inline void
 nm_swap_reset(struct netmap_slot *s, struct netmap_slot *d)
 {
 	nm_swap(s, d);
-	s->len = s->offset = 0;
-	s->fd = 0;
+	s->len = 0;
+	nm_pst_setuoff(s, 0);
+	nm_pst_setfd(s, 0);
 }
 
 static inline u_int
@@ -301,13 +303,13 @@ pst_fdtable_add(struct nmcb *cb, struct netmap_kring *kring)
 {
 	struct netmap_slot *slot = nmcb_slot(cb);
 	struct pst_fdtable *ft = pst_fdt(kring);
-	struct pst_fdt_q *fde = ft->fde + slot->fd;
+	struct pst_fdt_q *fde = ft->fde + nm_pst_getfd(slot);
 
 	cb->next = NM_FDT_NULL;
-	nm_prdis("kring %p ft %p fde %p fd %d", kring, ft, fde, slot->fd);
+	nm_prdis("kring %p ft %p fde %p fd %d", kring, ft, fde, nm_pst_getfd(slot));
 	if (fde->fq_head == NM_FDT_NULL) {
 		fde->fq_head = fde->fq_tail = slot->buf_idx;
-		ft->fds[ft->nfds++] = slot->fd;
+		ft->fds[ft->nfds++] = nm_pst_getfd(slot);
 	} else {
 		struct netmap_slot tmp = { fde->fq_tail };
 		struct nmcb *prev = NMCB_SLT(kring->na, &tmp);
@@ -534,7 +536,7 @@ pst_prestack(struct netmap_kring *kring)
 		if (unlikely(slot->len == 0))
 			continue;
 		/* validate user-supplied data */
-		if (unlikely(tx && slot->len < slot->offset))
+		if (unlikely(tx && slot->len < nm_pst_getuoff(slot)))
 			continue;
 		nmcbw(NMCB_BUF(nmb), kring, slot);
 		err = tx ? nm_os_pst_tx(kring, slot) :
@@ -761,11 +763,11 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 
 	nmb = NMB(na, slot);
 	/* bring protocol headers in */
-	mismatch = MBUF_HEADLEN(m) - (int)slot->offset;
+	mismatch = MBUF_HEADLEN(m) - (int)nm_pst_getuoff(slot);
 	if (!mismatch) {
 		/* Length has already been validated */
 		memcpy(nmb + nm_get_offset(nmcb_kring(cb), slot), MBUF_DATA(m),
-		       slot->offset);
+		       nm_pst_getuoff(slot));
 		PST_DBG_LIM("zero copy tx");
 	} else {
 		m_copydata(m, 0, MBUF_LEN(m),

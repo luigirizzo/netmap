@@ -45,6 +45,7 @@
 #ifdef WITH_STACK
 #include <linux/tcp.h>
 #include <net/sock.h> // sock_owned_by_user
+#include <net/netmap_paste.h>
 #endif /* WITH_STACK */
 
 #include "netmap_linux_config.h"
@@ -1184,9 +1185,10 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 					m->sk, m->sk ? pst_so(m->sk) : NULL);
 			continue;
 		}
-		slot->fd = pst_so(sk)->fd;
-		slot->offset = skb_headroom(m) - nm_get_offset(kring, slot);
-		slot->len = skb_headlen(m) + slot->offset;
+		nm_pst_setfd(slot, pst_so(sk)->fd);
+		nm_pst_setuoff(slot, (uint16_t)
+			       skb_headroom(m) - nm_get_offset(kring, slot));
+		slot->len = skb_headlen(m) + nm_pst_getuoff(slot);
 		/*
 		 * We might have leftover for the previous connection with
 		 * the same fd value. Overwrite it if this is new connection.
@@ -1196,7 +1198,7 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 #ifdef PST_MB_RECYCLE
 		if (unlikely(nmcb_rstate(cb) == MB_QUEUED)) {
 			PST_DBG_LIM("fd %d ring_id %u",
-					slot->fd, kring->ring_id);
+					nm_pst_getfd(slot), kring->ring_id);
 			queued = 1;
 		}
 #endif
@@ -1306,7 +1308,7 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 		return 0; // drop and skip
 
 	nmcb_wstate(cb, MB_STACK);
-	slot->fd = 0;
+	nm_pst_setfd(slot, 0);
 	if (slot->flags & NS_CSUM) {
 		m->ip_summed = CHECKSUM_UNNECESSARY;
 		slot->flags &= ~NS_CSUM;
@@ -1369,9 +1371,9 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	const u_int offset = nm_get_offset(kring, slot);
 
 	nmb = NMB(na, slot);
-	soa = pst_soa_from_fd(na, slot->fd);
+	soa = pst_soa_from_fd(na, nm_pst_getfd(slot));
 	if (unlikely(!soa)) {
-		PST_DBG_LIM("no soa of fd %d", slot->fd);
+		PST_DBG_LIM("no soa of fd %d", nm_pst_getfd(slot));
 		return 0;
 	}
 	sk = soa->so;
@@ -1380,8 +1382,8 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	get_page(page); // survive __kfree_skb()
 	pageref = page_ref_count(page);
 	cb = NMCB_BUF(nmb);
-	poff = nmb - page_to_virt(page) + offset + slot->offset;
-	len = slot->len - slot->offset;
+	poff = nmb - page_to_virt(page) + offset + nm_pst_getuoff(slot);
+	len = slot->len - nm_pst_getuoff(slot);
 	nmcb_wstate(cb, MB_STACK);
 
 	if (unlikely(!sk)) {
@@ -1413,7 +1415,7 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 		 * linearized in skb_checksum_help() in __dev_queue_xmit().
 		 */
 		if (unlikely(pageref == page_ref_count(page))) {
-			PST_DBG("dropped frag ref (fd %d)", slot->fd);
+			PST_DBG("dropped frag ref (fd %d)", nm_pst_getfd(slot));
 			nmcb_invalidate(cb);
 			return 0;
 		}

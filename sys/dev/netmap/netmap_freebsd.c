@@ -81,6 +81,9 @@
 #include <dev/netmap/netmap_kern.h>
 #include <net/netmap_virt.h>
 #include <dev/netmap/netmap_mem2.h>
+#ifdef WITH_STACK
+#include <net/netmap_paste.h>
+#endif /* WITH_STACK */
 
 
 /* ======================== FREEBSD-SPECIFIC ROUTINES ================== */
@@ -1036,6 +1039,7 @@ nm_os_st_upcall(NM_SOCK_T *so, void *x, int y)
 	for (m = m0; m; m = tmp) {
 		struct nmcb *cb = NMCB(m);
 		struct netmap_slot *slot;
+		uint16_t nm_offset;
 #ifdef PST_MB_RECYCLE
 		int queued = 0;
 #endif
@@ -1047,11 +1051,12 @@ nm_os_st_upcall(NM_SOCK_T *so, void *x, int y)
 			m_free(m);
 			continue;
 		}
-		slot->fd = st_so(so)->fd;
+		nm_pst_setfd(slot, st_so(so)->fd);
 		/* m_data points payload */
-		slot->offset = m->m_data - M_START(m) - VHLEN(kring->na);
+		nm_offset = nm_get_offset(kring, slot);
+		nm_pst_setuoff(slot, m->m_data - M_START(m) - nm_offset);
 		/* XXX just leave the original ? */
-		slot->len = m->m_len + slot->offset + VHLEN(kring->na);
+		slot->len = m->m_len + nm_pst_getuoff(slot) + nm_offset;
 		st_fdtable_add(cb, kring);
 #ifdef PST_MB_RECYCLE
 		if (unlikely(nmcb_rstate(cb) == MB_QUEUED)) {
@@ -1180,7 +1185,7 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	sna->eventso[curcpu] = NULL;
 #endif /* __FreeBSD__ */
 
-	slot->len += VHLEN(na); // Ugly to do here...
+	slot->len += nm_get_offset(kring, slot); // Ugly to do here...
 	m = maybe_new_mbuf(kring);
 	if (unlikely(m == NULL)) {
 		return 0; // drop and skip
@@ -1196,7 +1201,7 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 
 	nmcbw(cb, kring, slot);
 	nmcb_wstate(cb, MB_STACK);
-	slot->fd = 0;
+	nm_pst_setfd(slot, 0);
 	if (ntohs(*(uint16_t *)((char *)m->m_data + 12)) == ETHERTYPE_IP) {
 		CURVNET_SET_QUIET(ifp->if_vnet);
 		M_SETFIB(m, ifp->if_fib);
@@ -1217,16 +1222,16 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 		NM_SOCK_T *so = sna->eventso[curcpu];
 		struct st_so_adapter *soa = st_so(so);
 
-		if (unlikely(slot->fd != 0)) {
+		if (unlikely(nm_pst_getfd(slot) != 0)) {
 			panic("eventso with slot fd set");
 		}
 		sna->eventso[curcpu] = NULL;
 		/* soa is NULL when the soupcall() context closed the socket */
 		if (soa != NULL && nmcb_rstate(cb) == MB_NOREF) {
-			slot->fd = soa->fd;
+			nm_pst_setfd(slot, soa->fd);
 			nm_prdis("soa %p soa->fd %d", soa, soa->fd);
 			slot->len = VHLEN(na);
-			slot->offset = 0;
+			nm_pst_setuoff(slot, 0);
 			st_fdtable_add(cb, kring);
 		}
 	}
@@ -1250,6 +1255,8 @@ nm_os_st_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	int err;
 	struct nmcb *cb = NMCB_BUF(nmb);
 	int flags = MSG_DONTWAIT | MSG_DONTROUTE;
+	const u_int nm_offset = nm_get_offset(kring, slot);
+	const u_int pst_offset = nm_pst_getuoff(slot);
 
 	/* Link to the external mbuf storage */
 	m = nm_os_get_mbuf(na->ifp, NETMAP_BUF_SIZE(na));
@@ -1259,14 +1266,14 @@ nm_os_st_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	m->m_ext.ext_buf = m->m_data = nmb;
 	m->m_ext.ext_size = slot->len;
 	m->m_ext.ext_free = nm_os_st_mbuf_data_dtor;
-	m->m_len = m->m_pkthdr.len = slot->len - slot->offset - VHLEN(na);
-	m->m_data = nmb + VHLEN(na) + slot->offset;
+	m->m_len = m->m_pkthdr.len = slot->len - pst_offset - nm_offset;
+	m->m_data = nmb + nm_offset + pst_offset;
 
 	nmcb_wstate(cb, MB_STACK);
 
-	soa = st_soa_from_fd(na, slot->fd);
+	soa = st_soa_from_fd(na, nm_pst_getfd(slot));
 	if (unlikely(!soa)) {
-		STACK_DBG("no soa of fd %d (na %s)", slot->fd, na->name);
+		STACK_DBG("no soa of fd %d (na %s)", nm_pst_getfd(slot), na->name);
 		return 0;
 	}
 	err = sosend(soa->so, NULL, NULL, m, NULL, flags, curthread);

@@ -9,6 +9,7 @@
 #include <x86intrin.h>
 #include<net/netmap.h>
 #include<net/netmap_user.h>
+#include<net/netmap_paste.h>
 #include<ctrs.h>
 #include<pthread.h>
 #include <netinet/tcp.h>	/* SOL_TCP */
@@ -687,9 +688,9 @@ netmap_sendmsg (struct nm_msg *msgp, void *data, size_t len)
 
 	memcpy (p, data, len);
 	slot->len = IPV4TCP_HDRLEN + len;
-    	slot->fd = msgp->slot->fd;
-    	slot->offset = IPV4TCP_HDRLEN;
-	ND("slot->buf_idx %u slot->len %u slot->fd %u", slot->buf_idx, slot->len, slot->fd);
+	nm_pst_setfd(slot, nm_pst_getfd(msgp->slot));
+	nm_pst_setuoff(slot, IPV4TCP_HDRLEN);
+	ND("slot->buf_idx %u slot->len %u slot->fd %u", slot->buf_idx, slot->len, nm_pst_getfd(slot));
 	ring->cur = ring->head = nm_ring_next(ring, cur);
 	return len;
 }
@@ -724,13 +725,13 @@ netmap_copy_out(struct nm_msg *nmsg)
 	char *p, *ep;
 	uint32_t i = slot->buf_idx;
 	uint32_t extra_i = netmap_extra_next(t, (size_t *)&t->extra_cur, 0);
-	u_int off = slot->offset;
+	u_int off = nm_pst_getuoff(slot);
 	u_int len = slot->len;
-	const struct netmap_slot tmp =
-		{.buf_idx = extra_i, .nm_offset = slot->nm_offset};
+	struct netmap_slot tmp = {.buf_idx = extra_i};
 
 	if (extra_i == NM_NOEXTRA)
 		return -1;
+	NETMAP_WOFFSET(ring, &tmp, NETMAP_ROFFSET(ring, slot));
 	p = NETMAP_BUF_OFFSET(ring, slot) + off;
 	ep = NETMAP_BUF_OFFSET(ring, &tmp) + off;
 	memcpy(ep, p, len - off);
@@ -826,7 +827,7 @@ do_nm_ring(struct nm_targ *t, int ring_nr)
 		m.targ = t;
 		*/
 		t->g->data(&m);
-		nm_update_ctr(t, 1, rxs->len - rxs->offset);
+		nm_update_ctr(t, 1, rxs->len - nm_pst_getuoff(rxs));
 	}
 	rxr->head = rxr->cur = rxcur;
 #ifdef WITH_CLFLUSHOPT
@@ -1057,7 +1058,7 @@ close_pfds:
 						goto close_pfds;
 					}
 				}
-				slot.fd = newfd;
+				nm_pst_setfd(&slot, newfd);
 				msg.slot = &slot;
 				if (g->connection)
 					g->connection(&msg);

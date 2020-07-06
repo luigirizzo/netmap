@@ -164,15 +164,7 @@ struct netmap_slot {
 	uint32_t buf_idx;	/* buffer index */
 	uint16_t len;		/* length for this slot */
 	uint16_t flags;		/* buf changed, etc. */
-	union {
-		uint64_t ptr;		/* pointer for indirect buffers */
-		struct {
-			uint8_t nm_offset;
-			int32_t fd;
-			uint16_t offset;
-			uint8_t unused;
-		};
-	};
+	uint64_t ptr;		/* pointer for indirect buffers */
 };
 
 /*

@@ -173,8 +173,8 @@ copy_to_nm(struct netmap_ring *ring, const char *data,
 			nm_pkt_copy(data + copied, p, l);
 		}
 		slot->len = off0 + l;
-		slot->offset = off;
-		slot->fd = fd;
+		nm_pst_setuoff(slot, off);
+		nm_pst_setfd(slot, fd);
 		copied += l;
 		off0 = off;
 		cur = nm_ring_next(ring, cur);
@@ -718,7 +718,7 @@ phttpd_req(char *rxbuf, int fd, int len, struct nm_targ *targ, int *no_ok,
 				u_int hlen;
 
 				txs = set_to_nm(txr, s);
-				txs->fd = rxs->fd;
+				nm_pst_setfd(txs, nm_pst_getfd(rxs));
 				txs->len = _off + _len - IPV4TCP_HDRLEN; // XXX
 				embed(txs, _buf + _off);
 				hlen = generate_httphdr(_len, _buf + off);
@@ -752,29 +752,29 @@ phttpd_data(struct nm_msg *m)
 	struct netmap_slot *rxs = m->slot;
 	ssize_t msglen = pg->msglen;
 
-	int off, len, no_ok = 0;
+	int len, no_ok = 0;
 	char *rxbuf, *content = NULL;
 	int error;
+	const u_int off = nm_pst_getuoff(rxs);
 #ifdef MYHZ
 	struct timespec ts1, ts2, ts3;
 	user_clock_gettime(&ts1);
 #endif
-	off = rxs->offset;
 	rxbuf = NETMAP_BUF_OFFSET(rxr, rxs) + off;
-	len = rxs->len - rxs->offset;
+	len = rxs->len - off;
 	if (unlikely(len == 0)) {
-		close(rxs->fd);
+		close(nm_pst_getfd(rxs));
 		return 0;
 	}
 
-	error = phttpd_req(rxbuf, rxs->fd, len, targ, &no_ok,&msglen,
+	error = phttpd_req(rxbuf, nm_pst_getfd(rxs), len, targ, &no_ok,&msglen,
 			&content, off, txr, rxr, rxs);
 	if (error) {
 		return error;
 	}
 	if (!no_ok) {
-		generate_http_nm(msglen, txr, IPV4TCP_HDRLEN,
-				 rxs->fd, pg->http, pg->httplen, content);
+		generate_http_nm(msglen, txr, IPV4TCP_HDRLEN, nm_pst_getfd(rxs),
+				 pg->http, pg->httplen, content);
 	}
 #ifdef MYHZ
 	user_clock_gettime(&ts2);
