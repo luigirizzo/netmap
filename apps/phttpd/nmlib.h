@@ -544,6 +544,8 @@ nm_start(struct nm_garg *g)
 	/* internally nmport_parse() */
 	D("now nmport_open %s", g->ifname);
 	//g->nmd = nmport_open(g->ifname);
+	if (nmport_enable_option("offset"))
+		goto out;
 	g->nmd = nmport_prepare(g->ifname);
 	if (g->nmd == NULL) {
 		D("Unable to prepare %s: %s", g->ifname, strerror(errno));
@@ -950,12 +952,14 @@ netmap_worker(void *data)
 		}
 		for (i = 0; i < n && next; i++) {
 			char *p;
+			struct netmap_slot tmp = any_ring->slot[0];
 #ifdef NMLIB_EXTRA_SLOT
 			t->extra[i].buf_idx = next;
 #else
 			t->extra[i] = next;
 #endif
-			p = NETMAP_BUF(any_ring, next);
+			tmp.buf_idx = next;
+			p = NETMAP_BUF_OFFSET(any_ring, &tmp);
 			next = *(uint32_t *)p;
 		}
 		t->extra_num = i;
