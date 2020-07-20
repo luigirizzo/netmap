@@ -1252,11 +1252,6 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 			u_int o = 0;
 			struct glob_arg *g = t->g;
 
-			if (g->soff) {
-				o = g->virt_header + g->soff;
-				slot->offset = g->soff;
-				slot->fd = g->sfd;
-			}
 			if (options & OPT_COPY)
 				nm_pkt_copy(frame + g->soff, p + o, size - g->soff);
 			else
