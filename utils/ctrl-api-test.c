@@ -180,12 +180,12 @@ static struct TestContext ctx_;
 
 typedef int (*testfunc_t)(struct TestContext *ctx);
 
-/* strlen(ifname) must be < NM_IFNAMSZ */
 static void
 nmreq_hdr_init(struct nmreq_header *hdr, const char *ifname)
 {
 	memset(hdr, 0, sizeof(*hdr));
 	hdr->nr_version = NETMAP_API;
+	assert(strlen(ifname) < NM_IFNAMSZ);
 	strncpy(hdr->nr_name, ifname, sizeof(hdr->nr_name));
 }
 
