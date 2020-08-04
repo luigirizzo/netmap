@@ -1,0 +1,127 @@
+diff --git a/ixgbevf/ixgbevf_main.c b/ixgbevf/ixgbevf_main.c
+index a39e2cb384dd..e75f700647c7 100644
+--- a/ixgbevf/ixgbevf_main.c
++++ b/ixgbevf/ixgbevf_main.c
+@@ -257,6 +257,24 @@ static void ixgbevf_tx_timeout(struct net_device *netdev, unsigned int txqueue)
+ 	ixgbevf_tx_timeout_reset(adapter);
+ }
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++/*
++ * The #ifdef DEV_NETMAP / #endif blocks in this file are meant to
++ * be a reference on how to implement netmap support in a driver.
++ * Additional comments are in ixgbe_netmap_linux.h .
++ *
++ * The code is originally developed on FreeBSD and in the interest
++ * of maintainability we try to limit differences between the two systems.
++ *
++ * <ixgbe_netmap_linux.h> contains functions for netmap support
++ * that extend the standard driver.
++ * It also defines DEV_NETMAP so further conditional sections use
++ * that instead of CONFIG_NETMAP
++ */
++#define NM_IXGBEVF
++#include <ixgbe_netmap_linux.h>
++#endif
++
+ /**
+  * ixgbevf_clean_tx_irq - Reclaim resources after transmit completes
+  * @q_vector: board private structure
+@@ -276,6 +294,18 @@ static bool ixgbevf_clean_tx_irq(struct ixgbevf_q_vector *q_vector,
+ 	if (test_bit(__IXGBEVF_DOWN, &adapter->state))
+ 		return true;
+ 
++#ifdef DEV_NETMAP
++	/*
++	 * In netmap mode, all the work is done in the context
++	 * of the client thread. Interrupt handlers only wake up
++	 * clients, which may be sleeping on individual rings
++	 * or on a global resource for all rings.
++	 */
++	if (netmap_tx_irq(adapter->netdev, tx_ring->queue_index) != NM_IRQ_PASS)
++		return true;
++#endif /* DEV_NETMAP */
++
++
+ 	tx_buffer = &tx_ring->tx_buffer_info[i];
+ 	tx_desc = IXGBEVF_TX_DESC(tx_ring, i);
+ 	i -= tx_ring->count;
+@@ -1135,13 +1165,24 @@ static int ixgbevf_clean_rx_irq(struct ixgbevf_q_vector *q_vector,
+ 	bool xdp_xmit = false;
+ 	struct xdp_buff xdp;
+ 
+-	xdp.rxq = &rx_ring->xdp_rxq;
++#ifdef DEV_NETMAP
++	/*
++	 * 	 Same as the txeof routine: only wakeup clients on intr.
++	 */
++	int dummy, nm_irq;
++	nm_irq = netmap_rx_irq(rx_ring->netdev, rx_ring->queue_index, &dummy);
++	if (nm_irq != NM_IRQ_PASS)
++		return (nm_irq == NM_IRQ_RESCHED) ? budget : 1;
+ 
+ 	/* Frame size depend on rx_ring setup when PAGE_SIZE=4K */
++#endif /* DEV_NETMAP */
++
+ #if (PAGE_SIZE < 8192)
+ 	xdp.frame_sz = ixgbevf_rx_frame_truesize(rx_ring, 0);
+ #endif
+ 
++	xdp.rxq = &rx_ring->xdp_rxq;
++
+ 	while (likely(total_rx_packets < budget)) {
+ 		struct ixgbevf_rx_buffer *rx_buffer;
+ 		union ixgbe_adv_rx_desc *rx_desc;
+@@ -1746,6 +1787,10 @@ static void ixgbevf_configure_tx_ring(struct ixgbevf_adapter *adapter,
+ 	clear_bit(__IXGBEVF_HANG_CHECK_ARMED, &ring->state);
+ 	clear_bit(__IXGBEVF_TX_XDP_RING_PRIMED, &ring->state);
+ 
++#ifdef DEV_NETMAP
++	txdctl = ixgbe_netmap_configure_tx_ring(adapter, reg_idx, txdctl);
++#endif /* DEV_NETMAP */
++
+ 	IXGBE_WRITE_REG(hw, IXGBE_VFTXDCTL(reg_idx), txdctl);
+ 
+ 	/* poll to verify queue is enabled */
+@@ -1754,7 +1799,7 @@ static void ixgbevf_configure_tx_ring(struct ixgbevf_adapter *adapter,
+ 		txdctl = IXGBE_READ_REG(hw, IXGBE_VFTXDCTL(reg_idx));
+ 	}  while (--wait_loop && !(txdctl & IXGBE_TXDCTL_ENABLE));
+ 	if (!wait_loop)
+-		hw_dbg(hw, "Could not enable Tx Queue %d\n", reg_idx);
++		pr_err("Could not enable Tx Queue %d\n", reg_idx);
+ }
+ 
+ /**
+@@ -1980,6 +2025,10 @@ static void ixgbevf_configure_rx_ring(struct ixgbevf_adapter *adapter,
+ 	IXGBE_WRITE_REG(hw, IXGBE_VFRXDCTL(reg_idx), rxdctl);
+ 
+ 	ixgbevf_rx_desc_queue_enable(adapter, ring);
++#ifdef DEV_NETMAP
++	if (ixgbe_netmap_configure_rx_ring(adapter, reg_idx))
++		return;
++#endif /* DEV_NETMAP */
+ 	ixgbevf_alloc_rx_buffers(ring, ixgbevf_desc_unused(ring));
+ }
+ 
+@@ -4737,6 +4786,10 @@ static int ixgbevf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 		break;
+ 	}
+ 
++#ifdef DEV_NETMAP
++	ixgbe_netmap_attach(adapter);
++#endif /* DEV_NETMAP */
++
+ 	return 0;
+ 
+ err_register:
+@@ -4777,6 +4830,10 @@ static void ixgbevf_remove(struct pci_dev *pdev)
+ 
+ 	adapter = netdev_priv(netdev);
+ 
++#ifdef DEV_NETMAP
++	ixgbe_netmap_detach(adapter);
++#endif /* DEV_NETMAP */
++
+ 	set_bit(__IXGBEVF_REMOVING, &adapter->state);
+ 	cancel_work_sync(&adapter->service_task);
+ 
