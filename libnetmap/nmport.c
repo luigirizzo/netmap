@@ -330,6 +330,7 @@ nmport_opt_##o##_key_##k##_ctor(void)					\
 #define nmport_defkey(p, o)	((p)->keys[NPOPT_DESC(o).default_key])
 
 NPOPT_DECL(share, 0)
+	NPKEY_DECL(share, port, NMREQ_OPTK_DEFAULT|NMREQ_OPTK_MUSTSET)
 NPOPT_DECL(extmem, 0)
 	NPKEY_DECL(extmem, file, NMREQ_OPTK_DEFAULT|NMREQ_OPTK_MUSTSET)
 	NPKEY_DECL(extmem, if_num, 0)
