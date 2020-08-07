@@ -1453,6 +1453,40 @@ netmap_bwrap_config(struct netmap_adapter *na, struct nm_config_info *info)
 	return 0;
 }
 
+/* nm_bufcfg callback for bwrap */
+static int
+netmap_bwrap_bufcfg(struct netmap_kring *kring, uint64_t target)
+{
+	struct netmap_adapter *na = kring->na;
+	struct netmap_bwrap_adapter *bna =
+		(struct netmap_bwrap_adapter *)na;
+	struct netmap_adapter *hwna = bna->hwna;
+	struct netmap_kring *hwkring;
+	enum txrx r;
+	int error;
+
+	/* we need the hw kring that corresponds to the bwrap one:
+	 * remember that rx and tx are swapped
+	 */
+	r = nm_txrx_swap(kring->tx);
+	hwkring = NMR(hwna, r)[kring->ring_id];
+
+	/* copy down the offset information, forward the request
+	 * and copy up the results
+	 */
+	hwkring->offset_mask = kring->offset_mask;
+	hwkring->offset_max  = kring->offset_max;
+	hwkring->offset_gap  = kring->offset_gap;
+
+	error = hwkring->nm_bufcfg(hwkring, target);
+	if (error)
+		return error;
+
+	kring->hwbuf_len = hwkring->hwbuf_len;
+	kring->buf_align = hwkring->buf_align;
+
+	return 0;
+}
 
 /* nm_krings_create callback for bwrap */
 int
@@ -1471,13 +1505,13 @@ netmap_bwrap_krings_create_common(struct netmap_adapter *na)
 		return error;
 	}
 
-	/* increment the usage counter for all the hwna and na krings */
+	/* increment the usage counter for all the hwna krings */
 	for_rx_tx(t) {
 		for (i = 0; i < netmap_all_rings(hwna, t); i++) {
 			NMR(hwna, t)[i]->users++;
 			/* this to prevent deleation of the rings through
 			 * our krings, instead of through the hwna ones */
-			NMR(na, t)[i]->users++;
+			NMR(na, t)[i]->nr_kflags |= NKR_NEEDRING;
 		}
 	}
 
@@ -1693,6 +1727,7 @@ netmap_bwrap_attach_common(struct netmap_adapter *na,
 	}
 	na->nm_dtor = netmap_bwrap_dtor;
 	na->nm_config = netmap_bwrap_config;
+	na->nm_bufcfg = netmap_bwrap_bufcfg;
 	na->nm_bdg_ctl = netmap_bwrap_bdg_ctl;
 	na->pdev = hwna->pdev;
 	na->nm_mem = netmap_mem_get(hwna->nm_mem);
