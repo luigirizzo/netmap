@@ -804,9 +804,15 @@ netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
 #ifdef linux
 csum_done:
 #endif
+	if (cb == NULL) {
+		nm_prinf("WARNING: NULL cb (na %s)", na->name);
+	}
 	pst_fdtable_add(cb, kring);
 
 	/* the stack might hold reference via clone, so let's see */
+	if (cb == NULL) {
+		PST_ASSERT("na %s kring %p cb NULL", na->name, kring);
+	}
 	nmcb_wstate(cb, MB_TXREF);
 #ifdef linux
 	/* for FreeBSD mbuf comes from our code */
@@ -990,6 +996,8 @@ pst_write_offset(struct netmap_adapter *na, bool noring)
 			struct netmap_kring *kring = NMR(na, t)[i];
 			struct netmap_ring *ring = kring->ring;
 
+			if (!noring && !nm_kring_pending_on(kring))
+				continue; // ring is not ready
 			kring->offset_max = offset;
 			kring->offset_mask = mask;
 			if (noring)
@@ -1272,8 +1280,10 @@ netmap_stack_reg(struct netmap_adapter *na, int onoff)
 	int err;
 
 	if (onoff) {
-		if (na->active_fds > 0)
+		pst_write_offset(na, 0);
+		if (na->active_fds > 0) {
 			return 0;
+		}
 		err = pst_extra_alloc(na);
 		if (err)
 			return err;
@@ -1307,9 +1317,6 @@ netmap_stack_reg(struct netmap_adapter *na, int onoff)
 		pst_extra_free(na);
 	}
 	err = netmap_vp_reg(na, onoff);
-	if (!err && onoff) {
-		pst_write_offset(na, 0);
-	}
 	return err;
 }
 
@@ -1540,6 +1547,7 @@ netmap_stack_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	na->nm_krings_create = netmap_stack_bwrap_krings_create;
 	na->nm_krings_delete = netmap_stack_bwrap_krings_delete;
 	na->nm_notify = netmap_bwrap_notify;
+	na->na_flags |= NAF_MOREFRAG; // survive netmap_buf_size_validate()
 	bna->nm_intr_notify = netmap_stack_bwrap_intr_notify;
 	/* Set the mfs, needed on the VALE mismatch datapath. */
 	bna->up.mfs = NM_BDG_MFS_DEFAULT;
