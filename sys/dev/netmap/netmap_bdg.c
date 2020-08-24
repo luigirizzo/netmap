@@ -1269,6 +1269,11 @@ netmap_bwrap_config(struct netmap_adapter *na, struct nm_config_info *info)
 	struct netmap_adapter *hwna = bna->hwna;
 	int error;
 
+	/* cache the lut in the embedded host adapter */
+	error = netmap_mem_get_lut(hwna->nm_mem, &bna->host.up.na_lut);
+	if (error)
+		return error;
+
 	/* Forward the request to the hwna. It may happen that nobody
 	 * registered hwna yet, so netmap_mem_get_lut() may have not
 	 * been called yet. */
