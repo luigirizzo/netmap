@@ -416,7 +416,7 @@ static inline int ilog2(uint64_t n)
 #define contigmalloc(sz, ty, flags, a, b, pgsz, c) ({		\
 	unsigned int order_ =					\
 		ilog2(roundup_pow_of_two(sz)/PAGE_SIZE);	\
-	struct page *p_ = alloc_pages(GFP_ATOMIC | __GFP_ZERO,  \
+	struct page *p_ = alloc_pages(GFP_USER | __GFP_ZERO,  \
 		order_);					\
 	if (p_ != NULL) 					\
 		split_page(p_, order_);				\
