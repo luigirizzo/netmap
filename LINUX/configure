@@ -504,7 +504,7 @@ SRCDIR=$SRCDIR
 ifneq (\$(KERNELRELEASE),)
 obj-m := $TESTOBJS
 else
-EXTRA_CFLAGS := -Werror \$(addprefix -Wno-error=,$REC_DISABLED_WARNINGS)
+EXTRA_CFLAGS := -Wno-unused-variable -Wno-unused-label -Werror \$(addprefix -Wno-error=,$REC_DISABLED_WARNINGS)
 S_DRIVERS := $(drv print)
 E_DRIVERS := $(edrv print)
 I_DRIVERS := $(idrv print)
