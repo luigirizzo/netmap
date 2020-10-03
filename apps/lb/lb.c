@@ -91,7 +91,7 @@ struct compact_ipv6_hdr {
 #define BUF_REVOKE	150
 #define STAT_MSG_MAXSIZE 1024
 
-struct {
+static struct {
 	char ifname[MAX_IFNAMELEN + 1];
 	char base_name[MAX_IFNAMELEN + 1];
 	int netmap_fd;
@@ -117,7 +117,7 @@ struct overflow_queue {
 	uint32_t size;
 };
 
-struct overflow_queue *freeq;
+static struct overflow_queue *freeq;
 
 static inline int
 oq_full(struct overflow_queue *q)
@@ -162,12 +162,12 @@ oq_deq(struct overflow_queue *q)
 
 static volatile int do_abort = 0;
 
-uint64_t dropped = 0;
-uint64_t forwarded = 0;
-uint64_t received_bytes = 0;
-uint64_t received_pkts = 0;
-uint64_t non_ip = 0;
-uint32_t freeq_n = 0;
+static uint64_t dropped = 0;
+static uint64_t forwarded = 0;
+static uint64_t received_bytes = 0;
+static uint64_t received_pkts = 0;
+static uint64_t non_ip = 0;
+static uint32_t freeq_n = 0;
 
 struct port_des {
 	char interface[MAX_PORTNAMELEN];
@@ -180,7 +180,7 @@ struct port_des {
 	struct group_des *group;
 };
 
-struct port_des *ports;
+static struct port_des *ports;
 
 /* each group of pipes receives all the packets */
 struct group_des {
@@ -192,7 +192,7 @@ struct group_des {
 	int custom_port;
 };
 
-struct group_des *groups;
+static struct group_des *groups;
 
 /* statistcs */
 struct counters {
@@ -207,7 +207,7 @@ struct counters {
 #define COUNTERS_FULL	1
 };
 
-struct counters counters_buf;
+static struct counters counters_buf;
 
 static void *
 print_stats(void *arg)
@@ -389,7 +389,7 @@ static void sigint_h(int sig)
 	signal(SIGINT, SIG_DFL);
 }
 
-void usage()
+static void usage()
 {
 	printf("usage: lb [options]\n");
 	printf("where options are:\n");
@@ -406,9 +406,9 @@ void usage()
 }
 
 static int
-parse_pipes(char *spec)
+parse_pipes(const char *spec)
 {
-	char *end = index(spec, ':');
+	const char *end = index(spec, ':');
 	static int max_groups = 0;
 	struct group_des *g;
 
@@ -460,7 +460,8 @@ parse_pipes(char *spec)
 }
 
 /* complete the initialization of the groups data structure */
-void init_groups(void)
+static void
+init_groups(void)
 {
 	int i, j, t = 0;
 	struct group_des *g = NULL;
@@ -508,7 +509,8 @@ struct morefrag {
  * chain headed by g.
  * Return a free buffer.
  */
-uint32_t forward_packet(struct group_des *g, struct netmap_slot *rs)
+static uint32_t
+forward_packet(struct group_des *g, struct netmap_slot *rs)
 {
 	uint32_t hash = rs->ptr;
 	uint32_t output_port = hash % g->nports;
@@ -939,7 +941,6 @@ run:
 		 */
 		for (i = glob_arg.num_groups - 1U; i > 0; i--) {
 			struct group_des *g = &groups[i - 1];
-			int j;
 
 			for (j = 0; j < g->nports; j++) {
 				struct port_des *p = &g->ports[j];
@@ -970,7 +971,7 @@ run:
 			for (i = 0; i < npipes; i++) {
 				struct port_des *p = &ports[i];
 				struct overflow_queue *q = p->oq;
-				uint32_t j;
+				uint32_t k;
 				int64_t lim;
 				struct netmap_ring *ring;
 				struct netmap_slot *slot;
@@ -987,7 +988,7 @@ run:
 					lim += ring->num_slots;
 				if (q->n < lim)
 					lim = q->n;
-				for (j = 0; j < lim; j++) {
+				for (k = 0; k < lim; k++) {
 					struct netmap_slot s = oq_deq(q), tmp;
 					tmp.ptr = 0;
 					slot = &ring->slot[mf->shadow_head];

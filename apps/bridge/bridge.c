@@ -17,7 +17,7 @@
 #include <unistd.h>
 #include <libnetmap.h>
 
-int verbose = 0;
+static int verbose = 0;
 
 static int do_abort = 0;
 static int zerocopy = 1; /* enable zerocopy if possible */
@@ -34,7 +34,7 @@ sigint_h(int sig)
 /*
  * how many packets on this set of queues ?
  */
-int
+static int
 pkt_queued(struct nmport_d *d, int tx)
 {
 	u_int i, tot = 0;
