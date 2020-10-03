@@ -738,7 +738,7 @@ checksum(const void *data, uint16_t len, uint32_t sum)
 
 	/* Checksum all the pairs of bytes first... */
 	for (i = 0; i < (len & ~1U); i += 2) {
-		sum += (u_int16_t)ntohs(*((u_int16_t *)(addr + i)));
+		sum += (uint16_t)ntohs(*((const uint16_t *)(addr + i)));
 		if (sum > 0xFFFF)
 			sum -= 0xFFFF;
 	}
