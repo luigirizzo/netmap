@@ -26,6 +26,10 @@
 #include <net/netmap.h>
 #include <netmap/netmap_kern.h>
 
+#ifdef ATL_CHANGE
+extern void cvm_update_hash(struct net_device *dev, struct cvmx_wqe *work);
+#endif
+
 /* Private adapter storage */
 struct oct_nm_adapter {
 	struct netmap_hw_adapter up;
@@ -403,6 +407,35 @@ static int octeon_netmap_rxsync(struct netmap_kring *kring, int flags)
 				continue;
 			}
 
+#ifdef ATL_CHANGE
+			/* receive-hashing */
+			if (likely(ifp->features & NETIF_F_RXHASH)) {
+				uint16_t hash;
+
+				/* Try to generate a better core hash than the hardware
+				 * can manage for tunneled packets etc.
+				 */
+				cvm_update_hash(ifp, work);
+
+				/* Get the packet hash from the work entry */
+				hash = (uint16_t) work->word1.tag;
+
+				/* Make sure we are on the correct core */
+				if (group != (ona->base + (hash % na->num_rx_rings))) {
+					cvmx_pow_work_submit(work, work->word1.tag,
+						work->word1.tag_type,
+						cvmx_wqe_get_qos(work),
+						ona->base + (hash % na->num_rx_rings));
+					continue;
+				}
+
+				/* Store the hash in the slot */
+				ring->slot[nm_i].hash = (hash << 16) | hash;
+			}
+			else {
+				ring->slot[nm_i].hash = 0;
+			}
+#endif
 			/* Currently we copy into the netmap allocated buffer
 			 * as Octeon buffers are shared for all interfaces
 			 * and hence we cannot force a single interface to

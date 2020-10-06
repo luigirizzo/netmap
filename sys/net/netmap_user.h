@@ -123,6 +123,12 @@
 	( ((char *)(buf) - ((char *)(ring) + (ring)->buf_ofs) ) / \
 		(ring)->nr_buf_size )
 
+#ifdef ATL_CHANGE
+/* get pdu (ether head) address with offset from specified packet slot */
+#define NETMAP_PKT(ring, slot) \
+		((char *)(ring) + (ring)->buf_ofs + (slot)->ll_ofs + ((slot)->buf_idx * (ring)->nr_buf_size))
+#endif
+
 /* read the offset field in a ring's slot */
 #define NETMAP_ROFFSET(ring, slot)			\
 	((slot)->ptr & (ring)->offset_mask)

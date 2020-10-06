@@ -987,6 +987,13 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 		}
 
 		do {
+#ifdef ATL_CHANGE
+			ring->slot[nm_i].mark = 0;
+			ring->slot[nm_i].hash = 0;
+			/* reset slot ll_ofs for buffer address calculation with default headroom */
+			ring->slot[nm_i].ll_ofs = 0;
+#endif
+
 			nmaddr = NMB(na, &ring->slot[nm_i]);
 			/* We only check the address here on generic rx rings. */
 			if (nmaddr == NETMAP_BUF_BASE(na)) { /* Bad buffer */

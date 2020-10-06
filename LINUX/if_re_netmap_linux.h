@@ -233,6 +233,9 @@ re_netmap_rxsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			uint64_t paddr;
+#ifdef ATL_CHANGE
+			slot->ll_ofs = 0;
+#endif
 			void *addr = PNMB(na, slot, &paddr);
 
 			struct RxDesc *curr = &sc->RxDescArray[nic_i];

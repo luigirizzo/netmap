@@ -1219,7 +1219,11 @@ netmap_grab_packets(struct netmap_kring *kring, struct mbq *q, int force)
 		}
 		slot->flags &= ~NS_FORWARD; // XXX needed ?
 		/* XXX TODO: adapt to the case of a multisegment packet */
+#ifdef ATL_CHANGE
+		m = m_devget(NMB(na, slot), slot->len, 0, na->ifp, NULL, slot->mark, slot->hash, slot->iif);
+#else
 		m = m_devget(NMB(na, slot), slot->len, 0, na->ifp, NULL);
+#endif
 
 		if (m == NULL)
 			break;
@@ -1374,12 +1378,20 @@ netmap_rxsync_from_host(struct netmap_kring *kring, int flags)
 		while ( nm_i != stop_i && (m = mbq_dequeue(q)) != NULL ) {
 			int len = MBUF_LEN(m);
 			struct netmap_slot *slot = &ring->slot[nm_i];
+#ifdef ATL_CHANGE
+			/* reset slot ll_ofs for buffer address calculation with default headroom */
+			slot->ll_ofs = 0;
+#endif
 
 			m_copydata(m, 0, len, NMB(na, slot));
 			nm_prdis("nm %d len %d", nm_i, len);
 			if (netmap_debug & NM_DEBUG_HOST)
 				nm_prinf("%s", nm_dump_buf(NMB(na, slot),len, 128, NULL));
 
+#ifdef ATL_CHANGE
+			slot->mark = 0;
+			slot->hash = 0;
+#endif
 			slot->len = len;
 			slot->flags = 0;
 			nm_i = nm_next(nm_i, lim);

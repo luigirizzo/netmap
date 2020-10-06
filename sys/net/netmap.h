@@ -45,6 +45,11 @@
 
 #define	NETMAP_MIN_API	14		/* min and max versions accepted */
 #define	NETMAP_MAX_API	15
+
+#ifdef ATL_CHANGE
+#define NETMAP_SLOT_HEADROOM 88
+#endif
+
 /*
  * Some fields should be cache-aligned to reduce contention.
  * The alignment is architecture and OS dependent, but rather than
@@ -165,6 +170,12 @@ struct netmap_slot {
 	uint16_t len;		/* length for this slot */
 	uint16_t flags;		/* buf changed, etc. */
 	uint64_t ptr;		/* pointer for indirect buffers */
+#ifdef ATL_CHANGE
+	uint32_t mark;		/* packet mark */
+	uint32_t hash;		/* flow hash */
+	uint16_t ll_ofs;	/* link layer offset for this slot */
+	uint32_t iif;		/* ifindex of the interface this packet came in on */
+#endif
 };
 
 /*
@@ -314,6 +325,10 @@ struct netmap_ring {
 	 * account when specifing buffer-offsets in TX slots.
 	 */
 	const uint64_t	buf_align;
+
+#ifdef ATL_CHANGE
+	uint64_t	drops;		/* number of dopped packets */
+#endif
 
 	/* opaque room for a mutex or similar object */
 #if !defined(_WIN32) || defined(__CYGWIN__)

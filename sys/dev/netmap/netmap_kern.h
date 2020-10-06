@@ -1964,6 +1964,17 @@ struct netmap_obj_pool;
  * NMB return the virtual address of a buffer (buffer 0 on bad index)
  * PNMB also fills the physical address
  */
+#ifdef ATL_CHANGE
+static inline void *
+NMB(struct netmap_adapter *na, struct netmap_slot *slot)
+{
+	struct lut_entry *lut = na->na_lut.lut;
+	uint32_t i = slot->buf_idx;
+	if (!slot->ll_ofs) slot->ll_ofs = NETMAP_SLOT_HEADROOM;
+	return ((unlikely(i >= na->na_lut.objtotal)) ?
+	        lut[0].vaddr : lut[i].vaddr) + slot->ll_ofs;
+}
+#else
 static inline void *
 NMB(struct netmap_adapter *na, struct netmap_slot *slot)
 {
@@ -1972,7 +1983,27 @@ NMB(struct netmap_adapter *na, struct netmap_slot *slot)
 	return (unlikely(i >= na->na_lut.objtotal)) ?
 		lut[0].vaddr : lut[i].vaddr;
 }
+#endif
 
+#ifdef ATL_CHANGE
+static inline void *
+PNMB(struct netmap_adapter *na, struct netmap_slot *slot, uint64_t *pp)
+{
+	uint32_t i = slot->buf_idx;
+	struct lut_entry *lut = na->na_lut.lut;
+	struct plut_entry *plut = na->na_lut.plut;
+	void *ret;
+	if (!slot->ll_ofs) slot->ll_ofs = NETMAP_SLOT_HEADROOM;
+	ret = ((i >= na->na_lut.objtotal) ? lut[0].vaddr : lut[i].vaddr) + slot->ll_ofs;
+
+#ifdef _WIN32
+	*pp = ((i >= na->na_lut.objtotal) ? (uint64_t)plut[0].paddr.QuadPart : (uint64_t)plut[i].paddr.QuadPart) + (uint64_t)slot->ll_ofs;
+#else
+	*pp = ((i >= na->na_lut.objtotal) ? plut[0].paddr : plut[i].paddr) + slot->ll_ofs;
+#endif
+	return ret;
+}
+#else
 static inline void *
 PNMB(struct netmap_adapter *na, struct netmap_slot *slot, uint64_t *pp)
 {
@@ -1988,6 +2019,7 @@ PNMB(struct netmap_adapter *na, struct netmap_slot *slot, uint64_t *pp)
 #endif
 	return ret;
 }
+#endif
 
 static inline void
 nm_write_offset(struct netmap_kring *kring,

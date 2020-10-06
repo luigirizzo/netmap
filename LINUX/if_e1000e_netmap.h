@@ -349,6 +349,9 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			uint64_t paddr;
+#ifdef ATL_CHANGE
+			slot->ll_ofs = 0;
+#endif
 			void *addr = PNMB(na, slot, &paddr);
 			NM_E1K_RX_DESC_T *curr = E1000_RX_DESC_EXT(*rxr, nic_i);
 

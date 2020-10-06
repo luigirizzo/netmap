@@ -1186,8 +1186,13 @@ netmap_extra_free(struct netmap_adapter *na, uint32_t head)
 
 
 /* Return nonzero on error */
+#ifdef ATL_CHANGE
+static int
+netmap_new_bufs(struct netmap_mem_d *nmd, struct netmap_slot *slot, u_int n, uint32_t iif)
+#else
 static int
 netmap_new_bufs(struct netmap_mem_d *nmd, struct netmap_slot *slot, u_int n)
+#endif
 {
 	struct netmap_obj_pool *p = &nmd->pools[NETMAP_BUF_POOL];
 	u_int i = 0;	/* slot counter */
@@ -1204,6 +1209,9 @@ netmap_new_bufs(struct netmap_mem_d *nmd, struct netmap_slot *slot, u_int n)
 		slot[i].len = p->_objsize;
 		slot[i].flags = 0;
 		slot[i].ptr = 0;
+#ifdef ATL_CHANGE
+		slot[i].iif = iif;
+#endif
 	}
 
 	nm_prdis("%s: allocated %d buffers, %d available, first at %d", p->name, n, p->objfree, pos);
@@ -2020,7 +2028,12 @@ netmap_mem2_rings_create(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 				/* this is a real ring */
 				if (netmap_debug & NM_DEBUG_MEM)
 					nm_prinf("allocating buffers for %s", kring->name);
+#ifdef ATL_CHANGE
+				if (netmap_new_bufs(na->nm_mem, ring->slot, ndesc,
+						na->ifp ? na->ifp->ifindex : 0)) {
+#else
 				if (netmap_new_bufs(nmd, ring->slot, ndesc)) {
+#endif
 					nm_prerr("Cannot allocate buffers for %s_ring", nm_txrx2str(t));
 					goto cleanup;
 				}
