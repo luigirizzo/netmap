@@ -36,6 +36,9 @@
 #include <linux/rtnetlink.h>
 #include <linux/nsproxy.h>
 #include <linux/ip.h>
+#ifdef ATL_CHANGE
+#include <uapi/linux/if_arp.h>
+#endif
 #include <net/pkt_sched.h>
 #include <net/sch_generic.h>
 #include <net/sock.h>
@@ -539,6 +542,18 @@ enum {
 	NM_RX_HANDLER_PASS,
 };
 
+#ifdef ATL_CHANGE
+static void
+update_eth_hdr(struct ifnet *ifp, struct mbuf *m)
+{
+	struct ethhdr *eth_hdr = NULL;
+	eth_hdr = (struct ethhdr *) m->data;
+	eth_hdr->h_proto = m->protocol;
+	ether_addr_copy(eth_hdr->h_dest, ifp->dev_addr);
+	eth_zero_addr(eth_hdr->h_source);
+}
+#endif
+
 static inline int
 linux_generic_rx_handler_common(struct mbuf *m)
 {
@@ -557,6 +572,17 @@ linux_generic_rx_handler_common(struct mbuf *m)
 	   full ethernet header, we push it back, so that the RX ring reader
 	   can see it. */
 	skb_push(m, ETH_HLEN);
+
+#ifdef ATL_CHANGE
+	if (m->dev->type == ARPHRD_PPP ||
+		m->dev->type == ARPHRD_IPGRE ||
+		m->dev->type == ARPHRD_IP6GRE ||
+		m->dev->type == ARPHRD_TUNNEL ||
+		m->dev->type == ARPHRD_TUNNEL6)
+	{
+		update_eth_hdr(m->dev, m);
+	}
+#endif
 
 	/* Possibly steal the mbuf and notify the pollers for a new RX
 	 * packet. */
@@ -2549,6 +2575,24 @@ EXPORT_SYMBOL(nm_clear_native_flags);
 #ifndef NETMAP_LINUX_HAVE_AX25PTR
 EXPORT_SYMBOL(linux_netmap_set_ringparam);
 #endif /* NETMAP_LINUX_HAVE_AX25PTR */
+
+#ifdef ATL_CHANGE /* used by ipt_netmap */
+EXPORT_SYMBOL(nm_os_malloc);
+EXPORT_SYMBOL(nm_os_free);
+EXPORT_SYMBOL(netmap_global_lock);
+EXPORT_SYMBOL(netmap_priv_new);
+EXPORT_SYMBOL(netmap_ioctl);
+EXPORT_SYMBOL(netmap_ioctl_legacy);
+EXPORT_SYMBOL(netmap_priv_delete);
+EXPORT_SYMBOL(netmap_generic_ringsize);
+EXPORT_SYMBOL(mbq_init);
+EXPORT_SYMBOL(mbq_safe_enqueue);
+EXPORT_SYMBOL(mbq_safe_purge);
+EXPORT_SYMBOL(mbq_enqueue);
+EXPORT_SYMBOL(mbq_dequeue);
+EXPORT_SYMBOL(mbq_purge);
+EXPORT_SYMBOL(mbq_fini);
+#endif
 
 MODULE_AUTHOR("http://info.iet.unipi.it/~luigi/netmap/");
 MODULE_DESCRIPTION("The netmap packet I/O framework");
