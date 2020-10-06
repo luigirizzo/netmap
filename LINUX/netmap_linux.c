@@ -428,6 +428,12 @@ nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
 int
 nm_os_mbuf_has_csum_offld(struct mbuf *m)
 {
+#ifdef ATL_CHANGE
+	if (m->ip_summed == CHECKSUM_PARTIAL &&
+		skb_checksum_help(m) != 0) {
+		nm_prinf("Failed to calculate checksum (turn off tx checksum offload)");
+	}
+#endif
 	return m->ip_summed == CHECKSUM_PARTIAL;
 }
 
