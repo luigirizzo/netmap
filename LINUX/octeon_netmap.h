@@ -363,6 +363,9 @@ static int octeon_netmap_rxsync(struct netmap_kring *kring, int flags)
 	struct netmap_adapter *na = (struct netmap_adapter *)kring->na;
 	struct oct_nm_adapter *ona = (struct oct_nm_adapter *)na;
 	struct ifnet *ifp = na->ifp;
+#ifdef ATL_CHANGE
+	struct octeon_ethernet *priv = netdev_priv(ifp);
+#endif
 	int group = ona->base + kring->ring_id;
 	struct netmap_ring *ring = kring->ring;
 	u_int const lim = kring->nkr_num_slots - 1;
@@ -446,6 +449,14 @@ static int octeon_netmap_rxsync(struct netmap_kring *kring, int flags)
 			 */
 			addr = NMB(na, &ring->slot[nm_i]);
 			length = work->word1.len;
+#ifdef ATL_CHANGE
+			if (priv->imode == CVMX_HELPER_INTERFACE_MODE_SGMII && cvmx_helper_port_is_bcm_tagged (priv->port)) {
+				/* Copy the packet - overwrite the broadcom tag with the ethernet header*/
+				memcpy (addr + offset, cvmx_phys_to_ptr (work->packet_ptr.s.addr) + BCM_TAG_LEN, length - BCM_TAG_LEN);
+				memcpy (addr + offset, cvmx_phys_to_ptr (work->packet_ptr.s.addr), ETH_ALEN * 2);
+			}
+			else
+#endif /* ATL_CHANGE */
 			memcpy(addr + offset,
 			       cvmx_phys_to_ptr(work->packet_ptr.s.addr),
 			       length);
