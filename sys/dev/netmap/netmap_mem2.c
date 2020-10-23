@@ -2023,7 +2023,6 @@ netmap_mem2_if_new(struct netmap_mem_d *nmd,
 	len = sizeof(struct netmap_if) + (ntot * sizeof(ssize_t));
 	nifp = netmap_if_malloc(nmd, len);
 	if (nifp == NULL) {
-		NMA_UNLOCK(nmd);
 		return NULL;
 	}
 
