@@ -38,40 +38,38 @@
  */
 
 #define _GNU_SOURCE	/* for CPU_SET() */
-#include <stdio.h>
-#include <libnetmap.h>
-
-
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <ctype.h>	// isprint()
-#include <string.h>
-#include <unistd.h>	// sysconf()
-#include <sys/poll.h>
-#include <sys/ioctl.h>
-#include <signal.h>
 #include <arpa/inet.h>	/* ntohs */
-#if !defined(_WIN32) && !defined(linux)
-#include <sys/sysctl.h>	/* sysctl */
-#endif
+#include <assert.h>
+#include <ctype.h>	// isprint()
+#include <errno.h>
+#include <fcntl.h>
 #include <ifaddrs.h>	/* getifaddrs */
+#include <libnetmap.h>
+#include <math.h>
 #include <net/ethernet.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
-#include <netinet/udp.h>
 #include <netinet/ip6.h>
+#include <netinet/udp.h>
+#ifndef NO_PCAP
+#include <pcap/pcap.h>
+#endif
+#include <pthread.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/poll.h>
+#include <sys/stat.h>
+#if !defined(_WIN32) && !defined(linux)
+#include <sys/sysctl.h>	/* sysctl */
+#endif
+#include <sys/types.h>
+#include <unistd.h>	// sysconf()
 #ifdef linux
 #define IPV6_VERSION	0x60
 #define IPV6_DEFHLIM	64
-#endif
-#include <assert.h>
-#include <math.h>
-
-#include <pthread.h>
-
-#ifndef NO_PCAP
-#include <pcap/pcap.h>
 #endif
 
 #include "ctrs.h"

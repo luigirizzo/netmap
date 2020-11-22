@@ -23,22 +23,21 @@
  * SUCH DAMAGE.
  */
 /* $FreeBSD$ */
-#include <stdio.h>
-#include <string.h>
 #include <ctype.h>
-#include <stdbool.h>
+#include <errno.h>
 #include <inttypes.h>
-#include <signal.h>
-#include <syslog.h>
-#include <unistd.h>
-
 #include <libnetmap.h>
-#include <sys/poll.h>
-#include <sys/ioctl.h>
-
 #include <netinet/in.h>		/* htonl */
-
 #include <pthread.h>
+#include <signal.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <syslog.h>
+#include <sys/ioctl.h>
+#include <sys/poll.h>
+#include <unistd.h>
 
 #include "pkt_hash.h"
 #include "ctrs.h"
