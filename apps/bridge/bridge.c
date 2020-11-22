@@ -190,7 +190,7 @@ usage(void)
 int
 main(int argc, char **argv)
 {
-	char msg_a2b[128], msg_b2a[128];
+	char msg_a2b[256], msg_b2a[256];
 	struct pollfd pollfd[2];
 	u_int burst = 1024, wait_link = 4;
 	struct nmport_d *pa = NULL, *pb = NULL;
