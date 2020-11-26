@@ -87,7 +87,7 @@ popd
 
 # First build in-tree-only drivers
 echo "Building vanilla-only drivers"
-./configure --no-ext-drivers --driver-suffix=_netmap --kernel-dir=$PWD/linux-${KERNEL_VERSION} --drivers=r8169.c,virtio_net.c,forcedeth.c,veth.c,e1000,vmxnet3 --enable-ptnetmap
+./configure --no-ext-drivers --driver-suffix=_netmap --kernel-dir=$PWD/linux-${KERNEL_VERSION} --drivers=r8169.c,virtio_net.c,forcedeth.c,veth.c,mvneta.c,e1000,vmxnet3 --enable-ptnetmap
 make -j $PROC_COUNT
 
 # Then build external intel drivers
