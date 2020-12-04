@@ -504,7 +504,7 @@ SRCDIR=$SRCDIR
 ifneq (\$(KERNELRELEASE),)
 obj-m := $TESTOBJS
 else
-EXTRA_CFLAGS := -Wframe-larger-than=2000 -Wno-maybe-uninitialized -Wno-unused-variable -Wno-unused-label -Werror \$(addprefix -Wno-error=,$REC_DISABLED_WARNINGS)
+EXTRA_CFLAGS := -Wframe-larger-than=2000 -Werror \$(addprefix -Wno-error=,$REC_DISABLED_WARNINGS)
 S_DRIVERS := $(drv print)
 E_DRIVERS := $(edrv print)
 I_DRIVERS := $(idrv print)
@@ -982,7 +982,7 @@ EOF
 
   add_test true broken_buildsystem < /dev/null
 
-DISABLED_WARNINGS="unused-but-set-variable attributes packed-not-aligned stringop-truncation missing-attributes"
+DISABLED_WARNINGS="unused-but-set-variable attributes packed-not-aligned stringop-truncation missing-attributes maybe-uninitialized unused-variable unused-label"
 REC_DISABLED_WARNINGS=
 disable_warning() {
 	REC_DISABLED_WARNINGS="$1 $REC_DISABLED_WARNINGS"
