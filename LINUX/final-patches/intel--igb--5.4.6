@@ -1,0 +1,138 @@
+diff --git a/igb/Makefile b/igb/Makefile
+index 811a634..2559d39 100644
+--- a/igb/Makefile
++++ b/igb/Makefile
+@@ -7,9 +7,9 @@ ifneq ($(KERNELRELEASE),)
+ # Makefile for the Intel(R) Gigabit Ethernet Linux Driver
+ #
+ 
+-obj-$(CONFIG_IGB) += igb.o
++obj-$(CONFIG_IGB) += igb$(NETMAP_DRIVER_SUFFIX).o
+ 
+-define igb-y
++define igb$(NETMAP_DRIVER_SUFFIX)-y
+ 	igb_main.o
+ 	e1000_api.o
+ 	igb_ethtool.o
+@@ -25,19 +25,19 @@ define igb-y
+ 	e1000_82575.o
+ 	e1000_i210.o
+ endef
+-igb-y := $(strip ${igb-y})
++igb$(NETMAP_DRIVER_SUFFIX)-y := $(strip ${igb$(NETMAP_DRIVER_SUFFIX)-y})
+ 
+-igb-${CONFIG_DEBUG_FS} += igb_debugfs.o
++igb$(NETMAP_DRIVER_SUFFIX)-${CONFIG_DEBUG_FS} += igb_debugfs.o
+ 
+-igb-$(CONFIG_PTP_1588_CLOCK:m=y) += igb_ptp.o
++igb$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_PTP_1588_CLOCK:m=y) += igb_ptp.o
+ 
+ 
+-igb-y += kcompat.o
++igb$(NETMAP_DRIVER_SUFFIX)-y += kcompat.o
+ 
+ else	# ifneq($(KERNELRELEASE),)
+ # normal makefile
+ 
+-DRIVER := igb
++DRIVER := igb$(NETMAP_DRIVER_SUFFIX)
+ 
+ ifeq (,$(wildcard common.mk))
+   $(error Cannot find common.mk build rules)
+@@ -106,9 +106,12 @@ ccc: clean
+ 	@+$(call devkernelbuild,modules,coccicheck MODE=report))
+ 
+ # Build manfiles
+-manfile:
++manfile: ../$(DRIVER).$(MANSECTION)
+ 	@gzip -c ../${DRIVER}.${MANSECTION} > ${DRIVER}.${MANSECTION}.gz
+ 
++../$(DRIVER).$(MANSECTION):
++	@touch $@
++
+ # Clean the module subdirectories
+ clean:
+ 	@+$(call devkernelbuild,clean)
+diff --git a/igb/igb_main.c b/igb/igb_main.c
+index 1517b38..c87d686 100644
+--- a/igb/igb_main.c
++++ b/igb/igb_main.c
+@@ -241,6 +241,10 @@ static struct pci_error_handlers igb_err_handler = {
+ static void igb_init_fw(struct igb_adapter *adapter);
+ static void igb_init_dmac(struct igb_adapter *adapter, u32 pba);
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#include <if_igb_netmap.h>
++#endif
++
+ static struct pci_driver igb_driver = {
+ 	.name     = igb_driver_name,
+ 	.id_table = igb_pci_tbl,
+@@ -3209,6 +3213,10 @@ static int igb_probe(struct pci_dev *pdev,
+ 	/* carrier off reporting is important to ethtool even BEFORE open */
+ 	netif_carrier_off(netdev);
+ 
++#ifdef DEV_NETMAP
++	igb_netmap_attach(adapter);
++#endif /* DEV_NETMAP */
++
+ #ifdef IGB_DCA
+ 	if (dca_add_requester(&pdev->dev) == E1000_SUCCESS) {
+ 		adapter->flags |= IGB_FLAG_DCA_ENABLED;
+@@ -3414,6 +3422,10 @@ static void igb_remove(struct pci_dev *pdev)
+ 	 */
+ 	igb_release_hw_control(adapter);
+ 
++#ifdef DEV_NETMAP
++	netmap_detach(netdev);
++#endif /* DEV_NETMAP */
++
+ 	unregister_netdev(netdev);
+ 
+ 	igb_clear_interrupt_scheme(adapter);
+@@ -3826,6 +3838,9 @@ void igb_configure_tx_ring(struct igb_adapter *adapter,
+ 
+ 	txdctl |= E1000_TXDCTL_QUEUE_ENABLE;
+ 	E1000_WRITE_REG(hw, E1000_TXDCTL(reg_idx), txdctl);
++#ifdef DEV_NETMAP
++	igb_netmap_configure_tx_ring(adapter, reg_idx);
++#endif /* DEV_NETMAP */
+ }
+ 
+ /**
+@@ -7511,6 +7526,11 @@ static bool igb_clean_tx_irq(struct igb_q_vector *q_vector)
+ 	if (test_bit(__IGB_DOWN, &adapter->state))
+ 		return true;
+ 
++#ifdef DEV_NETMAP
++        if (netmap_tx_irq(tx_ring->netdev, tx_ring->queue_index))
++                return true; /* cleaned ok */
++#endif /* DEV_NETMAP */
++
+ 	tx_buffer = &tx_ring->tx_buffer_info[i];
+ 	tx_desc = IGB_TX_DESC(tx_ring, i);
+ 	i -= tx_ring->count;
+@@ -8527,6 +8547,11 @@ static bool igb_clean_rx_irq(struct igb_q_vector *q_vector, int budget)
+ 	unsigned int total_bytes = 0, total_packets = 0;
+ 	u16 cleaned_count = igb_desc_unused(rx_ring);
+ 
++#ifdef DEV_NETMAP
++	if (netmap_rx_irq(rx_ring->netdev, rx_ring->queue_index, &total_packets))
++		return true;
++#endif /* DEV_NETMAP */
++
+ 	do {
+ 		struct igb_rx_buffer *rx_buffer;
+ 		union e1000_adv_rx_desc *rx_desc;
+@@ -8846,6 +8871,11 @@ void igb_alloc_rx_buffers(struct igb_ring *rx_ring, u16 cleaned_count)
+ 	struct igb_rx_buffer *bi;
+ 	u16 i = rx_ring->next_to_use;
+ 
++#ifdef DEV_NETMAP
++	if (igb_netmap_configure_rx_ring(rx_ring))
++		return;
++#endif /* DEV_NETMAP */
++
+ 	/* nothing to do */
+ 	if (!cleaned_count)
+ 		return;
