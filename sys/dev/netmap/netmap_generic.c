@@ -106,7 +106,7 @@ __FBSDID("$FreeBSD: head/sys/dev/netmap/netmap_generic.c 274353 2014-11-10 20:19
 static inline struct mbuf *
 nm_os_get_mbuf(struct ifnet *ifp, int len)
 {
-	return alloc_skb(ifp->needed_headroom + len +
+	return alloc_skb(LL_RESERVED_SPACE(ifp) + len +
 			 ifp->needed_tailroom, GFP_ATOMIC);
 }
 

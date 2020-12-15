@@ -964,7 +964,7 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	netdev_tx_t ret;
 	uint16_t ethertype;
 
-	/* We know that the driver needs to prepend ifp->needed_headroom bytes
+	/* We know that the driver needs to prepend LL_RESERVED_SPACE(ifp) bytes
 	 * to each packet to be transmitted. We then reset the mbuf pointers
 	 * to the correct initial state:
 	 *    ___________________________________________
@@ -974,10 +974,10 @@ nm_os_generic_xmit_frame(struct nm_os_gen_arg *a)
 	 *               tail
 	 *
 	 * which correspond to an empty buffer with exactly
-	 * ifp->needed_headroom bytes between head and data.
+	 * LL_RESERVED_SPACE(ifp) bytes between head and data.
 	 */
 	m->len = 0;
-	m->data = m->head + ifp->needed_headroom;
+	m->data = m->head + LL_RESERVED_SPACE(ifp);
 	skb_reset_tail_pointer(m);
 	skb_reset_mac_header(m);
 
@@ -2726,8 +2726,10 @@ nm_os_vi_persist(const char *name, struct ifnet **ret)
 		error = ENOMEM;
 		goto err_put;
 	}
-	dev_net_set(ifp, &init_net);
+#ifdef CONFIG_NET_NS
+	dev_net_set(ifp, current->nsproxy->net_ns);
 	ifp->features |= NETIF_F_NETNS_LOCAL; /* just for safety */
+#endif
 	ifp->dev.driver = &linux_dummy_drv;
 	error = register_netdev(ifp);
 	if (error < 0) {

@@ -38,40 +38,38 @@
  */
 
 #define _GNU_SOURCE	/* for CPU_SET() */
-#include <stdio.h>
-#include <libnetmap.h>
-
-
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <ctype.h>	// isprint()
-#include <string.h>
-#include <unistd.h>	// sysconf()
-#include <sys/poll.h>
-#include <sys/ioctl.h>
-#include <signal.h>
 #include <arpa/inet.h>	/* ntohs */
-#if !defined(_WIN32) && !defined(linux)
-#include <sys/sysctl.h>	/* sysctl */
-#endif
+#include <assert.h>
+#include <ctype.h>	// isprint()
+#include <errno.h>
+#include <fcntl.h>
 #include <ifaddrs.h>	/* getifaddrs */
+#include <libnetmap.h>
+#include <math.h>
 #include <net/ethernet.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
-#include <netinet/udp.h>
 #include <netinet/ip6.h>
+#include <netinet/udp.h>
+#ifndef NO_PCAP
+#include <pcap/pcap.h>
+#endif
+#include <pthread.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/poll.h>
+#include <sys/stat.h>
+#if !defined(_WIN32) && !defined(linux)
+#include <sys/sysctl.h>	/* sysctl */
+#endif
+#include <sys/types.h>
+#include <unistd.h>	// sysconf()
 #ifdef linux
 #define IPV6_VERSION	0x60
 #define IPV6_DEFHLIM	64
-#endif
-#include <assert.h>
-#include <math.h>
-
-#include <pthread.h>
-
-#ifndef NO_PCAP
-#include <pcap/pcap.h>
 #endif
 
 #include "ctrs.h"
@@ -184,14 +182,14 @@ static inline void CPU_SET(uint32_t i, cpuset_t *p)
 	do {struct timespec t0 = {0,0}; *(b) = t0; } while (0)
 #endif  /* __APPLE__ */
 
-const char *default_payload="netmap pkt-gen DIRECT payload\n"
+static const char *default_payload = "netmap pkt-gen DIRECT payload\n"
 	"http://info.iet.unipi.it/~luigi/netmap/ ";
 
-const char *indirect_payload="netmap pkt-gen indirect payload\n"
+static const char *indirect_payload = "netmap pkt-gen indirect payload\n"
 	"http://info.iet.unipi.it/~luigi/netmap/ ";
 
-int verbose = 0;
-int normalize = 1;
+static int verbose = 0;
+static int normalize = 1;
 
 #define VIRT_HDR_1	10	/* length of a base vnet-hdr */
 #define VIRT_HDR_2	12	/* length of the extenede vnet-hdr */
@@ -223,7 +221,7 @@ struct pkt {
     ((af) == AF_INET ? (p)->ipv4.f: (p)->ipv6.f)
 
 struct ip_range {
-	char *name;
+	const char *name;
 	union {
 		struct {
 			uint32_t start, end; /* same as struct in_addr */
@@ -237,7 +235,7 @@ struct ip_range {
 };
 
 struct mac_range {
-	char *name;
+	const char *name;
 	struct ether_addr start, end;
 };
 
@@ -281,7 +279,7 @@ struct glob_arg {
 #define OPT_TS		16	/* add a timestamp */
 #define OPT_INDIRECT	32	/* use indirect buffers, tx only */
 #define OPT_DUMP	64	/* dump rx/tx traffic */
-#define OPT_RUBBISH	256	/* send wathever the buffers contain */
+#define OPT_RUBBISH	256	/* send whatever the buffers contain */
 #define OPT_RANDOM_SRC  512
 #define OPT_RANDOM_DST  1024
 #define OPT_PPS_STATS   2048
@@ -302,7 +300,7 @@ struct glob_arg {
 	int td_type;
 	void *mmap_addr;
 	char ifname[MAX_IFNAMELEN];
-	char *nmr_config;
+	const char *nmr_config;
 	int dummy_send;
 	int virt_header;	/* send also the virt_header */
 	char *packet_file;	/* -P option */
@@ -655,7 +653,7 @@ system_ncpus(void)
  * If there is no 4th number, then the 3rd is assigned to both #tx-rings
  * and #rx-rings.
  */
-int
+static int
 parse_nmr_config(const char* conf, struct nmreq_register *nmr)
 {
 	char *w, *tok;
@@ -760,7 +758,7 @@ checksum(const void *data, uint16_t len, uint32_t sum)
 
 	/* Checksum all the pairs of bytes first... */
 	for (i = 0; i < (len & ~1U); i += 2) {
-		sum += (u_int16_t)ntohs(*((u_int16_t *)(addr + i)));
+		sum += (uint16_t)ntohs(*((const uint16_t *)(addr + i)));
 		if (sum > 0xFFFF)
 			sum -= 0xFFFF;
 	}
@@ -1280,7 +1278,7 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 /*
  * Index of the highest bit set
  */
-uint32_t
+static uint32_t
 msb64(uint64_t x)
 {
 	uint64_t m = 1ULL << 63;
@@ -2509,7 +2507,7 @@ usage(int errcode)
 "             for client-side ping-pong operation, and pong for server-side ping-pong operation.\n"
 "\n"
 "     -n count\n"
-"             Number of iterations of the pkt-gen function, with 0 meaning infinite).  In case of tx or rx,\n"
+"             Number of iterations of the pkt-gen function (with 0 meaning infinite).  In case of tx or rx,\n"
 "             count is the number of packets to receive or transmit.  In case of ping or pong, count is the\n"
 "             number of ping-pong transactions.\n"
 "\n"
@@ -2546,20 +2544,20 @@ usage(int errcode)
 "     -p threads\n"
 "             Number of threads to use.  By default, only a single thread is used to handle all the netmap\n"
 "             rings.  If threads is larger than one, each thread handles a single TX ring (in tx mode), a\n"
-"             single RX ring (in rx mode), or a TX/RX ring couple.  The number of threads must be less or\n"
-"             equal than the number of TX (or RX) ring available in the device specified by interface.\n"
+"             single RX ring (in rx mode), or a TX/RX ring pair.  The number of threads must be less than or\n"
+"             equal to the number of TX (or RX) rings available in the device specified by interface.\n"
 "\n"
 "     -T report_ms\n"
 "             Number of milliseconds between reports.\n"
 "\n"
 "     -w wait_for_link_time\n"
-"             Number of seconds to wait before starting the pkt-gen function, useuful to make sure that the\n"
+"             Number of seconds to wait before starting the pkt-gen function, useful to make sure that the\n"
 "             network link is up.  A network device driver may take some time to enter netmap mode, or to\n"
 "             create a new transmit/receive ring pair when netmap(4) requests one.\n"
 "\n"
 "     -R rate\n"
 "             Packet transmission rate.  Not setting the packet transmission rate tells pkt-gen to transmit\n"
-"             packets as quickly as possible.  On servers from 2010 on-wards netmap(4) is able to com-\n"
+"             packets as quickly as possible.  On servers from 2010 onward netmap(4) is able to com-\n"
 "             pletely use all of the bandwidth of a 10 or 40Gbps link, so this option should be used unless\n"
 "             your intention is to saturate the link.\n"
 "\n"
@@ -2605,7 +2603,7 @@ usage(int errcode)
 "\n"
 "     -C tx_slots[,rx_slots[,tx_rings[,rx_rings]]]\n"
 "             Configuration in terms of number of rings and slots to be used when opening the netmap port.\n"
-"             Such configuration has effect on software ports created on the fly, such as VALE ports and\n"
+"             Such configuration has an effect on software ports created on the fly, such as VALE ports and\n"
 "             netmap pipes.  The configuration may consist of 1 to 4 numbers separated by commas: tx_slots,\n"
 "             rx_slots, tx_rings, rx_rings.  Missing numbers or zeroes stand for default values.  As an\n"
 "             additional convenience, if exactly one number is specified, then this is assigned to both\n"
@@ -2621,7 +2619,7 @@ usage(int errcode)
 "				OPT_INDIRECT	32 (use indirect buffers)\n"
 "				OPT_DUMP	64 (dump rx/tx traffic)\n"
 "				OPT_RUBBISH	256\n"
-"					(send wathever the buffers contain)\n"
+"					(send whatever the buffers contain)\n"
 "				OPT_RANDOM_SRC  512\n"
 "				OPT_RANDOM_DST  1024\n"
 "				OPT_PPS_STATS   2048\n"
@@ -2857,7 +2855,7 @@ main_thread(struct glob_arg *g)
 
 struct td_desc {
 	int ty;
-	char *key;
+	const char *key;
 	void *f;
 	int default_burst;
 };
@@ -2877,7 +2875,7 @@ tap_alloc(char *dev)
 {
 	struct ifreq ifr;
 	int fd, err;
-	char *clonedev = TAP_CLONEDEV;
+	const char *clonedev = TAP_CLONEDEV;
 
 	(void)err;
 	(void)dev;

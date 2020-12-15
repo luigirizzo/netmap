@@ -56,7 +56,7 @@ struct nmem_d;
  *  netmap 		(no id allowed)
  *  			the standard subsystem
  *
- *  vale 		(followed by a possibily empty id)
+ *  vale 		(followed by a possibly empty id)
  *  			the vpname is connected to a VALE switch identified by
  *  			the id (an empty id selects the default switch)
  *
@@ -126,7 +126,7 @@ struct nmem_d;
  *  			slots		number of slots in each tx and rx
  *  					ring
  *  			tx-slots	number of slots in each tx ring
- *  			rx-slots	numner of slots in each rx ring
+ *  			rx-slots	number of slots in each rx ring
  *
  *  			(more specific keys override the less specific ones)
  *			All keys default to zero if not assigned, and the
@@ -210,7 +210,7 @@ struct nmport_d {
 /* nmport_open - opens a port from a portspec
  * @portspec	the port opening specification
  *
- * If successfull, the function returns a new nmport_d describing a netmap
+ * If successful, the function returns a new nmport_d describing a netmap
  * port, opened according to the port specification, ready to be used for rx
  * and/or tx.
  *
@@ -298,7 +298,7 @@ int nmport_register(struct nmport_d *);
 /* nmport_mmap - maps the port resources into the process memory
  * @d		the nmport to be mapped
  *
- * The port must have been previosly been registered using nmport_register.
+ * The port must have been previously been registered using nmport_register.
  *
  * Note that if extmem is used (either via an option or by calling an
  * nmport_extmem_* function before nmport_register()), no new mmap() is issued.
@@ -464,7 +464,7 @@ int nmport_offset(struct nmport_d *d, uint64_t initial, uint64_t maxoff,
  * If the option is unknown, nmport_disable_option is a NOP, while
  * nmport_enable_option returns -1 and sets errno to EOPNOTSUPP.
  *
- * These functions are not threadsafe and are ment to be used at the beginning
+ * These functions are not threadsafe and are meant to be used at the beginning
  * of the program.
  */
 void nmport_disable_option(const char *opt);
@@ -503,7 +503,7 @@ void nmreq_header_init(struct nmreq_header *hdr, uint16_t reqtype, void *body);
 int nmreq_header_decode(const char **ppspec, struct nmreq_header *hdr,
 		struct nmctx *ctx);
 
-/* nmreq_regiter_decode - inizialize an nmreq_register
+/* nmreq_regiter_decode - initialize an nmreq_register
  * @pmode:	(in/out) pointer to a pointer to an opening mode
  * @reg:	pointer to the nmreq_register to be initialized
  * @ctx:	pointer to the nmctx to use (for errors)
@@ -533,7 +533,7 @@ int nmreq_register_decode(const char **pmode, struct nmreq_register *reg,
  *
  * This function parses each option in @opt. Each option is matched (based on
  * the "option" prefix) to a corresponding parser in @parsers. The function
- * checks that the syntax is appropriate for the parser and it assignes all the
+ * checks that the syntax is appropriate for the parser and it assigns all the
  * keys mentioned in the option. It then passes control to the parser, to
  * interpret the keys values.
  *
@@ -594,7 +594,7 @@ struct nmreq_parse_ctx {
  * @portname	pointer to a pointer to the portname
  * @ctx		pointer to the nmctx to use (for errors)
  *
- * *@portname must point to a substem:vpname porname, possibily followed by
+ * *@portname must point to a substem:vpname porname, possibly followed by
  * something else.
  *
  * If successful, returns the mem_id of *@portname and moves @portname past the
@@ -610,9 +610,9 @@ struct nmreq_option *nmreq_find_option(struct nmreq_header *, uint32_t);
 void nmreq_free_options(struct nmreq_header *);
 const char* nmreq_option_name(uint32_t);
 #define nmreq_foreach_option(h_, o_) \
-	for ((o_) = (struct nmreq_option *)((h_)->nr_options);\
+	for ((o_) = (struct nmreq_option *)((uintptr_t)((h_)->nr_options));\
 	     (o_) != NULL;\
-	     (o_) = (struct nmreq_option *)((o_)->nro_next))
+	     (o_) = (struct nmreq_option *)((uintptr_t)((o_)->nro_next)))
 
 /* nmctx manipulation */
 
@@ -622,10 +622,10 @@ const char* nmreq_option_name(uint32_t);
  *   ports that are using the same region (as identified by the mem_id) will
  *   point to the same nmem_d instance.
  *
- * - allow the user to specifiy how to lock accesses to the above list, if
+ * - allow the user to specify how to lock accesses to the above list, if
  *   needed (lock() callback)
  *
- * - allow the user to specifiy how error messages should be delivered (error()
+ * - allow the user to specify how error messages should be delivered (error()
  *   callback)
  *
  * - select the verbosity of the library (verbose field); if verbose==0, no
@@ -664,7 +664,7 @@ struct nmctx *nmctx_set_default(struct nmctx *ctx);
 
 /* struct nmem_d - describes a memory region currently used */
 struct nmem_d {
-	uint16_t mem_id;	/* the region netmap identifer */
+	uint16_t mem_id;	/* the region netmap identifier */
 	int refcount;		/* how many nmport_d's point here */
 	void *mem;		/* memory region base address */
 	size_t size;		/* memory region size */
@@ -697,7 +697,7 @@ static  __attribute__((used)) void libnetmap_init(void)
 
 /* nmctx_set_threadsafe - install a threadsafe default context
  *
- * called by the contructor in nmctx-pthread.o to initialize a lock and install
+ * called by the constructor in nmctx-pthread.o to initialize a lock and install
  * the lock() callback in the default context.
  */
 void nmctx_set_threadsafe(void);

@@ -78,9 +78,11 @@ endef
 e1000e@cflags := -fno-pie
 igb@cflags := -DDISABLE_PACKET_SPLIT -fno-pie
 ixgbe@cflags := @REC_DISABLED_WARNINGS@
-igb@prepare := $(if $(filter $(igb@v),5.3.5.61),@SRCDIR@/intel-fix.sh igb,)
+igb@prepare := $(if $(filter $(igb@v),5.3.5.61 5.3.6),@SRCDIR@/intel-fix.sh igb,)
 e1000e@prepare := $(if $(filter $(e1000e@v),3.8.4),@SRCDIR@/intel-fix.sh e1000e,)
-ixgbevf@prepare := $(if $(filter $(ixgbevf@v),4.7.1),@SRCDIR@/intel-fix.sh ixgbevf,)
+ixgbevf@prepare := $(if $(filter $(ixgbevf@v),4.7.1 4.8.1),@SRCDIR@/intel-fix.sh ixgbevf,)
+ixgbe@prepare := $(if $(filter $(ixgbe@v),5.8.1),@SRCDIR@/intel-fix.sh ixgbe,)
+i40e@prepare := $(if $(filter $(i40e@v),2.12.6),@SRCDIR@/intel-fix.sh i40e,)
 
 # set all the default versions (can be overrided by --select-version=)
 $(eval $(call default,ixgbe,5.3.8))
@@ -105,7 +107,7 @@ $(1)@distclean  := rm -rf mlnx-en-$($(1)@pv) mlnx-en-$(2)
 $(1)@force	:= 1
 endef
 
-$(eval $(call default,mlx5,4.5-1.0.1.0))
+$(eval $(call default,mlx5,5.0-1.0.0.0))
 mlx5@pv		= $(firstword $(subst -, ,$(mlx5@v)))
 mlx5@conf	= CONFIG_MLX5_CORE_EN
 

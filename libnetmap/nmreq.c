@@ -1,3 +1,32 @@
+/*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
+ * Copyright (C) 2018 Universita` di Pisa
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ *   1. Redistributions of source code must retain the above copyright
+ *      notice, this list of conditions and the following disclaimer.
+ *   2. Redistributions in binary form must reproduce the above copyright
+ *      notice, this list of conditions and the following disclaimer in the
+ *      documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ */
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
@@ -589,13 +618,13 @@ nmreq_find_option(struct nmreq_header *h, uint32_t t)
 void
 nmreq_remove_option(struct nmreq_header *h, struct nmreq_option *o)
 {
-	uintptr_t *scan;
+	struct nmreq_option **nmo;
 
-	for (scan = &h->nr_options; *scan;
-			scan = &((struct nmreq_option *)*scan)->nro_next) {
-		if (*scan == (uintptr_t)o) {
-			*scan = o->nro_next;
-			o->nro_next = 0;
+	for (nmo = (struct nmreq_option **)&h->nr_options; *nmo != NULL;
+	    nmo = (struct nmreq_option **)&(*nmo)->nro_next) {
+		if (*nmo == o) {
+			*((uint64_t *)(*nmo)) = o->nro_next;
+			o->nro_next = (uint64_t)(uintptr_t)NULL;
 			break;
 		}
 	}
