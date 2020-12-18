@@ -378,7 +378,7 @@ function build-prep()
 	(
 		cd $dst
 		last=compiler-gcc.h
-		for i in $(seq 9); do
+		for i in $(seq 10); do
 			[ -e include/linux/compiler-gcc$i.h ] ||
 				ln -s $last include/linux/compiler-gcc$i.h
 			last=compiler-gcc$i.h
@@ -391,6 +391,9 @@ KBUILD_CFLAGS += $(call cc-option, -no-pie)\
 KBUILD_CFLAGS += $(call cc-option, -fcf-protection=none)\
 KBUILD_AFLAGS += $(call cc-option, -fno-pie)\
 KBUILD_CPPFLAGS += $(call cc-option, -fno-pie)' Makefile
+		# remove duplicated yylloc definition, since gcc-10 defaults to -fno-common
+		sed -i -e '/^[[:blank:]]*YYLTYPE[[:blank:]][[:blank:]]*yylloc;[[:blank:]]*$/d' \
+			scripts/dtc/dtc-lexer*
 		if [ -f $LINUX_CONFIGS/config-$version ]; then
 			cp $LINUX_CONFIGS/config-$version .config
 			yes '' | make oldconfig
