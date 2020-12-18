@@ -394,6 +394,9 @@ KBUILD_CPPFLAGS += $(call cc-option, -fno-pie)' Makefile
 		# remove duplicated yylloc definition, since gcc-10 defaults to -fno-common
 		sed -i -e '/^[[:blank:]]*YYLTYPE[[:blank:]][[:blank:]]*yylloc;[[:blank:]]*$/d' \
 			scripts/dtc/dtc-lexer*
+		# make sure per_cpu_load_addr is static
+		sed -i -e 's/^[[:blank:]]*Elf_Addr[[:blank:]][[:blank:]]*per_cpu_load_addr;/static &/' \
+			arch/x86/tools/relocs.c
 		if [ -f $LINUX_CONFIGS/config-$version ]; then
 			cp $LINUX_CONFIGS/config-$version .config
 			yes '' | make oldconfig
