@@ -675,7 +675,7 @@ static unsigned int nmring_tg4(struct sk_buff *skb,
 		return NF_DROP;
 	}
 
-	if (skb_dst(skb)) {
+	if (skb_dst(skb) && skb_dst(skb)->dev) {
 #if LINUX_VERSION_CODE <= KERNEL_VERSION(5,0,0)
 		mtu = ip_skb_dst_mtu(skb);
 #else
