@@ -209,13 +209,14 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			uint64_t paddr;
-			void *addr = PNMB(na, slot, &paddr);
+			uint64_t offset = nm_get_offset(kring, slot);
 
 			/* device-specific */
 			struct e1000_tx_desc *curr = E1000_TX_DESC(*txr, nic_i);
 			int hw_flags = E1000_TXD_CMD_IFCS;
 
-			NM_CHECK_ADDR_LEN(na, addr, len);
+			PNMB(na, slot, &paddr);
+			NM_CHECK_ADDR_LEN_OFF(na, len, offset);
 
 			if (!(slot->flags & NS_MOREFRAG)) {
 				hw_flags |= adapter->txd_cmd;
@@ -223,15 +224,13 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 				 * We may set it only if NS_REPORT is set or
 				 * at least once every half ring. */
 			}
-			if (slot->flags & NS_BUF_CHANGED) {
-				curr->buffer_addr = htole64(paddr);
-			}
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED | NS_MOREFRAG);
+			netmap_sync_map_dev(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
 
 			/* Fill the slot in the NIC ring. */
+			curr->buffer_addr = htole64(paddr + offset);
 			curr->upper.data = 0;
 			curr->lower.data = htole32(len | hw_flags);
-			netmap_sync_map_dev(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
@@ -266,7 +265,7 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 		for ( ; tosync != nm_i; tosync = nm_next(tosync, lim)) {
 			struct netmap_slot *slot = &ring->slot[tosync];
 			uint64_t paddr;
-			(void)PNMB(na, slot, &paddr);
+			(void)PNMB_O(kring, slot, &paddr);
 
 			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev,
 					&paddr, slot->len, NR_TX);
@@ -326,7 +325,7 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 			if ((staterr & E1000_RXD_STAT_DD) == 0)
 				break;
 			dma_rmb();  /* read descriptor after status DD */
-			PNMB(na, slot, &paddr);
+			PNMB_O(kring, slot, &paddr);
 			slot->len = le16toh(curr->NM_E1R_RX_LENGTH) - strip_crc;
 			slot->flags = (!(staterr & E1000_RXD_STAT_EOP) ? NS_MOREFRAG : 0);
 			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev, &paddr,
@@ -474,7 +473,7 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 
 	na.ifp = adapter->netdev;
 	na.pdev = &adapter->pdev->dev;
-	na.na_flags = NAF_MOREFRAG;
+	na.na_flags = NAF_MOREFRAG | NAF_OFFSETS;
 	na.num_tx_desc = adapter->tx_ring->count;
 	na.num_rx_desc = adapter->rx_ring->count;
 	na.num_tx_rings = na.num_rx_rings = 1;
