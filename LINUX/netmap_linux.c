@@ -192,7 +192,11 @@ nm_os_extmem_delete(struct nm_os_extmem *e)
 	for (i = 0; i < e->nr_pages; i++) {
 		if (i < e->mapped)
 			kunmap(e->pages[i]);
+#ifdef NETMAP_LINUX_HAVE_PIN_PAGES
+		unpin_user_page(e->pages[i]);
+#else
 		put_page(e->pages[i]);
+#endif
 	}
 	if (e->pages)
 		nm_os_vfree(e->pages);
@@ -258,7 +262,13 @@ nm_os_extmem_create(unsigned long p, struct nmreq_pools_info *pi, int *perror)
 
 	e->pages = pages;
 
-#ifdef NETMAP_LINUX_HAVE_GUP_4ARGS
+#ifdef NETMAP_LINUX_HAVE_PIN_PAGES
+	res = pin_user_pages_unlocked(
+			p,
+			nr_pages,
+			pages,
+			FOLL_WRITE | FOLL_SPLIT | FOLL_POPULATE);
+#elif NETMAP_LINUX_HAVE_GUP_4ARGS
 	res = get_user_pages_unlocked(
 			p,
 			nr_pages,
