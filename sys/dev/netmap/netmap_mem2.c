@@ -1668,10 +1668,16 @@ error:
  */
 static void *
 _netmap_mem_private_new(size_t size, struct netmap_obj_params *p,
-		struct netmap_mem_ops *ops, int *perr)
+		struct netmap_mem_ops *ops, uint64_t memtotal, int *perr)
 {
 	struct netmap_mem_d *d = NULL;
 	int i, err = 0;
+	int checksz = 0;
+
+	/* if memtotal is !=0 we check that the request fits the available
+	 * memory. Moreover, any surprlus memory is assigned to buffers.
+	 */
+	checksz = (memtotal > 0);
 
 	d = nm_os_malloc(size);
 	if (d == NULL) {
@@ -1691,8 +1697,29 @@ _netmap_mem_private_new(size_t size, struct netmap_obj_params *p,
 		snprintf(d->pools[i].name, NETMAP_POOL_MAX_NAMSZ,
 				nm_blueprint.pools[i].name,
 				d->name);
+		if (checksz) {
+			uint64_t poolsz = p[i].num * p[i].size;
+			if (memtotal < poolsz) {
+				nm_prerr("%s: request too large", d->pools[i].name);
+				err = ENOMEM;
+				goto error;
+			}
+			memtotal -= poolsz;
+		}
 		d->params[i].num = p[i].num;
 		d->params[i].size = p[i].size;
+	}
+	if (checksz && memtotal > 0) {
+		uint64_t sz = d->params[NETMAP_BUF_POOL].size;
+		uint64_t n = (memtotal + sz - 1) / sz;
+
+		if (n) {
+			if (netmap_verbose) {
+				nm_prinf("%s: adding %llu more buffers",
+						d->pools[NETMAP_BUF_POOL].name, n);
+			}
+			d->params[NETMAP_BUF_POOL].num += n;
+		}
 	}
 
 	NMA_LOCK_INIT(d);
@@ -1769,7 +1796,7 @@ netmap_mem_private_new(u_int txr, u_int txd, u_int rxr, u_int rxd,
 			p[NETMAP_BUF_POOL].num,
 			p[NETMAP_BUF_POOL].size);
 
-	d = _netmap_mem_private_new(sizeof(*d), p, &netmap_mem_global_ops, perr);
+	d = _netmap_mem_private_new(sizeof(*d), p, &netmap_mem_global_ops, 0, perr);
 
 	return d;
 }
@@ -2280,6 +2307,7 @@ netmap_mem_ext_create(uint64_t usrptr, struct nmreq_pools_info *pi, int *perror)
 				{ pi->nr_ring_pool_objsize, pi->nr_ring_pool_objtotal },
 				{ pi->nr_buf_pool_objsize, pi->nr_buf_pool_objtotal }},
 			&netmap_mem_ext_ops,
+			pi->nr_memsize,
 			&error);
 	if (nme == NULL)
 		goto out_unmap;
