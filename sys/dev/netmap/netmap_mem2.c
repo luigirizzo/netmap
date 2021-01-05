@@ -1640,6 +1640,7 @@ netmap_mem_finalize_all(struct netmap_mem_d *nmd)
 			goto error;
 		nmd->nm_totalsize += nmd->pools[i].memtotal;
 	}
+	nmd->nm_totalsize = (nmd->nm_totalsize + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 	nmd->lasterr = netmap_mem_init_bitmaps(nmd);
 	if (nmd->lasterr)
 		goto error;
