@@ -172,7 +172,6 @@ int netmap_mem_pools_info_get(struct nmreq_pools_info *,
 
 #define NETMAP_MEM_PRIVATE	0x2	/* allocator uses private address space */
 #define NETMAP_MEM_IO		0x4	/* the underlying memory is mmapped I/O */
-#define NETMAP_MEM_EXT		0x10	/* external memory (not remappable) */
 
 uint32_t netmap_extra_alloc(struct netmap_adapter *, uint32_t *, uint32_t n);
 
