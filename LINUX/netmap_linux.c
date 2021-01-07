@@ -1251,7 +1251,7 @@ linux_netmap_fault(struct vm_fault *vmf)
 	struct netmap_priv_d *priv = vma->vm_private_data;
 	struct netmap_adapter *na = priv->np_na;
 	struct page *page;
-	unsigned long off = (vma->vm_pgoff + vmf->pgoff) << PAGE_SHIFT;
+	unsigned long off = vmf->pgoff << PAGE_SHIFT;
 	unsigned long pa, pfn;
 
 	pa = netmap_mem_ofstophys(na->nm_mem, off);
