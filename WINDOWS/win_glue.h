@@ -135,7 +135,7 @@ typedef ULONG 			vm_ooffset_t;
  */
 #define destroy_dev(a)
 #define __user
-#define nm_iommu_group_id(dev)	0
+#define nm_iommu_group_id(dev)	-1
 
 
 /*

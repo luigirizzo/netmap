@@ -312,7 +312,7 @@ netmap_mem_rings_delete(struct netmap_adapter *na)
 
 static int netmap_mem_map(struct netmap_obj_pool *, struct netmap_adapter *);
 static int netmap_mem_unmap(struct netmap_obj_pool *, struct netmap_adapter *);
-static int nm_mem_assign_group(struct netmap_mem_d *, struct device *);
+static int nm_mem_check_group(struct netmap_mem_d *, struct device *);
 static void nm_mem_release_id(struct netmap_mem_d *);
 
 nm_memid_t
@@ -323,7 +323,7 @@ netmap_mem_get_id(struct netmap_mem_d *nmd)
 
 #ifdef NM_DEBUG_MEM_PUTGET
 #define NM_DBG_REFC(nmd, func, line)	\
-	nm_prinf("%d mem[%d] -> %d", line, (nmd)->nm_id, (nmd)->refcount);
+	nm_prinf("%d mem[%d:%d] -> %d", line, (nmd)->nm_id, (nmd)->nm_grp, (nmd)->refcount);
 #else
 #define NM_DBG_REFC(nmd, func, line)
 #endif
@@ -360,7 +360,7 @@ int
 netmap_mem_finalize(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	int lasterr = 0;
-	if (nm_mem_assign_group(nmd, na->pdev) < 0) {
+	if (nm_mem_check_group(nmd, na->pdev) < 0) {
 		return ENOMEM;
 	}
 
@@ -492,7 +492,6 @@ netmap_mem_deref(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 
 	nmd->active--;
 	if (last_user) {
-		nmd->nm_grp = -1;
 		nmd->lasterr = 0;
 	}
 
@@ -588,6 +587,7 @@ struct netmap_mem_d nm_mem = {	/* Our memory allocator. */
 	.name = "1"
 };
 
+static struct netmap_mem_d nm_mem_blueprint;
 
 /* blueprint for the private memory allocators */
 /* XXX clang is not happy about using name as a print format */
@@ -653,7 +653,7 @@ DECLARE_SYSCTLS(NETMAP_BUF_POOL, buf);
 
 /* call with nm_mem_list_lock held */
 static int
-nm_mem_assign_id_locked(struct netmap_mem_d *nmd)
+nm_mem_assign_id_locked(struct netmap_mem_d *nmd, int grp_id)
 {
 	nm_memid_t id;
 	struct netmap_mem_d *scan = netmap_last_mem_d;
@@ -667,6 +667,7 @@ nm_mem_assign_id_locked(struct netmap_mem_d *nmd)
 		scan = scan->next;
 		if (id != scan->nm_id) {
 			nmd->nm_id = id;
+			nmd->nm_grp = grp_id;
 			nmd->prev = scan->prev;
 			nmd->next = scan;
 			scan->prev->next = nmd;
@@ -684,12 +685,12 @@ nm_mem_assign_id_locked(struct netmap_mem_d *nmd)
 
 /* call with nm_mem_list_lock *not* held */
 static int
-nm_mem_assign_id(struct netmap_mem_d *nmd)
+nm_mem_assign_id(struct netmap_mem_d *nmd, int grp_id)
 {
 	int ret;
 
 	NM_MTX_LOCK(nm_mem_list_lock);
-	ret = nm_mem_assign_id_locked(nmd);
+	ret = nm_mem_assign_id_locked(nmd, grp_id);
 	NM_MTX_UNLOCK(nm_mem_list_lock);
 
 	return ret;
@@ -729,21 +730,24 @@ netmap_mem_find(nm_memid_t id)
 }
 
 static int
-nm_mem_assign_group(struct netmap_mem_d *nmd, struct device *dev)
+nm_mem_check_group(struct netmap_mem_d *nmd, struct device *dev)
 {
 	int err = 0, id;
+
+	/* Skip not hw adapters.
+	 * Vale port can use particular allocator through vale-ctl -m option
+	 */
+	if (!dev)
+		return 0;
 	id = nm_iommu_group_id(dev);
 	if (netmap_debug & NM_DEBUG_MEM)
 		nm_prinf("iommu_group %d", id);
 
 	NMA_LOCK(nmd);
 
-	if (nmd->nm_grp < 0)
-		nmd->nm_grp = id;
-
 	if (nmd->nm_grp != id) {
 		if (netmap_verbose)
-			nm_prerr("iommu group mismatch: %u vs %u",
+			nm_prerr("iommu group mismatch: %d vs %d",
 					nmd->nm_grp, id);
 		nmd->lasterr = err = ENOMEM;
 	}
@@ -1666,7 +1670,7 @@ error:
  * allocator for private memory
  */
 static void *
-_netmap_mem_private_new(size_t size, struct netmap_obj_params *p,
+_netmap_mem_private_new(size_t size, struct netmap_obj_params *p, int grp_id,
 		struct netmap_mem_ops *ops, int *perr)
 {
 	struct netmap_mem_d *d = NULL;
@@ -1681,7 +1685,7 @@ _netmap_mem_private_new(size_t size, struct netmap_obj_params *p,
 	*d = nm_blueprint;
 	d->ops = ops;
 
-	err = nm_mem_assign_id(d);
+	err = nm_mem_assign_id(d, grp_id);
 	if (err)
 		goto error_free;
 	snprintf(d->name, NM_MEM_NAMESZ, "%d", d->nm_id);
@@ -1768,11 +1772,65 @@ netmap_mem_private_new(u_int txr, u_int txd, u_int rxr, u_int rxd,
 			p[NETMAP_BUF_POOL].num,
 			p[NETMAP_BUF_POOL].size);
 
-	d = _netmap_mem_private_new(sizeof(*d), p, &netmap_mem_global_ops, perr);
+	d = _netmap_mem_private_new(sizeof(*d), p, -1, &netmap_mem_global_ops, perr);
 
 	return d;
 }
 
+/* Reference iommu allocator - find existing or create new,
+ * for not hw addapeters fallback to global allocator.
+ */
+struct netmap_mem_d *
+netmap_mem_get_iommu(struct netmap_adapter *na)
+{
+	int i, err, grp_id;
+	struct netmap_mem_d *nmd;
+
+	if (na == NULL || na->pdev == NULL)
+		return netmap_mem_get(&nm_mem);
+
+	grp_id = nm_iommu_group_id(na->pdev);
+
+	NM_MTX_LOCK(nm_mem_list_lock);
+	nmd = netmap_last_mem_d;
+	do {
+		if (!(nmd->flags & NETMAP_MEM_HIDDEN) && nmd->nm_grp == grp_id) {
+			nmd->refcount++;
+			NM_DBG_REFC(nmd, __FUNCTION__, __LINE__);
+			NM_MTX_UNLOCK(nm_mem_list_lock);
+			return nmd;
+		}
+		nmd = nmd->next;
+	} while (nmd != netmap_last_mem_d);
+
+	nmd = nm_os_malloc(sizeof(*nmd));
+	if (nmd == NULL)
+		goto error;
+
+	*nmd = nm_mem_blueprint;
+
+	err = nm_mem_assign_id_locked(nmd, grp_id);
+	if (err)
+		goto error_free;
+
+	snprintf(nmd->name, sizeof(nmd->name), "%d", nmd->nm_id);
+
+	for (i = 0; i < NETMAP_POOLS_NR; i++) {
+		snprintf(nmd->pools[i].name, NETMAP_POOL_MAX_NAMSZ, "%s-%s",
+			nm_mem_blueprint.pools[i].name, nmd->name);
+	}
+
+	NMA_LOCK_INIT(nmd);
+
+	NM_MTX_UNLOCK(nm_mem_list_lock);
+	return nmd;
+
+error_free:
+	nm_os_free(nmd);
+error:
+	NM_MTX_UNLOCK(nm_mem_list_lock);
+	return NULL;
+}
 
 /* call with lock held */
 static int
@@ -1843,6 +1901,7 @@ NM_MTX_T nm_mem_ext_list_lock;
 int
 netmap_mem_init(void)
 {
+	nm_mem_blueprint = nm_mem;
 	NM_MTX_INIT(nm_mem_list_lock);
 	NMA_LOCK_INIT(&nm_mem);
 	netmap_mem_get(&nm_mem);
@@ -2274,10 +2333,12 @@ netmap_mem_ext_create(uint64_t usrptr, struct nmreq_pools_info *pi, int *perror)
 		nm_prinf("not found, creating new");
 
 	nme = _netmap_mem_private_new(sizeof(*nme),
+
 			(struct netmap_obj_params[]){
 				{ pi->nr_if_pool_objsize, pi->nr_if_pool_objtotal },
 				{ pi->nr_ring_pool_objsize, pi->nr_ring_pool_objtotal },
 				{ pi->nr_buf_pool_objsize, pi->nr_buf_pool_objtotal }},
+			-1,
 			&netmap_mem_ext_ops,
 			&error);
 	if (nme == NULL)
@@ -2791,7 +2852,7 @@ netmap_mem_pt_guest_create(nm_memid_t mem_id)
 	ptnmd->pt_ifs = NULL;
 
 	/* Assign new id in the guest (We have the lock) */
-	err = nm_mem_assign_id_locked(&ptnmd->up);
+	err = nm_mem_assign_id_locked(&ptnmd->up, -1);
 	if (err)
 		goto error;
 

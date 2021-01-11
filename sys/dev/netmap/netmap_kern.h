@@ -1736,7 +1736,7 @@ extern int netmap_generic_txqdisc;
 
 /* Assigns the device IOMMU domain to an allocator.
  * Returns -ENOMEM in case the domain is different */
-#define nm_iommu_group_id(dev) (0)
+#define nm_iommu_group_id(dev) (-1)
 
 /* Callback invoked by the dma machinery after a successful dmamap_load */
 static void netmap_dmamap_cb(__unused void *arg,
