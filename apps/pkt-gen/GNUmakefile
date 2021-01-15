@@ -14,7 +14,7 @@ CFLAGS += -Werror -Wall -Wunused-function
 CFLAGS += -I $(SRCDIR)/sys -I $(SRCDIR)/apps/include -I $(SRCDIR)/libnetmap
 CFLAGS += -Wextra -Wno-address-of-packed-member
 
-LDFLAGS = -L $(BUILDDIR)/build-libnetmap
+LDFLAGS += -L $(BUILDDIR)/build-libnetmap
 LDLIBS += -lpthread -lm -lnetmap
 ifeq ($(shell uname),Linux)
 	LDLIBS += -lrt	# on linux

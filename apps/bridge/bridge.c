@@ -86,13 +86,12 @@ rings_move(struct netmap_ring *rxring, struct netmap_ring *txring,
 		struct netmap_slot *rs = &rxring->slot[j];
 		struct netmap_slot *ts = &txring->slot[k];
 
-		/* swap packets */
 		if (ts->buf_idx < 2 || rs->buf_idx < 2) {
 			RD(2, "wrong index rxr[%d] = %d  -> txr[%d] = %d",
 			    j, rs->buf_idx, k, ts->buf_idx);
 			sleep(2);
 		}
-		/* copy the packet length. */
+		/* Copy the packet length. */
 		if (rs->len > rxring->nr_buf_size) {
 			RD(2,  "%s: invalid len %u, rxr[%d] -> txr[%d]",
 			    msg, rs->len, j, k);
@@ -109,13 +108,16 @@ rings_move(struct netmap_ring *rxring, struct netmap_ring *txring,
 			/* report the buffer change. */
 			ts->flags |= NS_BUF_CHANGED;
 			rs->flags |= NS_BUF_CHANGED;
-			/* copy the NS_MOREFRAG */
-			rs->flags = (rs->flags & ~NS_MOREFRAG) | (ts->flags & NS_MOREFRAG);
 		} else {
 			char *rxbuf = NETMAP_BUF(rxring, rs->buf_idx);
 			char *txbuf = NETMAP_BUF(txring, ts->buf_idx);
 			nm_pkt_copy(rxbuf, txbuf, ts->len);
 		}
+		/*
+		 * Copy the NS_MOREFRAG from rs to ts, leaving any
+		 * other flags unchanged.
+		 */
+		ts->flags = (ts->flags & ~NS_MOREFRAG) | (rs->flags & NS_MOREFRAG);
 		j = nm_ring_next(rxring, j);
 		k = nm_ring_next(txring, k);
 	}
