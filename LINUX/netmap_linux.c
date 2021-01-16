@@ -1166,7 +1166,7 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 			/* XXX this happens when stack goes away.
 			 * We need better workaround */
 			if (unlikely(!kring)) {
-				PST_DBG_LIM("WARNING: no kring");
+				//PST_DBG_LIM("WARNING: no kring");
 				SET_MBUF_DESTRUCTOR(m, NULL);
 				nm_os_set_mbuf_data_destructor(m, &cb->ui, NULL);
 				__skb_unlink(m, queue);
@@ -1177,7 +1177,7 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 		/* append this buffer to the scratchpad */
 		slot = nmcb_slot(cb);
 		if (unlikely(slot == NULL)) {
-			PST_DBG_LIM("no slot");
+			//PST_DBG_LIM("no slot");
 			continue;
 		}
 		if (unlikely(m->sk == NULL || pst_so(m->sk) == NULL)) {
@@ -1197,8 +1197,8 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 		/* see comment in pst_transmit() */
 #ifdef PST_MB_RECYCLE
 		if (unlikely(nmcb_rstate(cb) == MB_QUEUED)) {
-			PST_DBG_LIM("fd %d ring_id %u",
-					nm_pst_getfd(slot), kring->ring_id);
+			//PST_DBG_LIM("fd %d ring_id %u",
+			//		nm_pst_getfd(slot), kring->ring_id);
 			queued = 1;
 		}
 #endif
