@@ -877,6 +877,52 @@ pst_extra_free(struct netmap_adapter *na)
 }
 
 static int
+pst_extra_alloc2(struct netmap_kring *kring)
+{
+	struct netmap_adapter *na = kring->na;
+	struct pst_extra_pool *pool;
+	struct pst_extra_slot *extra_slots = NULL;
+	u_int want = stack_extra, n, j, next;
+
+	pool = nm_os_malloc(sizeof(*kring->extra));
+	if (!pool)
+		return ENOMEM;
+	kring->extra = pool;
+
+	n = netmap_extra_alloc(na, &next, want);
+	if (n < want) {
+		PST_ASSERT("allocated only %u bufs", n);
+	}
+	kring->extra->num = n;
+	if (n) {
+		extra_slots = nm_os_malloc(sizeof(*extra_slots)
+				* n);
+		if (!extra_slots)
+			return ENOMEM;
+	}
+
+	for (j = 0; j < n; j++) {
+		struct pst_extra_slot *exs;
+		struct netmap_slot tmp = {.buf_idx = next};
+
+		exs = &extra_slots[j];
+		exs->slot.buf_idx = next;
+		exs->slot.len = 0;
+		exs->slot.ptr =
+		  (exs->slot.ptr & ~kring->offset_mask) |
+		  (sizeof(struct nmcb) & kring->offset_mask);
+		exs->prev = j == 0 ? NM_EXT_NULL : j - 1;
+		exs->next = j + 1 == n ? NM_EXT_NULL : j + 1;
+		next = *(uint32_t *)NMB(na, &tmp);
+	}
+	pool->free = 0;
+	pool->free_tail = n - 1;
+	pool->busy = pool->busy_tail = NM_EXT_NULL;
+	pool->slots = extra_slots;
+	return 0;
+}
+
+static int
 pst_extra_alloc(struct netmap_adapter *na)
 {
 	enum txrx t;
@@ -886,46 +932,8 @@ pst_extra_alloc(struct netmap_adapter *na)
 
 		/* XXX probably we don't need extra on host rings */
 		for (i = 0; i < netmap_real_rings(na, t); i++) {
-			struct netmap_kring *kring = NMR(na, t)[i];
-			struct pst_extra_pool *pool;
-			struct pst_extra_slot *extra_slots = NULL;
-			u_int want = stack_extra, n, j, next;
-
-			pool = nm_os_malloc(sizeof(*kring->extra));
-			if (!pool)
+			if (pst_extra_alloc2(NMR(na, t)[i]))
 				break;
-			kring->extra = pool;
-
-			n = netmap_extra_alloc(na, &next, want);
-			if (n < want) {
-				PST_ASSERT("allocated only %u bufs", n);
-			}
-			kring->extra->num = n;
-			if (n) {
-				extra_slots = nm_os_malloc(sizeof(*extra_slots)
-						* n);
-				if (!extra_slots)
-					break;
-			}
-
-			for (j = 0; j < n; j++) {
-				struct pst_extra_slot *exs;
-				struct netmap_slot tmp = {.buf_idx = next};
-
-				exs = &extra_slots[j];
-				exs->slot.buf_idx = next;
-				exs->slot.len = 0;
-				exs->slot.ptr =
-				  (exs->slot.ptr & ~kring->offset_mask) |
-				  (sizeof(struct nmcb) & kring->offset_mask);
-				exs->prev = j == 0 ? NM_EXT_NULL : j - 1;
-				exs->next = j + 1 == n ? NM_EXT_NULL : j + 1;
-				next = *(uint32_t *)NMB(na, &tmp);
-			}
-			pool->free = 0;
-			pool->free_tail = n - 1;
-			pool->busy = pool->busy_tail = NM_EXT_NULL;
-			pool->slots = extra_slots;
 		}
 		/* rollaback on error */
 		if (i < netmap_real_rings(na, t)) {
