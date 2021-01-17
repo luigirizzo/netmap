@@ -292,7 +292,6 @@ pst_fdtable_alloc(struct netmap_adapter *na)
 			return ENOMEM;
 		}
 		NMR(na, NR_TX)[i]->nkr_ft = (struct nm_bdg_fwd *)ft;
-		PST_DBG("kring %p ft %p", NMR(na, NR_TX)[i], ft);
 	}
 	return 0;
 }
@@ -540,12 +539,17 @@ pst_prestack(struct netmap_kring *kring)
 		if (unlikely(slot->len == 0))
 			continue;
 		/* validate user-supplied data */
-		if (unlikely(tx && slot->len < nm_pst_getuoff(slot)))
-			continue;
-		if (unlikely(tx &&
-		    nm_get_offset(kring, slot) != sizeof(struct nmcb))) {
-			PST_DBG("bad offset %u", nm_get_offset(kring, slot));
-			continue;
+		if (tx) {
+			if (unlikely(slot->len < nm_pst_getuoff(slot))) {
+				continue;
+			}
+		    	if (unlikely(nm_get_offset(kring, slot) !=
+				     sizeof(struct nmcb))) {
+				PST_DBG_LIM("bad offset %u",
+					    nm_get_offset(kring, slot));
+				continue;
+			}
+
 		}
 		nmcbw(NMCB_BUF(nmb), kring, slot);
 		err = tx ? nm_os_pst_tx(kring, slot) :
@@ -830,7 +834,7 @@ csum_done:
 }
 
 static void
-pst_extra_free2(struct netmap_kring *kring)
+pst_extra_free_kring(struct netmap_kring *kring)
 {
 	struct netmap_adapter *na = kring->na;
 	struct netmap_ring *ring = kring->ring;
@@ -877,13 +881,13 @@ pst_extra_free(struct netmap_adapter *na)
 		int i;
 
 		for (i = 0; i < netmap_real_rings(na, t); i++) {
-			pst_extra_free2(NMR(na, t)[i]);
+			pst_extra_free_kring(NMR(na, t)[i]);
 		}
 	}
 }
 
 static int
-pst_extra_alloc2(struct netmap_kring *kring)
+pst_extra_alloc_kring(struct netmap_kring *kring)
 {
 	struct netmap_adapter *na = kring->na;
 	struct pst_extra_pool *pool;
@@ -938,7 +942,7 @@ pst_extra_alloc(struct netmap_adapter *na)
 
 		/* XXX probably we don't need extra on host rings */
 		for (i = 0; i < netmap_real_rings(na, t); i++) {
-			if (pst_extra_alloc2(NMR(na, t)[i]))
+			if (pst_extra_alloc_kring(NMR(na, t)[i]))
 				break;
 		}
 		/* rollaback on error */
