@@ -1016,10 +1016,10 @@ pst_write_offset(struct netmap_adapter *na, bool noring)
 			struct netmap_kring *kring = NMR(na, t)[i];
 			struct netmap_ring *ring = kring->ring;
 
-			if (!noring && !nm_kring_pending_on(kring))
-				continue; // ring is not ready
 			kring->offset_max = offset;
 			kring->offset_mask = mask;
+			if (!noring && !nm_kring_pending_on(kring))
+				continue; // ring is not ready
 			if (noring)
 				continue;
 			*(uint64_t *)(uintptr_t)&ring->offset_mask = mask;
