@@ -1260,6 +1260,7 @@ struct netmap_stack_adapter {
 	struct pst_so_adapter **so_adapters;
 #define DEFAULT_SK_ADAPTERS	65535
 	u_int so_adapters_max;
+	NM_LOCK_T so_adapters_lock;
 #ifdef __FreeBSD__
 	void *eventso[64];
 #endif

@@ -1203,6 +1203,7 @@ netmap_stack_bdg_dtor(const struct netmap_vp_adapter *vpna)
 	sna->so_adapters_max = 0;
 	sna->so_adapters = NULL;
 	nm_os_free(sna->so_adapters);
+	mtx_destroy(&sna->so_adapters_lock);
 }
 
 static int
@@ -1218,6 +1219,7 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 		return ENOMEM;
 	}
 	NMG_LOCK();
+	mtx_lock(&sna->so_adapters_lock);
 	/* first check table size */
 	if (fd >= sna->so_adapters_max) {
 		struct pst_so_adapter **old = sna->so_adapters, **new;
@@ -1227,6 +1229,7 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 		new = nm_os_malloc(sizeof(new) * newsize);
 		if (!new) {
 			PST_ASSERT("failed to extend fdtable");
+			mtx_unlock(&sna->so_adapters_lock);
 			NMG_UNLOCK();
 			return ENOMEM;
 		}
@@ -1237,6 +1240,7 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 		sna->so_adapters = new;
 		sna->so_adapters_max = newsize;
 	}
+	mtx_unlock(&sna->so_adapters_lock);
 	NMG_UNLOCK();
 
 	so = nm_os_sock_fget(fd, &file);
@@ -1496,6 +1500,7 @@ netmap_stack_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 	sna = nm_os_malloc(sizeof(*sna));
 	if (sna == NULL)
 		return ENOMEM;
+	mtx_init(&sna->so_adapters_lock, "so_adapters_lock", NULL, MTX_DEF);
 	vpna = &sna->up;
 	na = &vpna->up;
 
