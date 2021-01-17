@@ -830,6 +830,45 @@ csum_done:
 }
 
 static void
+pst_extra_free2(struct netmap_kring *kring)
+{
+	struct netmap_adapter *na = kring->na;
+	struct netmap_ring *ring = kring->ring;
+	struct pst_extra_pool *extra;
+	uint32_t j;
+
+	/* True on do_unregif() after reg failure
+	 * (e.g., for allocating some netmap object
+	 */
+	if (kring->nr_mode == NKR_NETMAP_OFF || !kring->extra)
+		return;
+	extra = kring->extra;
+
+	j = extra->busy;
+	while (j != NM_EXT_NULL) {
+		struct pst_extra_slot *e = &extra->slots[j];
+		struct nmcb *cb = NMCB_SLT(na, &e->slot);
+		nmcb_set_gone(cb);
+		j = e->next;
+	}
+	kring->extra = NULL;
+	extra->num = 0;
+	if (extra->slots)
+		nm_os_free(extra->slots);
+	nm_os_free(extra);
+
+	/* also mark on-ring bufs */
+	for (j = 0; j < kring->nkr_num_slots; j++) {
+		struct nmcb *cb;
+
+		cb = NMCB_SLT(na, &ring->slot[j]);
+		if (nmcb_valid(cb)) {
+			nmcb_set_gone(cb);
+		}
+	}
+}
+
+static void
 pst_extra_free(struct netmap_adapter *na)
 {
 	enum txrx t;
@@ -838,40 +877,7 @@ pst_extra_free(struct netmap_adapter *na)
 		int i;
 
 		for (i = 0; i < netmap_real_rings(na, t); i++) {
-			struct netmap_kring *kring = NMR(na, t)[i];
-			struct netmap_ring *ring = kring->ring;
-			struct pst_extra_pool *extra;
-			uint32_t j;
-
-			/* True on do_unregif() after reg failure
-			 * (e.g., for allocating some netmap object
-			 */
-			if (kring->nr_mode == NKR_NETMAP_OFF || !kring->extra)
-				continue;
-			extra = kring->extra;
-
-			j = extra->busy;
-			while (j != NM_EXT_NULL) {
-				struct pst_extra_slot *e = &extra->slots[j];
-				struct nmcb *cb = NMCB_SLT(na, &e->slot);
-				nmcb_set_gone(cb);
-				j = e->next;
-			}
-			kring->extra = NULL;
-			extra->num = 0;
-			if (extra->slots)
-				nm_os_free(extra->slots);
-			nm_os_free(extra);
-
-			/* also mark on-ring bufs */
-			for (j = 0; j < kring->nkr_num_slots; j++) {
-				struct nmcb *cb;
-
-				cb = NMCB_SLT(na, &ring->slot[j]);
-				if (nmcb_valid(cb)) {
-					nmcb_set_gone(cb);
-				}
-			}
+			pst_extra_free2(NMR(na, t)[i]);
 		}
 	}
 }
