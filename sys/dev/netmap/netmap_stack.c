@@ -1371,7 +1371,7 @@ netmap_stack_txsync(struct netmap_kring *kring, int flags)
 	u_int const head = kring->rhead;
 	u_int done;
 
-	if (unlikely(pst_bdg_valid(na))) {
+	if (unlikely(!pst_bdg_valid(na))) {
 		done = head;
 		return 0;
 	}
@@ -1391,7 +1391,7 @@ netmap_stack_rxsync(struct netmap_kring *kring, int flags)
 	int i, err;
 	register_t	intr;
 
-	if (unlikely(pst_bdg_valid(kring->na))) {
+	if (unlikely(!pst_bdg_valid(kring->na))) {
 		return 0;
 	}
 	/* TODO scan only necessary ports */
