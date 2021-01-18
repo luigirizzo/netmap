@@ -936,22 +936,24 @@ static int
 pst_extra_alloc(struct netmap_adapter *na)
 {
 	enum txrx t;
+	int error = 0;
 
 	for_rx_tx(t) {
 		int i;
 
+		if (error)
+			break;
 		/* XXX probably we don't need extra on host rings */
 		for (i = 0; i < netmap_real_rings(na, t); i++) {
-			if (pst_extra_alloc_kring(NMR(na, t)[i]))
+			if (pst_extra_alloc_kring(NMR(na, t)[i])) {
+				error = ENOMEM;
 				break;
-		}
-		/* rollaback on error */
-		if (i < netmap_real_rings(na, t)) {
-			pst_extra_free(na);
-			return ENOMEM;
+			}
 		}
 	}
-	return 0;
+	if (error)
+		pst_extra_free(na);
+	return error;
 }
 
 /* Create extra buffers and mbuf pool */
@@ -1348,6 +1350,20 @@ netmap_stack_reg(struct netmap_adapter *na, int onoff)
 	return err;
 }
 
+static inline int
+pst_bdg_valid(struct netmap_adapter *na)
+{
+	struct nm_bridge *b = ((struct netmap_vp_adapter *)na)->na_bdg;
+
+	if (unlikely(b == NULL)) {
+		return 0;
+	} else if (unlikely(b->bdg_active_ports < 3)) {
+		PST_ASSERT("active ports %d", b->bdg_active_ports);
+		return 0;
+	}
+	return 1;
+}
+
 static int
 netmap_stack_txsync(struct netmap_kring *kring, int flags)
 {
@@ -1355,7 +1371,7 @@ netmap_stack_txsync(struct netmap_kring *kring, int flags)
 	u_int const head = kring->rhead;
 	u_int done;
 
-	if (unlikely(((struct netmap_vp_adapter *)na)->na_bdg == NULL)) {
+	if (unlikely(pst_bdg_valid(na))) {
 		done = head;
 		return 0;
 	}
@@ -1375,6 +1391,9 @@ netmap_stack_rxsync(struct netmap_kring *kring, int flags)
 	int i, err;
 	register_t	intr;
 
+	if (unlikely(pst_bdg_valid(kring->na))) {
+		return 0;
+	}
 	/* TODO scan only necessary ports */
 	err = netmap_vp_rxsync_locked(kring, flags); // reclaim buffers
 	if (err)
