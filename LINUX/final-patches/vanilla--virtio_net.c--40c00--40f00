@@ -1,5 +1,5 @@
 diff --git a/virtio_net.c b/virtio_net.c
-index 143d8a95a60d..27de2c282e08 100644
+index 143d8a95a60d..bd58e50c4597 100644
 --- a/virtio_net.c
 +++ b/virtio_net.c
 @@ -170,6 +170,10 @@ struct virtnet_info {
@@ -48,23 +48,22 @@ index 143d8a95a60d..27de2c282e08 100644
  	received = virtnet_receive(rq, budget);
  
  	/* Out of packets? */
-@@ -1114,6 +1137,15 @@ static int virtnet_open(struct net_device *dev)
+@@ -1114,8 +1137,14 @@ static int virtnet_open(struct net_device *dev)
  {
  	struct virtnet_info *vi = netdev_priv(dev);
  	int i;
 +#ifdef DEV_NETMAP
 +        int ok = virtio_netmap_init_buffers(vi);
-+
-+        if (ok) {
-+            for (i = 0; i < vi->max_queue_pairs; i++)
-+		virtnet_napi_enable(vi->rq[i].vq, &vi->rq[i].napi);
-+            return 0;
-+        }
 +#endif
  
  	for (i = 0; i < vi->max_queue_pairs; i++) {
++#ifdef DEV_NETMAP
++		if (!ok)
++#endif
  		if (i < vi->curr_queue_pairs)
-@@ -2559,6 +2591,10 @@ static int virtnet_probe(struct virtio_device *vdev)
+ 			/* Make sure we have some buffers: if oom use wq. */
+ 			if (!try_fill_recv(vi, &vi->rq[i], GFP_KERNEL))
+@@ -2559,6 +2588,10 @@ static int virtnet_probe(struct virtio_device *vdev)
  
  	virtnet_set_queues(vi, vi->curr_queue_pairs);
  
@@ -75,7 +74,7 @@ index 143d8a95a60d..27de2c282e08 100644
  	/* Assume link up if device can't report link status,
  	   otherwise get link status from config. */
  	if (virtio_has_feature(vi->vdev, VIRTIO_NET_F_STATUS)) {
-@@ -2615,7 +2651,14 @@ static void remove_vq_common(struct virtnet_info *vi)
+@@ -2615,7 +2648,14 @@ static void remove_vq_common(struct virtnet_info *vi)
  static void virtnet_remove(struct virtio_device *vdev)
  {
  	struct virtnet_info *vi = vdev->priv;
@@ -90,7 +89,7 @@ index 143d8a95a60d..27de2c282e08 100644
  	virtnet_cpu_notif_remove(vi);
  
  	/* Make sure no work handler is accessing the device. */
-@@ -2684,6 +2727,9 @@ static unsigned int features_legacy[] = {
+@@ -2684,6 +2724,9 @@ static unsigned int features_legacy[] = {
  	VIRTNET_FEATURES,
  	VIRTIO_NET_F_GSO,
  	VIRTIO_F_ANY_LAYOUT,
