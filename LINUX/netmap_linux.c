@@ -336,11 +336,11 @@ int nm_iommu_group_id(struct device *dev)
 	int id;
 
 	if (!dev)
-		return 0;
+		return -1;
 
 	grp = iommu_group_get(dev);
 	if (!grp)
-		return 0;
+		return -1;
 
 	id = iommu_group_id(grp);
 

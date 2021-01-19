@@ -3941,8 +3941,8 @@ netmap_attach_common(struct netmap_adapter *na)
 	na->active_fds = 0;
 
 	if (na->nm_mem == NULL) {
-		/* use the global allocator */
-		na->nm_mem = netmap_mem_get(&nm_mem);
+		/* use iommu or global allocator */
+		na->nm_mem = netmap_mem_get_iommu(na);
 	}
 #ifdef WITH_VALE
 	if (na->nm_bdg_attach == NULL)
