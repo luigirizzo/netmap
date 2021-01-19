@@ -163,6 +163,7 @@
 struct netmap_slot {
 	uint32_t buf_idx;	/* buffer index */
 	uint16_t len;		/* length for this slot */
+	uint16_t data_offs;	/* offset to data start point in the buffer */
 	uint16_t flags;		/* buf changed, etc. */
 	uint64_t ptr;		/* pointer for indirect buffers */
 };

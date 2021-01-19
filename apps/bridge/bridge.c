@@ -108,13 +108,14 @@ rings_move(struct netmap_ring *rxring, struct netmap_ring *txring,
 		if (zerocopy) {
 			uint32_t pkt = ts->buf_idx;
 			ts->buf_idx = rs->buf_idx;
+			ts->data_offs = rs->data_offs;
 			rs->buf_idx = pkt;
 			/* report the buffer change. */
 			ts->flags |= NS_BUF_CHANGED;
 			rs->flags |= NS_BUF_CHANGED;
 		} else {
-			char *rxbuf = NETMAP_BUF(rxring, rs->buf_idx);
-			char *txbuf = NETMAP_BUF(txring, ts->buf_idx);
+			char *rxbuf = NETMAP_BUF(rxring, rs->buf_idx) + rs->data_offs;
+			char *txbuf = NETMAP_BUF(txring, ts->buf_idx) + rs->data_offs;
 			nm_pkt_copy(rxbuf, txbuf, ts->len);
 		}
 		/*
