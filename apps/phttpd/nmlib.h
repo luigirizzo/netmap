@@ -122,8 +122,9 @@ struct nm_garg {
 	int main_fd;
 	int system_cpus;
 	int cpus;
-	int extra_bufs;		/* goes in nr_arg3 */
+	uint32_t extra_bufs;		/* goes in nr_arg3 */
 	uint64_t extmem_siz;
+	u_int ring_objsize;
 	int extra_pipes;	/* goes in nr_arg1 */
 	char *nmr_config;
 	char *extmem;		/* goes to nr_arg1+ */
@@ -520,12 +521,33 @@ nm_start(struct nm_garg *g)
 		strlcat(g->ifname, conf, sizeof(g->ifname));
 	}
 	if (g->extmem) {
+		int i;
+		size_t need_rings, need_rings_space, need_ifs, need_ifs_space,
+		       buf_space, need_rings_bufs, buf_avail;
 		char extm[128], kv[32];
 		char *prms[4] = {",if-num=%u", ",ring-num=%u", ",ring-size=%u",
 			",buf-num=%u"};
-		u_int32_t prmvals[4] = {IF_OBJTOTAL, RING_OBJTOTAL,
-			RING_OBJSIZE, (uint32_t)g->extra_bufs + 320000};
-		int i;
+		u_int32_t prmvals[4];
+	       
+		//= {IF_OBJTOTAL, RING_OBJTOTAL,
+		//	RING_OBJSIZE, (uint32_t)g->extra_bufs + 320000};
+		need_rings = 8 * g->nthreads;
+		need_rings_space = (g->ring_objsize+64) * need_rings;
+		need_rings_bufs = (g->ring_objsize+64)/sizeof(struct netmap_slot);
+		need_ifs = g->nthreads * 2;
+		need_ifs_space = (sizeof(struct netmap_if)+64) * need_ifs;
+		buf_space = g->extmem_siz - need_rings_space - need_ifs_space;
+		buf_avail = buf_space / 2048;
+		if (buf_avail < need_rings * need_rings_bufs) {
+			D("only %lu bufs available", buf_avail);
+			return -EINVAL;
+		}
+		g->extra_bufs = buf_avail - need_rings * need_rings_bufs;
+		prmvals[0] = need_ifs;
+		need_rings = 2;
+		prmvals[1] = need_rings;
+		prmvals[2] = g->ring_objsize;
+		prmvals[3] = buf_avail;
 
 		snprintf(extm, sizeof(extm), "@extmem:file=%s", g->extmem);
 		for (i = 0; i < 4; i++) {
@@ -944,7 +966,7 @@ netmap_worker(void *data)
 		const u_int n = reg->nr_extra_bufs;
 		uint32_t i;
 
-		ND("have %u extra buffers from %u ring %p", n, next, any_ring);
+		D("have %u extra buffers from %u ring %p", n, next, any_ring);
 		t->extra = calloc(sizeof(*t->extra), n);
 		if (!t->extra) {
 			perror("calloc");
@@ -953,6 +975,7 @@ netmap_worker(void *data)
 		for (i = 0; i < n && next; i++) {
 			char *p;
 			struct netmap_slot tmp = any_ring->slot[0];
+			tmp.ptr = 0; // XXX
 #ifdef NMLIB_EXTRA_SLOT
 			t->extra[i].buf_idx = next;
 #else
@@ -1196,6 +1219,8 @@ netmap_eventloop(const char *name, char *ifname, void **ret, int *error, int *fd
 	g->affinity = B(args, affinity, -1, 128, -1);
 	g->extmem_siz = B(args, extmem_siz, 0, 8192000000000UL, 0);
 	g->extra_bufs = B(args, extra_bufs, 0, 4096000000UL, 0);
+	g->ring_objsize = B(args, ring_objsize, RING_OBJSIZE/4,
+				RING_OBJSIZE*2, RING_OBJSIZE);
 #undef B
 	g->targ_opaque_len = args ? args->targ_opaque_len : 0;
 	g->nmr_config = args ? args->nmr_config : NULL;

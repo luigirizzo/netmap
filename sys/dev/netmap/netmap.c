@@ -2831,7 +2831,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 
 				if (req->nr_extra_bufs) {
 					if (netmap_verbose)
-						nm_prinf("requested %d extra buffers",
+						nm_prinf("requested %u extra buffers",
 							req->nr_extra_bufs);
 					req->nr_extra_bufs = netmap_extra_alloc(na,
 						&nifp->ni_bufs_head, req->nr_extra_bufs);

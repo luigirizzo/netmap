@@ -1144,7 +1144,7 @@ netmap_extra_alloc(struct netmap_adapter *na, uint32_t *head, uint32_t n)
 		uint32_t cur = *head;	/* save current head */
 		uint32_t *p = netmap_buf_malloc(nmd, &pos, head);
 		if (p == NULL) {
-			nm_prerr("no more buffers after %d of %d", i, n);
+			nm_prerr("no more buffers after %u of %u", i, n);
 			*head = cur; /* restore */
 			break;
 		}
@@ -1966,6 +1966,8 @@ netmap_mem2_rings_delete(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	enum txrx t;
 
+	if (netmap_debug & NM_DEBUG_MEM)
+		nm_prinf("start");
 	for_rx_tx(t) {
 		u_int i;
 		for (i = 0; i < netmap_all_rings(na, t); i++) {

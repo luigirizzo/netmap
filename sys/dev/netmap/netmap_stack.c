@@ -1155,6 +1155,7 @@ pst_unregister_socket(struct pst_so_adapter *soa)
 		PST_DBG("no soa");
 		return;
 	}
+	mtx_lock(&sna->so_adapters_lock);
 	if (soa->fd >= sna->so_adapters_max) {
 		PST_DBG("non-registered or invalid fd %d", soa->fd);
 	} else {
@@ -1168,6 +1169,7 @@ pst_unregister_socket(struct pst_so_adapter *soa)
 		NM_SOCK_UNLOCK(so);
 	}
 	nm_os_free(soa);
+	mtx_unlock(&sna->so_adapters_lock);
 }
 
 static void
@@ -1607,6 +1609,7 @@ netmap_stack_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 		/* as much host rings as hw has */
 		for_rx_tx(t) {
 			int hwnr = nma_get_nrings(hwna, t);
+			PST_DBG("hw rings rings, %u", hwnr);
 			nma_set_nrings(hostna, t, hwnr);
 			nma_set_host_nrings(na, t, hwnr);
 		}

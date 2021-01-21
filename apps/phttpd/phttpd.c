@@ -963,6 +963,7 @@ main(int argc, char **argv)
 	nmg.dev_type = DEV_SOCKET;
 	nmg.td_type = TD_TYPE_OTHER;
 	nmg.targ_opaque_len = sizeof(struct dbctx);
+	nmg.ring_objsize = RING_OBJSIZE;
 
 	bzero(&e, sizeof(e));
 	e.thread = phttpd_thread;
@@ -1025,8 +1026,8 @@ main(int argc, char **argv)
 			pg.dba.flags |= DF_PASTE;
 			nmg.extmem_siz = atol(optarg) * 1000000; // MB to B
 			/* believe 90 % is available for bufs */
-			nmg.extra_bufs =
-			    (nmg.extmem_siz * 9 /10) / NETMAP_BUF_SIZE;
+			//nmg.extra_bufs =
+			 //   (nmg.extmem_siz * 9 /10) / NETMAP_BUF_SIZE;
 			break;
 		case 'c':
 			pg.httplen = 1;
@@ -1154,10 +1155,10 @@ main(int argc, char **argv)
 		close(fd);
 		nmg.extmem = strdup(path);
 
-		if (pg.dba.size == 0) {
-			/* up to 16 byte metadata per buffer */
-			pg.dba.size = nmg.extra_bufs * 8 * 2;
-		}
+		//if (pg.dba.size == 0) {
+		//	/* up to 16 byte metadata per buffer */
+		//	pg.dba.size = nmg.extra_bufs * 8 * 2;
+		//}
 
 		/* checks space for metadata */
 		snprintf(path, sizeof(path), "%s/%s", pg.dba.dir, DATAFILE);
