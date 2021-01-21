@@ -462,7 +462,7 @@ ipt_rxsync(struct netmap_kring *kring, int flags)
 		}
 
 		ring->slot[nm_i].mark = m->mark;
-		ring->slot[nm_i].hash = m->hash;
+		ring->slot[nm_i].hash = 0; /* Can't trust pkt hash from iptables */
 		ring->slot[nm_i].ll_ofs = NETMAP_SLOT_HEADROOM;
 		if (priv->hooknum == NF_INET_PRE_ROUTING) {
 			ring->slot[nm_i].iif = m->skb_iif;
