@@ -268,10 +268,11 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
 				goto ring_reset;
-			if (slot->flags & NS_BUF_CHANGED) {
+			if (slot->flags & NS_BUF_CHANGED || kring->nkr_to_refill) {
 				uint64_t offset = nm_get_offset(kring, slot);
 				curr->buffer_addr = htole64(paddr + offset);
 				slot->flags &= ~NS_BUF_CHANGED;
+				kring->nkr_to_refill--;
 			}
 			netmap_sync_map_dev(na, (bus_dma_tag_t) na->pdev,
 					&paddr, NETMAP_BUF_SIZE(na), NR_RX);
@@ -279,6 +280,8 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
+		if (kring->nkr_to_refill < 0)
+			kring->nkr_to_refill = 0;
 		kring->nr_hwcur = head;
 		rxr->next_to_use = nic_i; // XXX not really used
 		wmb();
@@ -369,7 +372,7 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 	struct netmap_kring *kring;
 	struct netmap_slot* slot;
 	struct e1000_tx_ring* txr = &adapter->tx_ring[0];
-	unsigned int i, r, si;
+	unsigned int i, r, si, n;
 	uint64_t paddr;
 	uint32_t rctl;
 
@@ -386,17 +389,17 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 		}
 		rxr = &adapter->rx_ring[r];
 
-		for (i = 0; i < rxr->count; i++) {
+		/* preserve buffers already made available to clients */
+		kring->nkr_to_refill = nm_kr_rxspace(kring);
+		n = rxr->count - kring->nkr_to_refill;
+
+		for (i = 0; i < n; i++) {
 			si = netmap_idx_n2k(kring, i);
 			PNMB_O(kring, slot + si, &paddr);
 			E1000_RX_DESC(*rxr, i)->buffer_addr = htole64(paddr);
 		}
 
 		rxr->next_to_use = 0;
-		/* preserve buffers already made available to clients */
-		i = rxr->count - 1 - nm_kr_rxspace(na->rx_rings[0]);
-		if (i < 0) // XXX something wrong here, can it really happen ?
-			i += rxr->count;
 
 		/* program the RCTL */
 		rctl = er32(RCTL);
@@ -416,7 +419,13 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 			continue;
 		}
 
-		for (i = 0; i < na->num_tx_desc; i++) {
+		/* preserve buffers already made available to clients */
+		n = txr->count - nm_kr_txspace(kring);
+		/* there is no need to update nkr_to_refill, since the txsync
+		 * always refills the hw slots anyway
+		 */
+
+		for (i = 0; i < n; i++) {
 			kring = na->tx_rings[r];
 			si = netmap_idx_n2k(kring, i);
 			PNMB_O(kring, slot + si, &paddr);
