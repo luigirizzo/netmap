@@ -459,8 +459,16 @@ struct netmap_kring {
 	 * On a NIC reset, the NIC ring indexes may be reset but the
 	 * indexes in the netmap rings remain the same. nkr_hwofs
 	 * keeps track of the offset between the two.
+	 *
+	 * Moreover, during reset, we can restore only the subset of
+	 * the NIC ring that corresponds to the kernel-owned part of
+	 * the netmap ring. The rest of the slots must be restored
+	 * by the *sync routines when the user releases more slots.
+	 * The nkr_to_refill field keeps track of the number of slots
+	 * that still need to be restored.
 	 */
 	int32_t		nkr_hwofs;
+	int32_t		nkr_to_refill;
 
 	/* last_reclaim is opaque marker to help reduce the frequency
 	 * of operations such as reclaiming tx buffers. A possible use
