@@ -402,7 +402,7 @@ static int e1000e_netmap_init_buffers(struct SOFTC_T *adapter)
 	struct netmap_slot* slot;
 	struct e1000_ring *rxr = adapter->rx_ring;
 	struct e1000_ring *txr = adapter->tx_ring;
-	int i, si;
+	int i, si, n;
 	uint64_t paddr;
 	uint32_t rctl;
 
@@ -414,7 +414,8 @@ static int e1000e_netmap_init_buffers(struct SOFTC_T *adapter)
 		kring = na->rx_rings[0];
 		/* initialize the RX ring for netmap mode */
 		adapter->alloc_rx_buf = (void*)e1000e_no_rx_alloc;
-		for (i = 0; i < rxr->count; i++) {
+		n = nm_kr_rxspace(kring);
+		for (i = 0; i < n; i++) {
 			struct e1000_buffer *bi = &rxr->buffer_info[i];
 			si = netmap_idx_n2k(kring, i);
 			PNMB_O(kring, slot + si, &paddr);
@@ -424,7 +425,7 @@ static int e1000e_netmap_init_buffers(struct SOFTC_T *adapter)
 		}
 		rxr->next_to_use = 0;
 		/* preserve buffers already made available to clients */
-		i = rxr->count - 1 - nm_kr_rxspace(kring);
+		i = rxr->count - 1 - n;
 
 		/* program the RCTL */
 		rctl = er32(RCTL);
@@ -439,8 +440,9 @@ static int e1000e_netmap_init_buffers(struct SOFTC_T *adapter)
 	slot = netmap_reset(na, NR_TX, 0, 0);
 	if (slot) {
 		/* initialize the tx ring for netmap mode */
-		for (i = 0; i < na->num_tx_desc; i++) {
-			kring = na->tx_rings[0];
+		kring = na->tx_rings[0];
+		n = nm_kr_rxspace(kring);
+		for (i = 0; i < n; i++) {
 			si = netmap_idx_n2k(kring, i);
 			PNMB_O(kring, slot + si, &paddr);
 			E1000_TX_DESC(*txr, i)->buffer_addr = htole64(paddr);
