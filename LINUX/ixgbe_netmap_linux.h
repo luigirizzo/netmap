@@ -720,7 +720,7 @@ ixgbe_netmap_configure_rx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr)
 	 */
 	struct netmap_adapter *na = NA(adapter->netdev);
 	struct netmap_slot *slot;
-	int lim, i;
+	int lim, i, n;
 	struct NM_IXGBE_RING *ring = NM_IXGBE_RX_RING(adapter, ring_nr);
 	struct netmap_kring *kring;
 
@@ -733,9 +733,10 @@ ixgbe_netmap_configure_rx_ring(struct NM_IXGBE_ADAPTER *adapter, int ring_nr)
 
 	ixgbe_netmap_configure_srrctl(adapter, ring);
 
-	lim = na->num_rx_desc - 1 - nm_kr_rxspace(na->rx_rings[ring_nr]);
+	n = nm_kr_rxspace(na->rx_rings[ring_nr]);
+	lim = na->num_rx_desc - 1 - n;
 
-	for (i = 0; i < na->num_rx_desc; i++) {
+	for (i = 0; i < n; i++) {
 		/*
 		 * Fill the map and set the buffer address in the NIC ring,
 		 * considering the offset between the netmap and NIC rings
