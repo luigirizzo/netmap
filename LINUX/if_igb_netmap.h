@@ -494,7 +494,7 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 	igb_netmap_configure_srrctl(rxr);
 
 	kring = na->rx_rings[reg_idx];
-	n = nm_kr_rxspace(na->rx_rings[reg_idx])
+	n = nm_kr_rxspace(na->rx_rings[reg_idx]);
 	for (i = 0; i < n; i++) {
 		union e1000_adv_rx_desc *rx_desc;
 		uint64_t paddr;
