@@ -1,0 +1,87 @@
+diff --git a/igb/igb_main.c b/igb/igb_main.c
+index 0d343d050973..ddee5da89ba3 100644
+--- a/igb/igb_main.c
++++ b/igb/igb_main.c
+@@ -241,6 +241,10 @@ static int debug = -1;
+ module_param(debug, int, 0);
+ MODULE_PARM_DESC(debug, "Debug level (0=none,...,16=all)");
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#include <if_igb_netmap.h>
++#endif
++
+ struct igb_reg_info {
+ 	u32 ofs;
+ 	char *name;
+@@ -3489,6 +3493,10 @@ static int igb_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 	/* carrier off reporting is important to ethtool even BEFORE open */
+ 	netif_carrier_off(netdev);
+ 
++#ifdef DEV_NETMAP
++	igb_netmap_attach(adapter);
++#endif /* DEV_NETMAP */
++
+ #ifdef CONFIG_IGB_DCA
+ 	if (dca_add_requester(&pdev->dev) == 0) {
+ 		adapter->flags |= IGB_FLAG_DCA_ENABLED;
+@@ -3798,6 +3806,10 @@ static void igb_remove(struct pci_dev *pdev)
+ 		wr32(E1000_DCA_CTRL, E1000_DCA_CTRL_DCA_MODE_DISABLE);
+ 	}
+ #endif
++#ifdef DEV_NETMAP
++	netmap_detach(netdev);
++#endif /* DEV_NETMAP */
++
+ 
+ 	/* Release control of h/w to f/w.  If f/w is AMT enabled, this
+ 	 * would have already happened in close and is redundant.
+@@ -4302,6 +4314,9 @@ void igb_configure_tx_ring(struct igb_adapter *adapter,
+ 
+ 	txdctl |= E1000_TXDCTL_QUEUE_ENABLE;
+ 	wr32(E1000_TXDCTL(reg_idx), txdctl);
++#ifdef DEV_NETMAP
++	igb_netmap_configure_tx_ring(adapter, reg_idx);
++#endif /* DEV_NETMAP */
+ }
+ 
+ /**
+@@ -8043,6 +8058,10 @@ static bool igb_clean_tx_irq(struct igb_q_vector *q_vector, int napi_budget)
+ 
+ 	if (test_bit(__IGB_DOWN, &adapter->state))
+ 		return true;
++#ifdef DEV_NETMAP
++        if (netmap_tx_irq(tx_ring->netdev, tx_ring->queue_index) != NM_IRQ_PASS)
++                return true; /* cleaned ok */
++#endif /* DEV_NETMAP */
+ 
+ 	tx_buffer = &tx_ring->tx_buffer_info[i];
+ 	tx_desc = IGB_TX_DESC(tx_ring, i);
+@@ -8682,6 +8701,16 @@ static int igb_clean_rx_irq(struct igb_q_vector *q_vector, const int budget)
+ 	unsigned int xdp_xmit = 0;
+ 	struct xdp_buff xdp;
+ 
++#ifdef DEV_NETMAP
++	/*
++	 * 	 Same as the txeof routine: only wakeup clients on intr.
++	 */
++	int nm_irq;
++	nm_irq = netmap_rx_irq(rx_ring->netdev, rx_ring->queue_index, &total_packets);
++	if (nm_irq != NM_IRQ_PASS)
++		return (nm_irq == NM_IRQ_RESCHED) ? budget : 1;
++#endif /* DEV_NETMAP */
++
+ 	xdp.rxq = &rx_ring->xdp_rxq;
+ 
+ 	/* Frame size depend on rx_ring setup when PAGE_SIZE=4K */
+@@ -8861,6 +8890,11 @@ void igb_alloc_rx_buffers(struct igb_ring *rx_ring, u16 cleaned_count)
+ 	u16 i = rx_ring->next_to_use;
+ 	u16 bufsz;
+ 
++#ifdef DEV_NETMAP
++	if (igb_netmap_configure_rx_ring(rx_ring))
++		return;
++#endif /* DEV_NETMAP */
++
+ 	/* nothing to do */
+ 	if (!cleaned_count)
+ 		return;

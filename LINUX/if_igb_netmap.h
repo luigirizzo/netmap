@@ -475,7 +475,7 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 	int reg_idx = rxr->reg_idx;
 	struct netmap_slot* slot;
 	struct netmap_kring *kring;
-	u_int i;
+	u_int i, n;
 
 	/*
 	 * XXX watch out, the main driver must not use
@@ -494,7 +494,8 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 	igb_netmap_configure_srrctl(rxr);
 
 	kring = na->rx_rings[reg_idx];
-	for (i = 0; i < rxr->count; i++) {
+	n = nm_kr_rxspace(na->rx_rings[reg_idx])
+	for (i = 0; i < n; i++) {
 		union e1000_adv_rx_desc *rx_desc;
 		uint64_t paddr;
 		int si = netmap_idx_n2k(kring, i);
@@ -505,7 +506,7 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 		rx_desc->read.pkt_addr = htole64(paddr);
 	}
 	/* preserve buffers already made available to clients */
-	i = rxr->count - 1 - nm_kr_rxspace(na->rx_rings[reg_idx]);
+	i = rxr->count - 1 - n;
 
 	wmb();	/* Force memory writes to complete */
 	nm_prdis("%s rxr%d.tail %d", na->name, reg_idx, i);
