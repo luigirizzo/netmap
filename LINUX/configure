@@ -1806,6 +1806,15 @@ EOF
 	}
 EOF
 
+  # nf_reset() or nf_reset_ct()?
+  add_test 'have NF_RESET_CT' <<EOF
+	#include <linux/skbuff.h>
+
+	void dummy(struct sk_buff *skb) {
+		nf_reset_ct(skb);
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################
