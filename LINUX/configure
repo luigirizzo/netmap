@@ -145,6 +145,15 @@ idrv()
 	setop internal_driver "$@"
 }
 
+# external drivers that don't need the pre-patch test
+setop custom_driver new driver
+cdrv()
+{
+	setop custom_driver "$@"
+}
+
+cdrv enable virtio_net.c
+
 update_drivers() {
 	edrv intersect driver
 	idrv copy driver
@@ -507,8 +516,12 @@ else
 EXTRA_CFLAGS := -Wno-unused-variable -Wno-unused-label -Werror \$(addprefix -Wno-error=,$REC_DISABLED_WARNINGS)
 S_DRIVERS := $(drv print)
 E_DRIVERS := $(edrv print)
+C_DRIVERS := $(cdrv print)
 I_DRIVERS := $(idrv print)
-all: \$(S_DRIVERS:%=get-%) \$(E_DRIVERS:%=build-%) \$(I_DRIVERS:%=patch-%) tests
+
+TOBUILD := \$(filter-out \$(C_DRIVERS),\$(E_DRIVERS))
+
+all: \$(S_DRIVERS:%=get-%) \$(TOBUILD:%=build-%) \$(I_DRIVERS:%=patch-%) tests
 
 tests:
 	\$(MAKE) -C $ksrc M=\$\$PWD EXTRA_CFLAGS="\$(EXTRA_CFLAGS)" $kopts
@@ -982,7 +995,7 @@ EOF
 
   add_test true broken_buildsystem < /dev/null
 
-DISABLED_WARNINGS="unused-but-set-variable attributes packed-not-aligned stringop-truncation missing-attributes"
+DISABLED_WARNINGS="unused-but-set-variable attributes packed-not-aligned stringop-truncation missing-attributes format-truncation"
 REC_DISABLED_WARNINGS=
 disable_warning() {
 	REC_DISABLED_WARNINGS="$1 $REC_DISABLED_WARNINGS"
@@ -1057,7 +1070,9 @@ EOF
   }	
 
   for d in $(edrv print); do
-	add_file_exists_check build-$d true "edrv_build_error $d"
+	if !(cdrv enabled $d); then
+            add_file_exists_check build-$d true "edrv_build_error $d"
+	fi
   done
 
   # check that we can patch the internal drivers
@@ -1788,6 +1803,15 @@ EOF
 
 	vm_fault_t dummy(void) {
 		return 0;
+	}
+EOF
+
+  # nf_reset() or nf_reset_ct()?
+  add_test 'have NF_RESET_CT' <<EOF
+	#include <linux/skbuff.h>
+
+	void dummy(struct sk_buff *skb) {
+		nf_reset_ct(skb);
 	}
 EOF
 
