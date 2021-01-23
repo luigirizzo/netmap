@@ -5,7 +5,7 @@ AlwaysBreakAfterDefinitionReturnType: None
 AlwaysBreakAfterReturnType: TopLevelDefinitions
 BreakBeforeBraces: Linux
 ConstructorInitializerIndentWidth: 8
-ContinuationIndentWidth: 8
+ContinuationIndentWidth: 4
 IndentCaseLabels: false
 IndentWidth: 8
 SortIncludes: false
