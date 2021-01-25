@@ -268,7 +268,7 @@ nm_os_extmem_create(unsigned long p, struct nmreq_pools_info *pi, int *perror)
 			nr_pages,
 			pages,
 			FOLL_WRITE | FOLL_SPLIT | FOLL_POPULATE);
-#elif NETMAP_LINUX_HAVE_GUP_4ARGS
+#elif defined(NETMAP_LINUX_HAVE_GUP_4ARGS)
 	res = get_user_pages_unlocked(
 			p,
 			nr_pages,
