@@ -1687,16 +1687,26 @@ netmap_bwrap_bdg_ctl(struct nmreq_header *hdr, struct netmap_adapter *na)
 		error = netmap_do_regif(npriv, na, hdr);
 		if (error) {
 			netmap_priv_delete(npriv);
+			netmap_mem_put(bna->hwna->nm_mem);
+			bna->hwna->nm_mem = bna->hwna->nm_mem_prev;
+			bna->hwna->nm_mem_prev = NULL;
 			return error;
 		}
 		bna->na_kpriv = npriv;
 		na->na_flags |= NAF_BUSY;
 	} else {
+		struct netmap_adapter *hwna = bna->hwna;
 		if (na->active_fds == 0) /* not registered */
 			return EINVAL;
 		netmap_priv_delete(bna->na_kpriv);
 		bna->na_kpriv = NULL;
 		na->na_flags &= ~NAF_BUSY;
+		if (hwna->nm_mem_prev) {
+			nm_prinf("restore nm_mem_prev");
+			netmap_mem_put(hwna->nm_mem);
+			hwna->nm_mem = hwna->nm_mem_prev;
+			hwna->nm_mem_prev = NULL;
+		}
 	}
 
 	return error;
