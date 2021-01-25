@@ -1511,6 +1511,9 @@ netmap_bwrap_krings_create_common(struct netmap_adapter *na)
 	if (error) {
 		return error;
 	}
+	nm_prinf("%s krings_create(hwna) done all_rings RX %d TX %d", na->name,
+		netmap_all_rings(hwna, NR_RX), netmap_all_rings(hwna, NR_TX));
+
 
 	/* increment the usage counter for all the hwna krings */
 	for_rx_tx(t) {
