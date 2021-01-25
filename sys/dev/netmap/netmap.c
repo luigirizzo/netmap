@@ -2535,7 +2535,6 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 
 		/* ring configuration may have changed, fetch from the card */
 		netmap_update_config(na);
-		nm_prinf("%s update_config-ed txrings %d", na->name, nma_get_nrings(na, 0));
 	}
 
 	/* compute the range of tx and rx rings to monitor */
