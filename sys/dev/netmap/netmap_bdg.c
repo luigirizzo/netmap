@@ -628,6 +628,8 @@ found:
 unref_exit:
 	netmap_adapter_put(na);
 unlock_exit:
+	if (nmd)
+		netmap_mem_put(nmd);
 	NMG_UNLOCK();
 	return error;
 }
