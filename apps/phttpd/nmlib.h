@@ -544,7 +544,6 @@ nm_start(struct nm_garg *g)
 		}
 		g->extra_bufs = buf_avail - need_rings * need_rings_bufs;
 		prmvals[0] = need_ifs;
-		need_rings = 2;
 		prmvals[1] = need_rings;
 		prmvals[2] = g->ring_objsize;
 		prmvals[3] = buf_avail;
