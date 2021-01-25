@@ -1598,21 +1598,14 @@ netmap_stack_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	na->nm_krings_delete = netmap_stack_bwrap_krings_delete;
 	na->nm_notify = netmap_bwrap_notify;
 	na->na_flags |= NAF_MOREFRAG; // survive netmap_buf_size_validate()
+	na->na_flags |= NAF_HOST_ALL;
+
 	bna->nm_intr_notify = netmap_stack_bwrap_intr_notify;
 	/* Set the mfs, needed on the VALE mismatch datapath. */
 	bna->up.mfs = NM_BDG_MFS_DEFAULT;
 
 	if (hwna->na_flags & NAF_HOST_RINGS) {
-		enum txrx t;
-
 		hostna = &bna->host.up;
-		/* as much host rings as hw has */
-		for_rx_tx(t) {
-			int hwnr = nma_get_nrings(hwna, t);
-			PST_DBG("hw rings rings, %u", hwnr);
-			nma_set_nrings(hostna, t, hwnr);
-			nma_set_host_nrings(na, t, hwnr);
-		}
 		hostna->nm_notify = netmap_bwrap_notify;
 		bna->host.mfs = NM_BDG_MFS_DEFAULT;
 	}

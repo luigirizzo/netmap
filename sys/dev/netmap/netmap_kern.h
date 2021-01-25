@@ -784,7 +784,8 @@ struct netmap_adapter {
 /* free */
 #define NAF_MOREFRAG	512	/* the adapter supports NS_MOREFRAG */
 #define NAF_OFFSETS	1024	/* the adapter supports the slot offsets */
-#define NAF_CSUM	2048	/* the adapter supports checksum offload */
+#define NAF_HOST_ALL	2048	/* the adapter wants as many host rings as hw */
+#define NAF_CSUM	4096	/* the adapter supports checksum offload */
 #define NAF_ZOMBIE	(1U<<30) /* the nic driver has been unloaded */
 #define	NAF_BUSY	(1U<<31) /* the adapter is used internally and
 				  * cannot be registered from userspace
