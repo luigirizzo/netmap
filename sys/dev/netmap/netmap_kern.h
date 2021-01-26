@@ -1557,6 +1557,7 @@ int netmap_get_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 void netmap_unget_na(struct netmap_adapter *na, struct ifnet *ifp);
 int netmap_get_hw_na(struct ifnet *ifp,
 		struct netmap_mem_d *nmd, struct netmap_adapter **na);
+void netmap_mem_restore(struct netmap_adapter *na);
 
 #ifdef WITH_VALE
 uint32_t netmap_vale_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,

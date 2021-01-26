@@ -977,6 +977,16 @@ netmap_hw_krings_delete(struct netmap_adapter *na)
 	netmap_krings_delete(na);
 }
 
+void
+netmap_mem_restore(struct netmap_adapter *na)
+{
+	if (na->nm_mem_prev) {
+		netmap_mem_put(na->nm_mem);
+		na->nm_mem = na->nm_mem_prev;
+		na->nm_mem_prev = NULL;
+	}
+}
+
 static void
 netmap_mem_drop(struct netmap_adapter *na)
 {
@@ -984,10 +994,8 @@ netmap_mem_drop(struct netmap_adapter *na)
 	/* if the native allocator had been overrided on regif,
 	 * restore it now and drop the temporary one
 	 */
-	if (last && na->nm_mem_prev) {
-		netmap_mem_put(na->nm_mem);
-		na->nm_mem = na->nm_mem_prev;
-		na->nm_mem_prev = NULL;
+	if (netmap_mem_deref(na->nm_mem, na)) {
+		netmap_mem_restore(na);
 	}
 }
 

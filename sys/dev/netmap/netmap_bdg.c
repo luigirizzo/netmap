@@ -1675,6 +1675,7 @@ netmap_bwrap_bdg_ctl(struct nmreq_header *hdr, struct netmap_adapter *na)
 		error = netmap_do_regif(npriv, na, hdr);
 		if (error) {
 			netmap_priv_delete(npriv);
+			netmap_mem_restore(bna->hwna);
 			return error;
 		}
 		bna->na_kpriv = npriv;
@@ -1685,6 +1686,7 @@ netmap_bwrap_bdg_ctl(struct nmreq_header *hdr, struct netmap_adapter *na)
 		netmap_priv_delete(bna->na_kpriv);
 		bna->na_kpriv = NULL;
 		na->na_flags &= ~NAF_BUSY;
+		netmap_mem_restore(bna->hwna);
 	}
 
 	return error;
