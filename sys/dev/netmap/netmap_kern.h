@@ -1251,7 +1251,7 @@ struct pst_so_adapter {
 #endif
 };
 
-struct netmap_stack_adapter {
+struct netmap_pst_adapter {
 	struct netmap_vp_adapter up;
 	//NM_LIST_HEAD so_adapters;
 	int (*save_reg)(struct netmap_adapter *na, int onoff);
@@ -1378,7 +1378,7 @@ pst_wso(struct pst_so_adapter *soa, NM_SOCK_T *so)
 	so->so_emuldata = (void *)soa;
 }
 #endif
-extern int stack_no_runtocomp;
+extern int paste_no_runtocomp;
 /* these functions are non-static just beause netmap_linux.c refers them */
 int nm_os_pst_rx(struct netmap_kring *, struct netmap_slot *);
 int nm_os_pst_tx(struct netmap_kring *, struct netmap_slot *);
@@ -1387,7 +1387,7 @@ struct pst_so_adapter * pst_soa_from_fd(struct netmap_adapter *, int);
 int pst_extra_enq(struct netmap_kring *, struct netmap_slot *);
 void pst_extra_deq(struct netmap_kring *, struct netmap_slot *);
 void pst_fdtable_add(struct nmcb *, struct netmap_kring *);
-int netmap_stack_transmit(struct ifnet *, struct mbuf *);
+int netmap_pst_transmit(struct ifnet *, struct mbuf *);
 
 
 #endif /* WITH_PASTE */
@@ -1776,10 +1776,10 @@ int netmap_vale_destroy(const char *bdg_name, void *auth_token);
 #define netmap_bdg_destroy(_1, _2)	0
 #endif /* !WITH_VALE */
 #ifdef WITH_PASTE
-int netmap_get_stack_na(struct nmreq_header *hdr, struct netmap_adapter **na,
+int netmap_get_pst_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		struct netmap_mem_d *nmd, int create);
 #else /* !WITH_PASTE */
-#define	netmap_get_stack_na(_1, _2, _3, _4)	0
+#define	netmap_get_pst_na(_1, _2, _3, _4)	0
 #endif /* !WITH_PASTE */
 
 #ifdef WITH_PIPES

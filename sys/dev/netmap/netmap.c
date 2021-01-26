@@ -1588,7 +1588,7 @@ netmap_get_na(struct nmreq_header *hdr,
 		goto out;
 
 	/* try to see if this is a stack port */
-	error = netmap_get_stack_na(hdr, na, nmd, create);
+	error = netmap_get_pst_na(hdr, na, nmd, create);
 	if (error)
 		goto out;
 

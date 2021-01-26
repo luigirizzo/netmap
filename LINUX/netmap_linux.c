@@ -1083,7 +1083,7 @@ nm_os_generic_set_features(struct netmap_generic_adapter *gna)
 netdev_tx_t
 linux_pst_start_xmit(struct sk_buff *skb, struct net_device *dev)
 {
-	netmap_stack_transmit(dev, skb);
+	netmap_pst_transmit(dev, skb);
 	return (NETDEV_TX_OK);
 }
 
@@ -1136,7 +1136,7 @@ nm_os_set_mbuf_data_destructor(struct mbuf *m,
 	}
 }
 
-extern int stack_no_runtocomp;
+extern int paste_no_runtocomp;
 /*
  * The socket is locked when it is detached from us.
  */
@@ -1242,7 +1242,7 @@ nm_os_pst_sbdrain(struct netmap_adapter *na, NM_SOCK_T *sk)
 		return 0;
 	else if (!nmcb_valid(NMCB(m)))
 		return 0;
-	/* No need for BDG_RLOCK() - we don't move packets to stack na */
+	/* No need for BDG_RLOCK() - we don't move packets to pst na */
 	nm_os_pst_upcall(sk);
 	return 0;
 }

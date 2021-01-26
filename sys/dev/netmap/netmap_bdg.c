@@ -585,12 +585,12 @@ netmap_bdg_attach(struct nmreq_header *hdr, void *auth_token)
 	}
 
 	/* check for existing one */
-	error = netmap_get_stack_na(hdr, &na, nmd, 0);
+	error = netmap_get_pst_na(hdr, &na, nmd, 0);
 	if (na) {
 		error = EBUSY;
 		goto unref_exit;
 	}
-	error = netmap_get_stack_na(hdr, &na,
+	error = netmap_get_pst_na(hdr, &na,
 				nmd, 1 /* create if not exists */);
 	if (error) { /* no device */
 		goto unlock_exit;
@@ -676,7 +676,7 @@ netmap_bdg_detach_locked(struct nmreq_header *hdr, void *auth_token)
 	} else if (na != NULL) {
 		goto found;
 	}
-	error = netmap_get_stack_na(hdr, &na, NULL, 0 /* don't create */);
+	error = netmap_get_pst_na(hdr, &na, NULL, 0 /* don't create */);
 	if (error) { /* no device, or another bridge or user owns the device */
 		goto error_exit;
 	}

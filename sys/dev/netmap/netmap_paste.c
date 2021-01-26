@@ -50,22 +50,22 @@
 #ifdef WITH_PASTE
 #include <net/netmap_paste.h>
 
-int stack_no_runtocomp = 0;
-int stack_host_batch = 1;
-int stack_verbose = 0;
+int paste_no_runtocomp = 0;
+int paste_host_batch = 1;
+int paste_verbose = 0;
 #ifdef linux
-EXPORT_SYMBOL(stack_verbose);
+EXPORT_SYMBOL(paste_verbose);
 #endif
-static int stack_extra = 2048;
-SYSBEGIN(vars_stack);
+static int paste_extra = 2048;
+SYSBEGIN(vars_paste);
 SYSCTL_DECL(_dev_netmap);
-SYSCTL_INT(_dev_netmap, OID_AUTO, stack_no_runtocomp, CTLFLAG_RW, &stack_no_runtocomp, 0 , "");
-SYSCTL_INT(_dev_netmap, OID_AUTO, stack_host_batch, CTLFLAG_RW, &stack_host_batch, 0 , "");
-SYSCTL_INT(_dev_netmap, OID_AUTO, stack_verbose, CTLFLAG_RW, &stack_verbose, 0 , "");
-SYSCTL_INT(_dev_netmap, OID_AUTO, stack_extra, CTLFLAG_RW, &stack_extra, 0 , "");
+SYSCTL_INT(_dev_netmap, OID_AUTO, paste_no_runtocomp, CTLFLAG_RW, &paste_no_runtocomp, 0 , "");
+SYSCTL_INT(_dev_netmap, OID_AUTO, paste_host_batch, CTLFLAG_RW, &paste_host_batch, 0 , "");
+SYSCTL_INT(_dev_netmap, OID_AUTO, paste_verbose, CTLFLAG_RW, &paste_verbose, 0 , "");
+SYSCTL_INT(_dev_netmap, OID_AUTO, paste_extra, CTLFLAG_RW, &paste_extra, 0 , "");
 SYSEND;
 
-static int netmap_stack_bwrap_intr_notify(struct netmap_kring *kring, int flags);
+static int netmap_pst_bwrap_intr_notify(struct netmap_kring *kring, int flags);
 static inline void
 nm_swap(struct netmap_slot *s, struct netmap_slot *d)
 {
@@ -113,10 +113,10 @@ stna(const struct netmap_adapter *slave)
 	return likely(vpna) ? &vpna->na_bdg->bdg_ports[0]->up : NULL;
 }
 
-static inline struct netmap_stack_adapter *
+static inline struct netmap_pst_adapter *
 tosna(struct netmap_adapter *na)
 {
-	return (struct netmap_stack_adapter *)na;
+	return (struct netmap_pst_adapter *)na;
 }
 
 static inline int
@@ -356,7 +356,7 @@ pst_fdtable_may_reset(struct netmap_kring *kring)
 struct pst_so_adapter *
 pst_soa_from_fd(struct netmap_adapter *na, int fd)
 {
-	struct netmap_stack_adapter *sna = tosna(na);
+	struct netmap_pst_adapter *sna = tosna(na);
 
 	if (unlikely(fd >= sna->so_adapters_max))
 		return NULL;
@@ -605,7 +605,7 @@ nombq(struct netmap_adapter *na, struct mbuf *m)
 	nm_i = kring->nr_hwcur;
 	if (likely(nm_i != head))
 		kring->nr_hwcur = head;
-	if (!stack_host_batch)
+	if (!paste_host_batch)
 		netmap_bwrap_intr_notify(kring, 0);
 	/* as if netmap_transmit + rxsync_from_host done */
 	m_freem(m);
@@ -711,7 +711,7 @@ csum_transmit(struct netmap_adapter *na, struct mbuf *m)
 }
 
 int
-netmap_stack_transmit(struct ifnet *ifp, struct mbuf *m)
+netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 {
 	struct netmap_adapter *na = NA(ifp);
 	struct nmcb *cb = NULL;
@@ -892,7 +892,7 @@ pst_extra_alloc_kring(struct netmap_kring *kring)
 	struct netmap_adapter *na = kring->na;
 	struct pst_extra_pool *pool;
 	struct pst_extra_slot *extra_slots = NULL;
-	u_int want = stack_extra, n, j, next;
+	u_int want = paste_extra, n, j, next;
 
 	pool = nm_os_malloc(sizeof(*kring->extra));
 	if (!pool)
@@ -1037,7 +1037,7 @@ pst_write_offset(struct netmap_adapter *na, bool noring)
 }
 
 static int
-netmap_stack_bwrap_reg(struct netmap_adapter *na, int onoff)
+netmap_pst_bwrap_reg(struct netmap_adapter *na, int onoff)
 {
 	struct netmap_bwrap_adapter *bna = (struct netmap_bwrap_adapter *)na;
 	struct netmap_adapter *hwna = bna->hwna;
@@ -1085,7 +1085,7 @@ netmap_stack_bwrap_reg(struct netmap_adapter *na, int onoff)
 		/* re-overwrite */
 		hwna->ifp->netdev_ops = &hw->nm_ndo;
 #elif defined (__FreeBSD__)
-		hwna->ifp->if_transmit = netmap_stack_transmit;
+		hwna->ifp->if_transmit = netmap_pst_transmit;
 #endif /* linux */
 
 		/* set void callback on host rings */
@@ -1110,7 +1110,7 @@ netmap_stack_bwrap_reg(struct netmap_adapter *na, int onoff)
 
 
 static int
-netmap_stack_bwrap_intr_notify(struct netmap_kring *kring, int flags) {
+netmap_pst_bwrap_intr_notify(struct netmap_kring *kring, int flags) {
 	struct netmap_adapter *hwna = kring->na, *vpna, *mna;
 	enum txrx t = kring->tx ? NR_TX : NR_RX;
 
@@ -1125,7 +1125,7 @@ netmap_stack_bwrap_intr_notify(struct netmap_kring *kring, int flags) {
 		u_int me = kring->ring_id, last;
 		struct netmap_kring *mk;
 
-		if (stack_no_runtocomp)
+		if (paste_no_runtocomp)
 			return netmap_bwrap_intr_notify(kring, flags);
 		last = nma_get_nrings(mna, t);
 		mk = NMR(mna, t)[last > me ? me : me % last];
@@ -1143,7 +1143,7 @@ static void
 pst_unregister_socket(struct pst_so_adapter *soa)
 {
 	NM_SOCK_T *so = soa->so;
-	struct netmap_stack_adapter *sna = tosna(soa->na);
+	struct netmap_pst_adapter *sna = tosna(soa->na);
 
 	nm_prdis("so %p soa %p fd %d", so, soa, soa->fd);
 	if (!sna) {
@@ -1189,15 +1189,15 @@ pst_sodtor(NM_SOCK_T *so)
 
 /* Under NMG_LOCK() */
 static void
-netmap_stack_bdg_dtor(const struct netmap_vp_adapter *vpna)
+netmap_pst_bdg_dtor(const struct netmap_vp_adapter *vpna)
 {
-	struct netmap_stack_adapter *sna;
+	struct netmap_pst_adapter *sna;
 	int i;
 
 	if (&vpna->up != stna(&vpna->up))
 		return;
 
-	sna = (struct netmap_stack_adapter *)(void *)(uintptr_t)vpna;
+	sna = (struct netmap_pst_adapter *)(void *)(uintptr_t)vpna;
 	for (i = 0; i < sna->so_adapters_max; i++) {
 		struct pst_so_adapter *soa = sna->so_adapters[i];
 		if (soa)
@@ -1216,7 +1216,7 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	NM_SOCK_T *so;
 	void *file;
 	struct pst_so_adapter *soa;
-	struct netmap_stack_adapter *sna = tosna(na);
+	struct netmap_pst_adapter *sna = tosna(na);
 	int error;
 
 	if (unlikely(fd > NM_PST_FD_MAX)) {
@@ -1283,7 +1283,7 @@ unlock_return:
 }
 
 static int
-netmap_stack_bdg_config(struct nm_ifreq *ifr)
+netmap_pst_bdg_config(struct nm_ifreq *ifr)
 {
 	struct netmap_adapter *na;
 	int fd = *(int *)ifr->data;
@@ -1292,7 +1292,7 @@ netmap_stack_bdg_config(struct nm_ifreq *ifr)
 
 	strncpy(hdr.nr_name, ifr->nifr_name, sizeof(hdr.nr_name));
 	NMG_LOCK();
-	error = netmap_get_stack_na(&hdr, &na, NULL, 0);
+	error = netmap_get_pst_na(&hdr, &na, NULL, 0);
 	NMG_UNLOCK();
 	if (!error && na != NULL) {
 		error = pst_register_fd(na, fd);
@@ -1306,7 +1306,7 @@ netmap_stack_bdg_config(struct nm_ifreq *ifr)
 }
 
 static int
-netmap_stack_reg(struct netmap_adapter *na, int onoff)
+netmap_pst_reg(struct netmap_adapter *na, int onoff)
 {
 	struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter *)na;
 	int err;
@@ -1367,7 +1367,7 @@ pst_bdg_valid(struct netmap_adapter *na)
 }
 
 static int
-netmap_stack_txsync(struct netmap_kring *kring, int flags)
+netmap_pst_txsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
 	u_int const head = kring->rhead;
@@ -1386,9 +1386,9 @@ netmap_stack_txsync(struct netmap_kring *kring, int flags)
 
 /* We can call rxsync without locks because of run-to-completion */
 static int
-netmap_stack_rxsync(struct netmap_kring *kring, int flags)
+netmap_pst_rxsync(struct netmap_kring *kring, int flags)
 {
-	struct netmap_stack_adapter *sna = tosna(kring->na);
+	struct netmap_pst_adapter *sna = tosna(kring->na);
 	struct nm_bridge *b = sna->up.na_bdg;
 	int i, err;
 	register_t	intr;
@@ -1400,7 +1400,7 @@ netmap_stack_rxsync(struct netmap_kring *kring, int flags)
 	err = netmap_vp_rxsync_locked(kring, flags); // reclaim buffers
 	if (err)
 		return err;
-	if (stack_no_runtocomp)
+	if (paste_no_runtocomp)
 		return 0;
 
 	intr = intr_disable(); // emulate software interrupt context
@@ -1437,7 +1437,7 @@ netmap_stack_rxsync(struct netmap_kring *kring, int flags)
 				pst_poststack(bk);
 			} else {
 				netmap_bwrap_intr_notify(hwk, 0);
-				if (stack_host_batch) {
+				if (paste_host_batch) {
 					netmap_bwrap_intr_notify(hk, 0);
 				}
 			}
@@ -1448,7 +1448,7 @@ netmap_stack_rxsync(struct netmap_kring *kring, int flags)
 }
 
 static void
-netmap_stack_dtor(struct netmap_adapter *na)
+netmap_pst_dtor(struct netmap_adapter *na)
 {
 	struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter*)na;
 	struct nm_bridge *b = vpna->na_bdg;
@@ -1462,14 +1462,14 @@ netmap_stack_dtor(struct netmap_adapter *na)
 }
 
 static void
-netmap_stack_krings_delete(struct netmap_adapter *na)
+netmap_pst_krings_delete(struct netmap_adapter *na)
 {
 	pst_fdtable_free(na);
 	netmap_krings_delete(na);
 }
 
 static int
-netmap_stack_krings_create(struct netmap_adapter *na)
+netmap_pst_krings_create(struct netmap_adapter *na)
 {
 	int error = netmap_krings_create(na, 0);
 
@@ -1482,33 +1482,33 @@ netmap_stack_krings_create(struct netmap_adapter *na)
 }
 
 static void
-netmap_stack_bwrap_krings_delete(struct netmap_adapter *na)
+netmap_pst_bwrap_krings_delete(struct netmap_adapter *na)
 {
 	netmap_bwrap_krings_delete_common(na);
-	netmap_stack_krings_delete(na);
+	netmap_pst_krings_delete(na);
 }
 
 static int
-netmap_stack_bwrap_krings_create(struct netmap_adapter *na)
+netmap_pst_bwrap_krings_create(struct netmap_adapter *na)
 {
-	int error = netmap_stack_krings_create(na);
+	int error = netmap_pst_krings_create(na);
 
 	if (error)
 		return error;
 	error = netmap_bwrap_krings_create_common(na);
 	if (error) {
-		netmap_stack_krings_delete(na);
+		netmap_pst_krings_delete(na);
 	}
 	return error;
 }
 
 static int
-netmap_stack_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
+netmap_pst_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 		struct netmap_mem_d *nmd, struct netmap_vp_adapter **ret)
 {
 	struct nmreq_register *req =
 		(struct nmreq_register *)(uintptr_t)hdr->nr_body;
-	struct netmap_stack_adapter *sna;
+	struct netmap_pst_adapter *sna;
 	struct netmap_vp_adapter *vpna;
 	struct netmap_adapter *na;
 	int error = 0;
@@ -1549,12 +1549,12 @@ netmap_stack_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 	 */
 	if (ifp)
 		na->na_flags |= NAF_NATIVE;
-	na->nm_txsync = netmap_stack_txsync;
-	na->nm_rxsync = netmap_stack_rxsync;
-	na->nm_register = netmap_stack_reg;
-	na->nm_krings_create = netmap_stack_krings_create;
-	na->nm_krings_delete = netmap_stack_krings_delete;
-	na->nm_dtor = netmap_stack_dtor;
+	na->nm_txsync = netmap_pst_txsync;
+	na->nm_rxsync = netmap_pst_rxsync;
+	na->nm_register = netmap_pst_reg;
+	na->nm_krings_create = netmap_pst_krings_create;
+	na->nm_krings_delete = netmap_pst_krings_delete;
+	na->nm_dtor = netmap_pst_dtor;
 	na->nm_mem = nmd ?
 		netmap_mem_get(nmd):
 		netmap_mem_private_new(
@@ -1579,7 +1579,7 @@ err:
 }
 
 static int
-netmap_stack_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
+netmap_pst_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 {
 	struct netmap_bwrap_adapter *bna;
 	struct netmap_adapter *na = NULL;
@@ -1592,15 +1592,15 @@ netmap_stack_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	}
 	na = &bna->up.up;
 	strncpy(na->name, nr_name, sizeof(na->name));
-	na->nm_register = netmap_stack_bwrap_reg;
-	na->nm_txsync = netmap_stack_txsync;
-	na->nm_krings_create = netmap_stack_bwrap_krings_create;
-	na->nm_krings_delete = netmap_stack_bwrap_krings_delete;
+	na->nm_register = netmap_pst_bwrap_reg;
+	na->nm_txsync = netmap_pst_txsync;
+	na->nm_krings_create = netmap_pst_bwrap_krings_create;
+	na->nm_krings_delete = netmap_pst_bwrap_krings_delete;
 	na->nm_notify = netmap_bwrap_notify;
 	na->na_flags |= NAF_MOREFRAG; // survive netmap_buf_size_validate()
 	na->na_flags |= NAF_HOST_ALL;
 
-	bna->nm_intr_notify = netmap_stack_bwrap_intr_notify;
+	bna->nm_intr_notify = netmap_pst_bwrap_intr_notify;
 	/* Set the mfs, needed on the VALE mismatch datapath. */
 	bna->up.mfs = NM_BDG_MFS_DEFAULT;
 
@@ -1617,20 +1617,20 @@ netmap_stack_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	return error;
 }
 
-struct netmap_bdg_ops stack_bdg_ops = {
+struct netmap_bdg_ops pst_bdg_ops = {
 	.lookup = NULL,
-	.config = netmap_stack_bdg_config,
-	.dtor = netmap_stack_bdg_dtor,
-	.vp_create = netmap_stack_vp_create,
-	.bwrap_attach = netmap_stack_bwrap_attach,
-	.name = NM_STACK_NAME,
+	.config = netmap_pst_bdg_config,
+	.dtor = netmap_pst_bdg_dtor,
+	.vp_create = netmap_pst_vp_create,
+	.bwrap_attach = netmap_pst_bwrap_attach,
+	.name = NM_PST_NAME,
 };
 
 
 int
-netmap_get_stack_na(struct nmreq_header *hdr, struct netmap_adapter **na,
+netmap_get_pst_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		struct netmap_mem_d *nmd, int create)
 {
-	return netmap_get_bdg_na(hdr, na, nmd, create, &stack_bdg_ops);
+	return netmap_get_bdg_na(hdr, na, nmd, create, &pst_bdg_ops);
 }
 #endif /* WITH_PASTE */

@@ -680,7 +680,7 @@ struct nmreq_port_info_get {
 };
 
 #define	NM_BDG_NAME		"vale"	/* prefix for vale port name */
-#define	NM_STACK_NAME		"stack"	/* prefix for stack port name */
+#define	NM_PST_NAME		"pst"	/* prefix for stack port name */
 
 /*
  * nr_reqtype: NETMAP_REQ_VALE_ATTACH

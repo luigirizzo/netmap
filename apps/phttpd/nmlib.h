@@ -621,7 +621,7 @@ nm_start(struct nm_garg *g)
 		struct nmreq_header hdr;
 		struct nmreq_vale_attach reg;
 		int error;
-		size_t l = strlen("stack:") + strlen(g->ifname2);
+		size_t l = strlen("pst:") + strlen(g->ifname2);
 
 		if (l + 1 > sizeof(hdr.nr_name)) {
 			g->main_fd = -1;
@@ -629,7 +629,7 @@ nm_start(struct nm_garg *g)
 			goto nonetmap;
 		}
 		bzero(&hdr, sizeof(hdr));
-		memcpy(hdr.nr_name, "stack:", strlen("stack:"));
+		memcpy(hdr.nr_name, "pst:", strlen("pst:"));
 		memcpy(hdr.nr_name + strlen(hdr.nr_name), g->ifname2,
 		       strlen(g->ifname2));
 		hdr.nr_name[l] = '\0';
@@ -1186,7 +1186,7 @@ struct netmap_events {
 /*
  * Highest level abstraction mainly for PASTE
  *
- * ifname: netmap port name with prefix (e.g., stack:)
+ * ifname: netmap port name with prefix (e.g., pst:)
  *         and suffix (e.g., @/mnt/pm/x).
  * ret: pointer to nm_garg allocated
  * error: error value

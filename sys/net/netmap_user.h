@@ -849,7 +849,7 @@ nm_open(const char *ifname, const struct nmreq *req,
 
 	if (strncmp(ifname, "netmap:", 7) &&
 			strncmp(ifname, NM_BDG_NAME, strlen(NM_BDG_NAME)) &&
-			strncmp(ifname, NM_STACK_NAME, strlen(NM_STACK_NAME))) {
+			strncmp(ifname, NM_PST_NAME, strlen(NM_PST_NAME))) {
 		errno = 0; /* name not recognised, not an error */
 		return NULL;
 	}

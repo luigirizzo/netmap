@@ -70,7 +70,7 @@ user_clock_gettime(struct timespec *ts)
 }
 #endif /* MYHZ */
 
-#define STACK_NAME	"stack:0"
+#define PST_NAME	"pst:0"
 #define EXTMEMFILE	"netmap_mem"
 #define BPLUSFILE	"bplus"
 #define DATAFILE	"dumb"
@@ -1175,7 +1175,7 @@ main(int argc, char **argv)
 		unlink(path);
 		close(fd);
 	}
-	netmap_eventloop(STACK_NAME, pg.ifname, (void **)&g, &error,
+	netmap_eventloop(PST_NAME, pg.ifname, (void **)&g, &error,
 			&pg.sd, 1, &e, &nmg, &pg);
 
 	free_if_exist(nmg.nmr_config);

@@ -88,7 +88,7 @@ struct nmreq_prefix {
 static struct nmreq_prefix nmreq_prefixes[] = {
 	declprefix("netmap", NR_P_SKIP),
 	declprefix(NM_BDG_NAME,	NR_P_ID|NR_P_EMPTYID),
-	declprefix("stack",	NR_P_ID|NR_P_EMPTYID),
+	declprefix(NM_PST_NAME,	NR_P_ID|NR_P_EMPTYID),
 	{ NULL } /* terminate the list */
 };
 
