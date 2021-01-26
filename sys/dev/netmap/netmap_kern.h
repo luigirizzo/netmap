@@ -1152,12 +1152,13 @@ struct netmap_bwrap_adapter {
 	 * here its original value, to be restored at detach
 	 */
 	struct netmap_vp_adapter *saved_na_vp;
+	int (*nm_intr_notify)(struct netmap_kring *kring, int flags);
 };
 int nm_bdg_polling(struct nmreq_header *hdr);
 
+int netmap_bdg_attach(struct nmreq_header *hdr, void *auth_token);
+int netmap_bdg_detach(struct nmreq_header *hdr, void *auth_token);
 #ifdef WITH_VALE
-int netmap_vale_attach(struct nmreq_header *hdr, void *auth_token);
-int netmap_vale_detach(struct nmreq_header *hdr, void *auth_token);
 int netmap_vale_list(struct nmreq_header *hdr);
 int netmap_vi_create(struct nmreq_header *hdr, int);
 int nm_vi_create(struct nmreq_header *);
