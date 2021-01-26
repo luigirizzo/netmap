@@ -1136,7 +1136,6 @@ nm_os_set_mbuf_data_destructor(struct mbuf *m,
 	}
 }
 
-extern int paste_no_runtocomp;
 /*
  * The socket is locked when it is detached from us.
  */
@@ -1145,11 +1144,8 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 {
 	struct sk_buff_head *queue = &sk->sk_receive_queue;
 	struct sk_buff *m;
-//	unsigned long cpu_flags;
 	struct netmap_kring *kring = NULL;
 
-	//if (stack_no_runtocomp)
-	//	spin_lock_irqsave(&queue->lock, cpu_flags);
 	/* OOO segment(s) might have been enqueued in the same rxsync round */
 	while ((m = skb_peek(queue)) != NULL) {
 		struct nmcb *cb = NMCB(m);
@@ -1316,16 +1312,6 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	m->protocol = eth_type_trans(m, m->dev);
 	/* have orphan() set data_destructor */
 	SET_MBUF_DESTRUCTOR(m, nm_os_pst_mbuf_destructor);
-#ifdef NETMAP_LINUX_HAVE_IP_RCV
-	if (ntohs(m->protocol) == ETH_P_IP) {
-		skb_reset_network_header(m);
-		skb_reset_mac_len(m);
-		m->skb_iif = na->ifp->ifindex;
-		rcu_read_lock();
-		ip_rcv(m, na->ifp, NULL, na->ifp);
-		rcu_read_unlock();
-	} else
-#endif /* NETMAP_LINUX_HAVE_IP_RCV */
 	netif_receive_skb_core(m);
 
 	/* setting data destructor is safe only after skb_orphan_frag()

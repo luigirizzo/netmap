@@ -1378,7 +1378,6 @@ pst_wso(struct pst_so_adapter *soa, NM_SOCK_T *so)
 	so->so_emuldata = (void *)soa;
 }
 #endif
-extern int paste_no_runtocomp;
 /* these functions are non-static just beause netmap_linux.c refers them */
 int nm_os_pst_rx(struct netmap_kring *, struct netmap_slot *);
 int nm_os_pst_tx(struct netmap_kring *, struct netmap_slot *);

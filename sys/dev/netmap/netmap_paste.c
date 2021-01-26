@@ -50,7 +50,6 @@
 #ifdef WITH_PASTE
 #include <net/netmap_paste.h>
 
-int paste_no_runtocomp = 0;
 int paste_host_batch = 1;
 int paste_verbose = 0;
 #ifdef linux
@@ -59,7 +58,6 @@ EXPORT_SYMBOL(paste_verbose);
 static int paste_extra = 2048;
 SYSBEGIN(vars_paste);
 SYSCTL_DECL(_dev_netmap);
-SYSCTL_INT(_dev_netmap, OID_AUTO, paste_no_runtocomp, CTLFLAG_RW, &paste_no_runtocomp, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, paste_host_batch, CTLFLAG_RW, &paste_host_batch, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, paste_verbose, CTLFLAG_RW, &paste_verbose, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, paste_extra, CTLFLAG_RW, &paste_extra, 0 , "");
@@ -1125,8 +1123,6 @@ netmap_pst_bwrap_intr_notify(struct netmap_kring *kring, int flags) {
 		u_int me = kring->ring_id, last;
 		struct netmap_kring *mk;
 
-		if (paste_no_runtocomp)
-			return netmap_bwrap_intr_notify(kring, flags);
 		last = nma_get_nrings(mna, t);
 		mk = NMR(mna, t)[last > me ? me : me % last];
 		mk->nm_notify(mk, 0);
@@ -1400,8 +1396,6 @@ netmap_pst_rxsync(struct netmap_kring *kring, int flags)
 	err = netmap_vp_rxsync_locked(kring, flags); // reclaim buffers
 	if (err)
 		return err;
-	if (paste_no_runtocomp)
-		return 0;
 
 	intr = intr_disable(); // emulate software interrupt context
 
