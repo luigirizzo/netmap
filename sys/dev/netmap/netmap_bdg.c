@@ -1435,6 +1435,16 @@ netmap_bwrap_config(struct netmap_adapter *na, struct nm_config_info *info)
 	info->num_rx_descs = hwna->num_tx_desc;
 	info->rx_buf_maxsize = hwna->rx_buf_maxsize;
 
+	if (na->na_flags & NAF_HOST_RINGS && na->na_flags & NAF_HOST_ALL) {
+		enum txrx t;
+		for_rx_tx(t) {
+			int nr = nma_get_nrings(hwna, nm_txrx_swap(t));
+			nma_set_nrings(&bna->host.up, t, nr);
+			nma_set_host_nrings(&bna->up.up, t, nr);
+			nma_set_host_nrings(hwna, t, nma_get_nrings(hwna, t));
+		}
+	}
+
 	return 0;
 }
 
@@ -1731,6 +1741,10 @@ netmap_bwrap_attach_common(struct netmap_adapter *na,
 			na->na_flags |= NAF_SW_ONLY;
 		na->na_flags |= NAF_HOST_RINGS;
 		hostna = &bna->host.up;
+
+		/* bwrap_config() called in update_config() might
+		 * increase these default ring parameters.
+		 */
 
 		/* limit the number of host rings to that of hw */
 		nm_bound_var(&hostna->num_tx_rings, 1, 1,
