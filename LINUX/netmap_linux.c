@@ -42,11 +42,11 @@
 #ifdef NETMAP_LINUX_HAVE_SCHED_MM
 #include <linux/sched/mm.h>
 #endif /* NETMAP_LINUX_HAVE_SCHED_MM */
-#ifdef WITH_STACK
+#ifdef WITH_PASTE
 #include <linux/tcp.h>
 #include <net/sock.h> // sock_owned_by_user
 #include <net/netmap_paste.h>
-#endif /* WITH_STACK */
+#endif /* WITH_PASTE */
 
 #include "netmap_linux_config.h"
 
@@ -1078,7 +1078,7 @@ nm_os_generic_set_features(struct netmap_generic_adapter *gna)
 }
 #endif /* WITH_GENERIC */
 
-#ifdef WITH_STACK
+#ifdef WITH_PASTE
 
 netdev_tx_t
 linux_pst_start_xmit(struct sk_buff *skb, struct net_device *dev)
@@ -1438,7 +1438,7 @@ nm_os_set_nodelay(NM_SOCK_T *so)
 #endif
 	return 0; // FreeBSD returns status
 }
-#endif /* WITH_STACK */
+#endif /* WITH_PASTE */
 
 /* Use ethtool to find the current NIC rings lengths, so that the netmap
    rings can have the same lengths. */

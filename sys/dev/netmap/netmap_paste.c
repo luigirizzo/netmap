@@ -47,7 +47,7 @@
 #include <dev/netmap/netmap_mem2.h>
 #include <dev/netmap/netmap_bdg.h>
 
-#ifdef WITH_STACK
+#ifdef WITH_PASTE
 #include <net/netmap_paste.h>
 
 int stack_no_runtocomp = 0;
@@ -1633,4 +1633,4 @@ netmap_get_stack_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 {
 	return netmap_get_bdg_na(hdr, na, nmd, create, &stack_bdg_ops);
 }
-#endif /* WITH_STACK */
+#endif /* WITH_PASTE */

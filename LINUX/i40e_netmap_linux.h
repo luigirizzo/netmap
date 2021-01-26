@@ -428,7 +428,7 @@ i40e_netmap_txsync(struct netmap_kring *kring, int flags)
 			/* Fill the slot in the NIC ring.
 			 * (we should investigate if using legacy descriptors
 			 * is faster). */
-#ifdef WITH_STACK
+#ifdef WITH_PASTE
 			if (slot->flags & NS_CSUM) {
 				u32 cmd = NMCB_BUF(NMB(na, slot))->cmd;
 				u32 off = NMCB_BUF(NMB(na, slot))->off;
@@ -437,7 +437,7 @@ i40e_netmap_txsync(struct netmap_kring *kring, int flags)
 				    ((u64)off << I40E_TXD_QW1_OFFSET_SHIFT);
 				slot->flags &= ~NS_CSUM;
 			}
-#endif /* WITH_STACK */
+#endif /* WITH_PASTE */
 			curr->buffer_addr = htole64(paddr + offset);
 			curr->cmd_type_offset_bsz = htole64(
 			    ((u64)len << I40E_TXD_QW1_TX_BUF_SZ_SHIFT) |

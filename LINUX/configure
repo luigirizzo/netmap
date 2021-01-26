@@ -95,7 +95,7 @@ setop()
 
 # available subsystems
 subsystem_avail="vale pipe monitor generic ptnetmap sink \
-	extmem stack null"
+	extmem paste null"
 #enabled subsystems (bitfield)
 subsystem=0
 
@@ -314,8 +314,8 @@ Available options:
   --mod-name=		       netmap module name [$MODNAME]
   --enable-vale      	       enable the VALE switch
   --disable-vale      	       disable the VALE switch
-  --enable-stack      	       enable netmap API for kernel TCP/IP
-  --disable-stack      	       disable netmap API for kernel TCP/IP
+  --enable-paste      	       enable netmap API for kernel TCP/IP
+  --disable-paste      	       disable netmap API for kernel TCP/IP
   --enable-pipe      	       enable the netmap pipes
   --disable-pipe      	       disable the netmap pipes
   --enable-monitor   	       enable the nemtap monitors

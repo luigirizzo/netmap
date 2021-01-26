@@ -81,9 +81,9 @@
 #include <dev/netmap/netmap_kern.h>
 #include <net/netmap_virt.h>
 #include <dev/netmap/netmap_mem2.h>
-#ifdef WITH_STACK
+#ifdef WITH_PASTE
 #include <net/netmap_paste.h>
-#endif /* WITH_STACK */
+#endif /* WITH_PASTE */
 
 
 /* ======================== FREEBSD-SPECIFIC ROUTINES ================== */
@@ -980,7 +980,7 @@ ptn_memdev_shutdown(device_t dev)
 
 #endif /* WITH_PTNETMAP */
 
-#ifdef WITH_STACK
+#ifdef WITH_PASTE
 #define TCP_RCVD
 #include <sys/protosw.h>
 
@@ -1304,7 +1304,7 @@ nm_os_set_nodelay(NM_SOCK_T *so)
 	sopt.sopt_valsize = sizeof(on);
 	return sosetopt(so, &sopt);
 }
-#endif /* WITH_STACK */
+#endif /* WITH_PASTE */
 
 /*
  * In order to track whether pages are still mapped, we hook into

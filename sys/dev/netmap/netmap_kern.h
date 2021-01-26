@@ -60,8 +60,8 @@
 #if defined(CONFIG_NETMAP_SINK)
 #define WITH_SINK
 #endif
-#if defined(CONFIG_NETMAP_STACK)
-#define WITH_STACK
+#if defined(CONFIG_NETMAP_PASTE)
+#define WITH_PASTE
 #endif
 #if defined(CONFIG_NETMAP_NULL)
 #define WITH_NMNULL
@@ -80,7 +80,7 @@
 #define WITH_MONITOR
 #define WITH_GENERIC
 #define WITH_EXTMEM
-#define WITH_STACK
+#define WITH_PASTE
 #define WITH_NMNULL
 #endif
 
@@ -155,7 +155,7 @@ struct hrtimer {
 #define NM_BNS_GET(b)
 #define NM_BNS_PUT(b)
 
-#ifdef WITH_STACK
+#ifdef WITH_PASTE
 #define NM_SOCK_LOCK(_s)	so_lock(_s)
 #define NM_SOCK_UNLOCK(_s)	so_unlock(_s)
 #define MBUF_NETWORK_OFFSET(m)	(m)->m_pkthdr.l2hlen
@@ -177,7 +177,7 @@ struct hrtimer {
 #define SET_SODTOR(so, f)	sodtor_set(so, f)
 //#define MBUF_HEADLEN(m)	((m)->m_pkthdr.len)
 #define MBUF_HEADLEN(m)	((m)->m_len)
-#endif /* WITH_STACK */
+#endif /* WITH_PASTE */
 
 #elif defined (linux)
 
@@ -617,9 +617,9 @@ struct netmap_kring {
 
 #endif
 
-#ifdef WITH_STACK
+#ifdef WITH_PASTE
 	struct pst_extra_pool  *extra;
-#endif /* WITH_STACK */
+#endif /* WITH_PASTE */
 
 }
 #ifdef _WIN32
@@ -1219,7 +1219,7 @@ struct netmap_pipe_adapter {
 
 #endif /* WITH_PIPES */
 
-#ifdef WITH_STACK
+#ifdef WITH_PASTE
 
 #define	PST_DBG(format, ...)					\
 	do {							\
@@ -1390,7 +1390,7 @@ void pst_fdtable_add(struct nmcb *, struct netmap_kring *);
 int netmap_stack_transmit(struct ifnet *, struct mbuf *);
 
 
-#endif /* WITH_STACK */
+#endif /* WITH_PASTE */
 #ifdef WITH_NMNULL
 struct netmap_null_adapter {
 	struct netmap_adapter up;
@@ -1775,12 +1775,12 @@ int netmap_vale_destroy(const char *bdg_name, void *auth_token);
 #define netmap_bdg_create(_1, _2)	NULL
 #define netmap_bdg_destroy(_1, _2)	0
 #endif /* !WITH_VALE */
-#ifdef WITH_STACK
+#ifdef WITH_PASTE
 int netmap_get_stack_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		struct netmap_mem_d *nmd, int create);
-#else /* !WITH_STACK */
+#else /* !WITH_PASTE */
 #define	netmap_get_stack_na(_1, _2, _3, _4)	0
-#endif /* !WITH_STACK */
+#endif /* !WITH_PASTE */
 
 #ifdef WITH_PIPES
 /* max number of pipes per device */
