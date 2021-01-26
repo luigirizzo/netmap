@@ -536,7 +536,7 @@ pst_prestack(struct netmap_kring *kring)
 			if (unlikely(slot->len < nm_pst_getuoff(slot))) {
 				continue;
 			}
-		    	if (unlikely(nm_get_offset(kring, slot) !=
+			if (unlikely(nm_get_offset(kring, slot) !=
 				     sizeof(struct nmcb))) {
 				PST_DBG_LIM("bad offset %u",
 					    nm_get_offset(kring, slot));
@@ -751,7 +751,7 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 	/* Valid cb, txsync-ing packet. */
 	slot = nmcb_slot(cb);
 	if (unlikely(nmcb_rstate(cb) == MB_QUEUED)) {
-	       	/* originated by netmap but has been queued in either extra
+		/* originated by netmap but has been queued in either extra
 		 * or txring slot. The backend might drop this packet.
 		 */
 #ifdef linux
