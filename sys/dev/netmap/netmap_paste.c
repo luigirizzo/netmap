@@ -51,15 +51,10 @@
 #include <net/netmap_paste.h>
 
 int paste_host_batch = 1;
-int paste_verbose = 0;
-#ifdef linux
-EXPORT_SYMBOL(paste_verbose);
-#endif
 static int paste_extra = 2048;
 SYSBEGIN(vars_paste);
 SYSCTL_DECL(_dev_netmap);
 SYSCTL_INT(_dev_netmap, OID_AUTO, paste_host_batch, CTLFLAG_RW, &paste_host_batch, 0 , "");
-SYSCTL_INT(_dev_netmap, OID_AUTO, paste_verbose, CTLFLAG_RW, &paste_verbose, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, paste_extra, CTLFLAG_RW, &paste_extra, 0 , "");
 SYSEND;
 
