@@ -411,6 +411,9 @@ add_named_test() {
 	#include <linux/init.h>
 EOF
 		cat	# output the test code read from stdin
+		cat <<EOF
+	MODULE_LICENSE("GPL");
+EOF
 	} > $TMPDIR/$1.c
 	{
 		cat <<EOF
