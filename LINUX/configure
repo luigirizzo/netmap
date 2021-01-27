@@ -564,7 +564,7 @@ EOF
 	(
 		cd $TMPDIR
 		make $MAKE_OPT -k -j $NPROC
-	) >> config.log
+	) >> config.log 2>&1
 	eval "$TESTPOSTPROC"
 	cat >> config.log <<EOF
 ##############################################################################
