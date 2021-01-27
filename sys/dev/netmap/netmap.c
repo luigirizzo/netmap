@@ -990,7 +990,6 @@ netmap_mem_restore(struct netmap_adapter *na)
 static void
 netmap_mem_drop(struct netmap_adapter *na)
 {
-	int last = netmap_mem_deref(na->nm_mem, na);
 	/* if the native allocator had been overrided on regif,
 	 * restore it now and drop the temporary one
 	 */
