@@ -487,14 +487,14 @@ EOF
 	(
 		cd $TMPDIR
 		LANG=C make $MAKE_OPT -k -j $NPROC
-	) >> config.log
+	) >> config.log 2>&1
 	if grep -q ": invalid option -- 'O'" config.log; then
 		MAKE_OPT=
 		# let us try again without -O
 		(
 			cd $TMPDIR
 			make -k -j $NPROC
-		) >> config.log
+		) >> config.log 2>&1
 	fi
 	eval "$TESTPOSTPROC"
 	cat >> config.log <<EOF
