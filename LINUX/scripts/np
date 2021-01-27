@@ -508,6 +508,7 @@ function check-patch()
 				--disable-vale \
 				--disable-monitor \
 				--disable-ptnetmap \
+				--disable-null \
 				--no-apps \
 				--kernel-opts=CONFIG_STACK_VALIDATION= \
 				$config_opts \
