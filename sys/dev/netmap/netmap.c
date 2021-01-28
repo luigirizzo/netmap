@@ -2924,6 +2924,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			NMG_UNLOCK();
 			break;
 		}
+#ifdef WITH_VALE
 		case NETMAP_REQ_VALE_ATTACH: {
 			error = netmap_bdg_attach(hdr, NULL /* userspace request */);
 			break;
@@ -3002,7 +3003,6 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			break;
 		}
 
-#ifdef WITH_VALE
 		case NETMAP_REQ_VALE_LIST: {
 			error = netmap_vale_list(hdr);
 			break;
