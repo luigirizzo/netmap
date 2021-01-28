@@ -120,7 +120,6 @@ is_host(struct netmap_adapter *na)
 
 #define for_bdg_ports(i, b) \
 	        for ((i) = 0; (i) < (b)->bdg_active_ports; (i)++)
-#define	NETMAP_REQ_BDG_DETACH NETMAP_REQ_VALE_DETACH
 
 #define NM_PST_MAXRINGS	64
 #define NM_PST_RINGSIZE	1024
@@ -1327,7 +1326,7 @@ netmap_pst_reg(struct netmap_adapter *na, int onoff)
 			s = b->bdg_ports[i];
 			bzero(&hdr, sizeof(hdr));
 			strncpy(hdr.nr_name, s->up.name, sizeof(hdr.nr_name));
-			hdr.nr_reqtype = NETMAP_REQ_BDG_DETACH;
+			hdr.nr_reqtype = NETMAP_REQ_PST_DETACH;
 			hdr.nr_version = NETMAP_API;
 			hdr.nr_body = (uintptr_t)&req;
 			slvna = &s->up;

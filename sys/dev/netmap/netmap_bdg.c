@@ -119,6 +119,18 @@ netmap_bdg_name(struct netmap_vp_adapter *vp)
 	return b->bdg_basename;
 }
 
+static int
+nm_bdg_reqtype_attach(uint16_t type)
+{
+	return type == NETMAP_REQ_VALE_ATTACH || type == NETMAP_REQ_PST_ATTACH;
+}
+
+static int
+nm_bdg_reqtype_detach(uint16_t type)
+{
+	return type == NETMAP_REQ_VALE_DETACH || type == NETMAP_REQ_PST_DETACH;
+}
+
 
 #ifndef CONFIG_NET_NS
 /*
@@ -354,7 +366,7 @@ netmap_vp_bdg_ctl(struct nmreq_header *hdr, struct netmap_adapter *na)
 	struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter *)na;
 	struct nm_bridge *b = vpna->na_bdg;
 
-	if (hdr->nr_reqtype == NETMAP_REQ_VALE_ATTACH) {
+	if (nm_bdg_reqtype_attach(hdr->nr_reqtype)) {
 		return 0; /* nothing to do */
 	}
 	if (b) {
@@ -484,6 +496,8 @@ netmap_get_bdg_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		case NETMAP_REQ_VALE_DETACH:
 		case NETMAP_REQ_VALE_POLLING_ENABLE:
 		case NETMAP_REQ_VALE_POLLING_DISABLE:
+		case NETMAP_REQ_PST_ATTACH:
+		case NETMAP_REQ_PST_DETACH:
 			break; /* ok */
 		default:
 			error = EINVAL;
@@ -503,7 +517,7 @@ netmap_get_bdg_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 			goto out;
 		vpna = hw->na_vp;
 		hostna = hw->na_hostvp;
-		if (hdr->nr_reqtype == NETMAP_REQ_VALE_ATTACH) {
+		if (nm_bdg_reqtype_attach(hdr->nr_reqtype)) {
 			/* Check if we need to skip the host rings. */
 			struct nmreq_vale_attach *areq =
 				(struct nmreq_vale_attach *)(uintptr_t)hdr->nr_body;
@@ -1677,7 +1691,7 @@ netmap_bwrap_bdg_ctl(struct nmreq_header *hdr, struct netmap_adapter *na)
 	struct netmap_bwrap_adapter *bna = (struct netmap_bwrap_adapter*)na;
 	int error = 0;
 
-	if (hdr->nr_reqtype == NETMAP_REQ_VALE_ATTACH) {
+	if (nm_bdg_reqtype_attach(hdr->nr_reqtype)) {
 		struct nmreq_vale_attach *req =
 			(struct nmreq_vale_attach *)(uintptr_t)hdr->nr_body;
 		if (req->reg.nr_ringid != 0 ||

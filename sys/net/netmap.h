@@ -556,6 +556,10 @@ enum {
 	NETMAP_REQ_SYNC_KLOOP_STOP,
 	/* Enable CSB mode on a registered netmap control device. */
 	NETMAP_REQ_CSB_ENABLE,
+	/* Attach a netmap port to a PASTE port. */
+	NETMAP_REQ_PST_ATTACH,
+	/* Detach a netmap port from a PASTE port. */
+	NETMAP_REQ_PST_DETACH,
 };
 
 enum {

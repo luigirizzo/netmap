@@ -634,7 +634,7 @@ nm_start(struct nm_garg *g)
 		       strlen(g->ifname2));
 		hdr.nr_name[l] = '\0';
 		hdr.nr_version = NETMAP_API;
-		hdr.nr_reqtype = NETMAP_REQ_VALE_ATTACH;
+		hdr.nr_reqtype = NETMAP_REQ_PST_ATTACH;
 		hdr.nr_body = (uintptr_t)&reg;
 
 		bzero(&reg, sizeof(reg));

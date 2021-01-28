@@ -2925,6 +2925,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			NMG_UNLOCK();
 			break;
 		}
+#ifdef WITH_VALE
 		case NETMAP_REQ_VALE_ATTACH: {
 			error = netmap_bdg_attach(hdr, NULL /* userspace request */);
 			break;
@@ -3008,7 +3009,6 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			break;
 		}
 
-#ifdef WITH_VALE
 		case NETMAP_REQ_VALE_NEWIF: {
 			error = nm_vi_create(hdr);
 			break;
@@ -3095,6 +3095,17 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			error = netmap_sync_kloop_stop(priv);
 			break;
 		}
+#ifdef WITH_PASTE
+		case NETMAP_REQ_PST_ATTACH: {
+			error = netmap_bdg_attach(hdr, NULL /* userspace request */);
+			break;
+		}
+
+		case NETMAP_REQ_PST_DETACH: {
+			error = netmap_bdg_detach(hdr, NULL /* userspace request */);
+			break;
+		}
+#endif /* WITH_PASTE */
 
 		default: {
 			error = EINVAL;
@@ -3215,6 +3226,10 @@ nmreq_size_by_type(uint16_t nr_reqtype)
 		return sizeof(struct nmreq_pools_info);
 	case NETMAP_REQ_SYNC_KLOOP_START:
 		return sizeof(struct nmreq_sync_kloop_start);
+	case NETMAP_REQ_PST_ATTACH:
+		return sizeof(struct nmreq_vale_attach);
+	case NETMAP_REQ_PST_DETACH:
+		return sizeof(struct nmreq_vale_detach);
 	}
 	return 0;
 }
