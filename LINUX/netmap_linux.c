@@ -2503,8 +2503,8 @@ EXPORT_SYMBOL(netmap_bdg_name);		/* the bridge the vp is attached to */
 EXPORT_SYMBOL(netmap_bdg_update_private_data);
 EXPORT_SYMBOL(netmap_vale_create);
 EXPORT_SYMBOL(netmap_vale_destroy);
-EXPORT_SYMBOL(netmap_vale_attach);
-EXPORT_SYMBOL(netmap_vale_detach);
+EXPORT_SYMBOL(netmap_bdg_attach);
+EXPORT_SYMBOL(netmap_bdg_detach);
 EXPORT_SYMBOL(nm_vi_create);
 EXPORT_SYMBOL(nm_vi_destroy);
 #endif /* WITH_VALE */
