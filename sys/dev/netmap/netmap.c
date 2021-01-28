@@ -977,17 +977,24 @@ netmap_hw_krings_delete(struct netmap_adapter *na)
 	netmap_krings_delete(na);
 }
 
-static void
-netmap_mem_drop(struct netmap_adapter *na)
+void
+netmap_mem_restore(struct netmap_adapter *na)
 {
-	int last = netmap_mem_deref(na->nm_mem, na);
-	/* if the native allocator had been overrided on regif,
-	 * restore it now and drop the temporary one
-	 */
-	if (last && na->nm_mem_prev) {
+	if (na->nm_mem_prev) {
 		netmap_mem_put(na->nm_mem);
 		na->nm_mem = na->nm_mem_prev;
 		na->nm_mem_prev = NULL;
+	}
+}
+
+static void
+netmap_mem_drop(struct netmap_adapter *na)
+{
+	/* if the native allocator had been overrided on regif,
+	 * restore it now and drop the temporary one
+	 */
+	if (netmap_mem_deref(na->nm_mem, na)) {
+		netmap_mem_restore(na);
 	}
 }
 
@@ -1579,7 +1586,7 @@ netmap_get_na(struct nmreq_header *hdr,
 	if (error || *na != NULL)
 		goto out;
 
-	/* try to see if this is a bridge port */
+	/* try to see if this is a vale port */
 	error = netmap_get_vale_na(hdr, na, nmd, create);
 	if (error)
 		goto out;
@@ -2919,17 +2926,12 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 		}
 #ifdef WITH_VALE
 		case NETMAP_REQ_VALE_ATTACH: {
-			error = netmap_vale_attach(hdr, NULL /* userspace request */);
+			error = netmap_bdg_attach(hdr, NULL /* userspace request */);
 			break;
 		}
 
 		case NETMAP_REQ_VALE_DETACH: {
-			error = netmap_vale_detach(hdr, NULL /* userspace request */);
-			break;
-		}
-
-		case NETMAP_REQ_VALE_LIST: {
-			error = netmap_vale_list(hdr);
+			error = netmap_bdg_detach(hdr, NULL /* userspace request */);
 			break;
 		}
 
@@ -3001,6 +3003,11 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			break;
 		}
 
+		case NETMAP_REQ_VALE_LIST: {
+			error = netmap_vale_list(hdr);
+			break;
+		}
+
 		case NETMAP_REQ_VALE_NEWIF: {
 			error = nm_vi_create(hdr);
 			break;
@@ -3010,13 +3017,13 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			error = nm_vi_destroy(hdr->nr_name);
 			break;
 		}
+#endif  /* WITH_VALE */
 
 		case NETMAP_REQ_VALE_POLLING_ENABLE:
 		case NETMAP_REQ_VALE_POLLING_DISABLE: {
 			error = nm_bdg_polling(hdr);
 			break;
 		}
-#endif  /* WITH_VALE */
 		case NETMAP_REQ_POOLS_INFO_GET: {
 			/* Get information from the memory allocator used for
 			 * hdr->nr_name. */
@@ -3944,13 +3951,11 @@ netmap_attach_common(struct netmap_adapter *na)
 		/* use iommu or global allocator */
 		na->nm_mem = netmap_mem_get_iommu(na);
 	}
-#ifdef WITH_VALE
 	if (na->nm_bdg_attach == NULL)
 		/* no special nm_bdg_attach callback. On VALE
 		 * attach, we need to interpose a bwrap
 		 */
 		na->nm_bdg_attach = netmap_default_bdg_attach;
-#endif
 
 	return 0;
 }

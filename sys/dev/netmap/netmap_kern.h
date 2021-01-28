@@ -758,6 +758,7 @@ struct netmap_adapter {
 /* free */
 #define NAF_MOREFRAG	512	/* the adapter supports NS_MOREFRAG */
 #define NAF_OFFSETS	1024	/* the adapter supports the slot offsets */
+#define NAF_HOST_ALL	2048	/* the adapter wants as many host rings as hw */
 #define NAF_ZOMBIE	(1U<<30) /* the nic driver has been unloaded */
 #define	NAF_BUSY	(1U<<31) /* the adapter is used internally and
 				  * cannot be registered from userspace
@@ -1152,12 +1153,13 @@ struct netmap_bwrap_adapter {
 	 * here its original value, to be restored at detach
 	 */
 	struct netmap_vp_adapter *saved_na_vp;
+	int (*nm_intr_notify)(struct netmap_kring *kring, int flags);
 };
 int nm_bdg_polling(struct nmreq_header *hdr);
 
+int netmap_bdg_attach(struct nmreq_header *hdr, void *auth_token);
+int netmap_bdg_detach(struct nmreq_header *hdr, void *auth_token);
 #ifdef WITH_VALE
-int netmap_vale_attach(struct nmreq_header *hdr, void *auth_token);
-int netmap_vale_detach(struct nmreq_header *hdr, void *auth_token);
 int netmap_vale_list(struct nmreq_header *hdr);
 int netmap_vi_create(struct nmreq_header *hdr, int);
 int nm_vi_create(struct nmreq_header *);
@@ -1555,6 +1557,7 @@ int netmap_get_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 void netmap_unget_na(struct netmap_adapter *na, struct ifnet *ifp);
 int netmap_get_hw_na(struct ifnet *ifp,
 		struct netmap_mem_d *nmd, struct netmap_adapter **na);
+void netmap_mem_restore(struct netmap_adapter *na);
 
 #ifdef WITH_VALE
 uint32_t netmap_vale_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
