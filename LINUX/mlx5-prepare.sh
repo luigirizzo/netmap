@@ -7,4 +7,4 @@ if [ -e mlx5/config.mk ]; then
 fi
 
 cd mlx5
-scripts/mlnx_en_patch.sh --without-mlx4 -s $KSRC -j$(grep -c processor /proc/cpuinfo)
+scripts/mlnx_en_patch.sh -s $KSRC -j$(grep -c processor /proc/cpuinfo)
