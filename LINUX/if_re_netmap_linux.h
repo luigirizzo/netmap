@@ -311,7 +311,7 @@ re_netmap_rx_init(struct SOFTC_T *sc)
 	 * XXX do we need -1 instead ?
 	 */
 	lim = na->num_rx_desc /* - 1 */ - nm_kr_rxspace(&na->rx_rings[0]);
-	for (i = 0; i < na->num_rx_desc; i++) {
+	for (i = 0; i < lim; i++) {
 		l = netmap_idx_n2k(na->rx_rings[0], i);
 		PNMB(na, slot + l, &paddr);
 		cmdstat = NETMAP_BUF_SIZE(na);

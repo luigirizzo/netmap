@@ -371,7 +371,6 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 	struct netmap_adapter* na = NA(ifp);
 	struct netmap_kring *kring;
 	struct netmap_slot* slot;
-	struct e1000_tx_ring* txr = &adapter->tx_ring[0];
 	unsigned int i, r, si, n;
 	uint64_t paddr;
 	uint32_t rctl;
@@ -391,7 +390,7 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 
 		/* preserve buffers already made available to clients */
 		kring->nkr_to_refill = nm_kr_rxspace(kring);
-		n = rxr->count - kring->nkr_to_refill;
+		n = rxr->count - 1 - kring->nkr_to_refill;
 
 		for (i = 0; i < n; i++) {
 			si = netmap_idx_n2k(kring, i);
@@ -408,30 +407,12 @@ static int e1000_netmap_init_buffers(struct SOFTC_T *adapter)
 		ew32(RCTL, rctl);
 
 		wmb(); /* Force memory writes to complete */
-		writel(i, hw->hw_addr + rxr->rdt);
+		writel(n, hw->hw_addr + rxr->rdt);
 	}
 
-	/* now initialize the tx ring(s) */
-	for (r = 0; r < na->num_tx_rings; r++) {
-		slot = netmap_reset(na, NR_TX, r, 0);
-		if (!slot) {
-			nm_prinf("Skipping TX ring %d, netmap mode not requested", r);
-			continue;
-		}
-
-		/* preserve buffers already made available to clients */
-		n = txr->count - nm_kr_txspace(kring);
-		/* there is no need to update nkr_to_refill, since the txsync
-		 * always refills the hw slots anyway
-		 */
-
-		for (i = 0; i < n; i++) {
-			kring = na->tx_rings[r];
-			si = netmap_idx_n2k(kring, i);
-			PNMB_O(kring, slot + si, &paddr);
-			E1000_TX_DESC(*txr, i)->buffer_addr = htole64(paddr);
-		}
-	}
+	/* no need to initialize the tx rings, since txsync will always
+	 * overwrite the tx slots
+	 */
 
 	return 1;
 }

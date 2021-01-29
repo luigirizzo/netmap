@@ -318,8 +318,6 @@ ring_reset:
 static int
 forcedeth_netmap_tx_init(struct SOFTC_T *np)
 {
-	struct ring_desc_ex *desc;
-	int i, n;
 	struct netmap_adapter *na = NA(np->dev);
 	struct netmap_slot *slot;
 
@@ -327,20 +325,11 @@ forcedeth_netmap_tx_init(struct SOFTC_T *np)
 	/* slot is NULL if we are not in native netmap mode */
 	if (!slot)
 		return 0;
-	/* in netmap mode, overwrite addresses and maps */
-	//txd = np->rl_ldata.rl_tx_desc;
-	desc = np->tx_ring.ex;
-	n = np->tx_ring_size;
 
-	/* l points in the netmap ring, i points in the NIC ring */
-	for (i = 0; i < n; i++) {
-		int l = netmap_idx_n2k(na->tx_rings[0], i);
-		uint64_t paddr;
-		PNMB(na, slot + l, &paddr);
-		desc[i].flaglen = 0;
-		desc[i].bufhigh = htole32(dma_high(paddr));
-		desc[i].buflow = htole32(dma_low(paddr));
-	}
+	/* no need to pre-fill the tx rings, since txsync
+	 * will always overwrite the tx slots
+	 */
+
 	return 1;
 }
 
@@ -361,7 +350,7 @@ forcedeth_netmap_rx_init(struct SOFTC_T *np)
 	 * and also keep one empty.
 	 */
 	lim = np->rx_ring_size - 1 - nm_kr_rxspace(na->rx_rings[0]);
-	for (i = 0; i < np->rx_ring_size; i++) {
+	for (i = 0; i < lim; i++) {
 		void *addr;
 		uint64_t paddr;
 		int l = netmap_idx_n2k(na->rx_rings[0], i);

@@ -410,24 +410,15 @@ igb_netmap_configure_tx_ring(struct SOFTC_T *adapter, int ring_nr)
 	struct ifnet *ifp = adapter->netdev;
 	struct netmap_adapter* na = NA(ifp);
 	struct netmap_slot* slot;
-	struct igb_ring *txr = adapter->tx_ring[ring_nr];
-	struct netmap_kring *kring;
-	int i, si;
-	void *addr;
-	uint64_t paddr;
 
 	slot = netmap_reset(na, NR_TX, ring_nr, 0);
 	if (!slot)
 		return 0;  // not in netmap native mode
-	kring = na->tx_rings[ring_nr];
-	for (i = 0; i < na->num_tx_desc; i++) {
-		union e1000_adv_tx_desc *tx_desc;
-		si = netmap_idx_n2k(kring, i);
-		addr = PNMB_O(kring, slot + si, &paddr);
-		tx_desc = E1000_TX_DESC_ADV(*txr, i);
-		tx_desc->read.buffer_addr = htole64(paddr);
-		/* actually we don't care to init the rings here */
-	}
+
+	/* no need to fill the tx rings, since txsync will
+	 * always overwrite the tx slots
+	 */
+
 	return 1;	// success
 }
 
@@ -494,7 +485,8 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 	igb_netmap_configure_srrctl(rxr);
 
 	kring = na->rx_rings[reg_idx];
-	n = nm_kr_rxspace(na->rx_rings[reg_idx]);
+	/* preserve buffers already made available to clients */
+	n = rxr->count - 1 - nm_kr_rxspace(na->rx_rings[reg_idx]);
 	for (i = 0; i < n; i++) {
 		union e1000_adv_rx_desc *rx_desc;
 		uint64_t paddr;
@@ -505,12 +497,10 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 		rx_desc->read.hdr_addr = 0;
 		rx_desc->read.pkt_addr = htole64(paddr);
 	}
-	/* preserve buffers already made available to clients */
-	i = rxr->count - 1 - n;
 
 	wmb();	/* Force memory writes to complete */
 	nm_prdis("%s rxr%d.tail %d", na->name, reg_idx, i);
-	writel(i, rxr->tail);
+	writel(n, rxr->tail);
 	return 1;	// success
 }
 
