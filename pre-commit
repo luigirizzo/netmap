@@ -42,7 +42,7 @@ fi
 files="sys/dev/netmap/netmap_vale.c sys/dev/netmap/netmap_monitor.c sys/dev/netmap/netmap_pipe.c sys/dev/netmap/netmap.c sys/dev/netmap/netmap_generic.c sys/dev/netmap/netmap_freebsd.c sys/dev/netmap/netmap_legacy.c LINUX/netmap_linux.c LINUX/bsd_glue.h LINUX/i40e_netmap_linux.h LINUX/if_e1000_netmap.h LINUX/if_e1000e_netmap.h LINUX/if_igb_netmap.h LINUX/if_re_netmap_linux.h LINUX/ixgbe_netmap_linux.h LINUX/veth_netmap.h LINUX/virtio_netmap.h LINUX/netmap_ptnet.c LINUX/forcedeth_netmap.h apps/bridge/bridge.c apps/lb/lb.c apps/vale-ctl/vale-ctl.c apps/dedup/dedup.c apps/include/ctrs.h"
 
 for f in $files; do
-	ERR=$(git grep --line-number "^\(    \)\+" $f | head -n1)
+	ERR=$(git grep --line-number "^\(     \)\+" $f | head -n1)
 	if [ "$ERR" != "" ]; then
 		echo "Wrong indentation in $f"
 		echo "$ERR"

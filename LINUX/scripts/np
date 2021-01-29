@@ -378,7 +378,7 @@ function build-prep()
 	(
 		cd $dst
 		last=compiler-gcc.h
-		for i in $(seq 9); do
+		for i in $(seq 10); do
 			[ -e include/linux/compiler-gcc$i.h ] ||
 				ln -s $last include/linux/compiler-gcc$i.h
 			last=compiler-gcc$i.h
@@ -391,6 +391,12 @@ KBUILD_CFLAGS += $(call cc-option, -no-pie)\
 KBUILD_CFLAGS += $(call cc-option, -fcf-protection=none)\
 KBUILD_AFLAGS += $(call cc-option, -fno-pie)\
 KBUILD_CPPFLAGS += $(call cc-option, -fno-pie)' Makefile
+		# remove duplicated yylloc definition, since gcc-10 defaults to -fno-common
+		sed -i -e '/^[[:blank:]]*YYLTYPE[[:blank:]][[:blank:]]*yylloc;[[:blank:]]*$/d' \
+			scripts/dtc/dtc-lexer*
+		# make sure per_cpu_load_addr is static
+		sed -i -e 's/^[[:blank:]]*Elf_Addr[[:blank:]][[:blank:]]*per_cpu_load_addr;/static &/' \
+			arch/x86/tools/relocs.c
 		if [ -f $LINUX_CONFIGS/config-$version ]; then
 			cp $LINUX_CONFIGS/config-$version .config
 			yes '' | make oldconfig
@@ -402,7 +408,7 @@ KBUILD_CPPFLAGS += $(call cc-option, -fno-pie)' Makefile
 		yes '' | make oldconfig
 		# some tools do not compile with -Werror and gcc >= 9
 		sed -i 's/-Werror/-Wno-error/g' $(grep -Rl -- -Werror tools)
-		make modules_prepare
+		make scripts modules_prepare
 		touch .build-prep
 	) >$dst.log 2>&1 || error "build-prep failed for linux $version. Please check $dst.log"
 	echo $dst
@@ -502,6 +508,7 @@ function check-patch()
 				--disable-vale \
 				--disable-monitor \
 				--disable-ptnetmap \
+				--disable-null \
 				--no-apps \
 				--kernel-opts=CONFIG_STACK_VALIDATION= \
 				$config_opts \

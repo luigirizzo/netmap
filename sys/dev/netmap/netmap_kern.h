@@ -488,8 +488,16 @@ struct netmap_kring {
 	 * On a NIC reset, the NIC ring indexes may be reset but the
 	 * indexes in the netmap rings remain the same. nkr_hwofs
 	 * keeps track of the offset between the two.
+	 *
+	 * Moreover, during reset, we can restore only the subset of
+	 * the NIC ring that corresponds to the kernel-owned part of
+	 * the netmap ring. The rest of the slots must be restored
+	 * by the *sync routines when the user releases more slots.
+	 * The nkr_to_refill field keeps track of the number of slots
+	 * that still need to be restored.
 	 */
 	int32_t		nkr_hwofs;
+	int32_t		nkr_to_refill;
 
 	/* last_reclaim is opaque marker to help reduce the frequency
 	 * of operations such as reclaiming tx buffers. A possible use
@@ -1180,9 +1188,7 @@ struct netmap_bwrap_adapter {
 	 * here its original value, to be restored at detach
 	 */
 	struct netmap_vp_adapter *saved_na_vp;
-	/* XXX applied only to non-host rings */
 	int (*nm_intr_notify)(struct netmap_kring *kring, int flags);
-
 };
 int nm_bdg_polling(struct nmreq_header *hdr);
 
@@ -1757,6 +1763,7 @@ int netmap_get_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 void netmap_unget_na(struct netmap_adapter *na, struct ifnet *ifp);
 int netmap_get_hw_na(struct ifnet *ifp,
 		struct netmap_mem_d *nmd, struct netmap_adapter **na);
+void netmap_mem_restore(struct netmap_adapter *na);
 
 #ifdef WITH_VALE
 uint32_t netmap_vale_learning(struct nm_bdg_fwd *ft, uint8_t *dst_ring,
@@ -1953,7 +1960,7 @@ extern int netmap_generic_txqdisc;
 
 /* Assigns the device IOMMU domain to an allocator.
  * Returns -ENOMEM in case the domain is different */
-#define nm_iommu_group_id(dev) (0)
+#define nm_iommu_group_id(dev) (-1)
 
 /* Callback invoked by the dma machinery after a successful dmamap_load */
 static void netmap_dmamap_cb(__unused void *arg,

@@ -159,7 +159,7 @@ i40e_netmap_configure_rx_ring(struct i40e_ring *ring)
 	struct netmap_adapter *na;
 	struct netmap_slot *slot;
 	struct netmap_kring *kring;
-	int lim, i, ring_nr;
+	int lim, i, ring_nr, n;
 
 	if (!ring->netdev) {
 		// XXX it this possible?
@@ -174,9 +174,10 @@ i40e_netmap_configure_rx_ring(struct i40e_ring *ring)
 		return 0;	// not in native netmap mode
 
 	kring = na->rx_rings[ring_nr];
-	lim = na->num_rx_desc - 1 - nm_kr_rxspace(kring);
+	n = nm_kr_rxspace(kring);
+	lim = na->num_rx_desc - 1 - n;
 
-	for (i = 0; i < na->num_rx_desc; i++) {
+	for (i = 0; i < n; i++) {
 		int si = netmap_idx_n2k(kring, i);
 		uint64_t paddr;
 		union i40e_rx_desc *rx = I40E_RX_DESC(ring, i);

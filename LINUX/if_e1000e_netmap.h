@@ -209,13 +209,14 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			u_int len = slot->len;
 			uint64_t paddr;
-			void *addr = PNMB(na, slot, &paddr);
+			uint64_t offset = nm_get_offset(kring, slot);
 
 			/* device-specific */
 			struct e1000_tx_desc *curr = E1000_TX_DESC(*txr, nic_i);
 			int hw_flags = E1000_TXD_CMD_IFCS;
 
-			NM_CHECK_ADDR_LEN(na, addr, len);
+			PNMB(na, slot, &paddr);
+			NM_CHECK_ADDR_LEN_OFF(na, len, offset);
 
 			if (!(slot->flags & NS_MOREFRAG)) {
 				hw_flags |= adapter->txd_cmd;
@@ -223,15 +224,13 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 				 * We may set it only if NS_REPORT is set or
 				 * at least once every half ring. */
 			}
-			if (slot->flags & NS_BUF_CHANGED) {
-				curr->buffer_addr = htole64(paddr);
-			}
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED | NS_MOREFRAG);
+			netmap_sync_map_dev(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
 
 			/* Fill the slot in the NIC ring. */
+			curr->buffer_addr = htole64(paddr + offset);
 			curr->upper.data = 0;
 			curr->lower.data = htole32(len | hw_flags);
-			netmap_sync_map_dev(na, (bus_dma_tag_t) na->pdev, &paddr, len, NR_TX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
@@ -266,7 +265,7 @@ e1000_netmap_txsync(struct netmap_kring *kring, int flags)
 		for ( ; tosync != nm_i; tosync = nm_next(tosync, lim)) {
 			struct netmap_slot *slot = &ring->slot[tosync];
 			uint64_t paddr;
-			(void)PNMB(na, slot, &paddr);
+			(void)PNMB_O(kring, slot, &paddr);
 
 			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev,
 					&paddr, slot->len, NR_TX);
@@ -326,7 +325,7 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 			if ((staterr & E1000_RXD_STAT_DD) == 0)
 				break;
 			dma_rmb();  /* read descriptor after status DD */
-			PNMB(na, slot, &paddr);
+			PNMB_O(kring, slot, &paddr);
 			slot->len = le16toh(curr->NM_E1R_RX_LENGTH) - strip_crc;
 			slot->flags = (!(staterr & E1000_RXD_STAT_EOP) ? NS_MOREFRAG : 0);
 			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev, &paddr,
@@ -403,7 +402,7 @@ static int e1000e_netmap_init_buffers(struct SOFTC_T *adapter)
 	struct netmap_slot* slot;
 	struct e1000_ring *rxr = adapter->rx_ring;
 	struct e1000_ring *txr = adapter->tx_ring;
-	int i, si;
+	int i, si, n;
 	uint64_t paddr;
 	uint32_t rctl;
 
@@ -412,22 +411,23 @@ static int e1000e_netmap_init_buffers(struct SOFTC_T *adapter)
 
 	slot = netmap_reset(na, NR_RX, 0, 0);
 	if (slot) {
+		kring = na->rx_rings[0];
 		/* initialize the RX ring for netmap mode */
 		adapter->alloc_rx_buf = (void*)e1000e_no_rx_alloc;
-		for (i = 0; i < rxr->count; i++) {
+		n = nm_kr_rxspace(kring);
+		for (i = 0; i < n; i++) {
 			struct e1000_buffer *bi = &rxr->buffer_info[i];
-			si = netmap_idx_n2k(na->rx_rings[0], i);
-			PNMB(na, slot + si, &paddr);
+			si = netmap_idx_n2k(kring, i);
+			PNMB_O(kring, slot + si, &paddr);
 			if (bi->skb)
 				nm_prerr("Warning: rx skb still set on slot #%d", i);
 			E1000_RX_DESC_EXT(*rxr, i)->NM_E1R_RX_BUFADDR = htole64(paddr);
 		}
 		rxr->next_to_use = 0;
 		/* preserve buffers already made available to clients */
-		i = rxr->count - 1 - nm_kr_rxspace(na->rx_rings[0]);
+		i = rxr->count - 1 - n;
 
 		/* program the RCTL */
-		kring = na->rx_rings[0];
 		rctl = er32(RCTL);
 		rctl = (rctl & ~E1000_NETMAP_RCTL_MASK) |
 			e1000e_netmap_get_rctl(kring->hwbuf_len);
@@ -440,9 +440,11 @@ static int e1000e_netmap_init_buffers(struct SOFTC_T *adapter)
 	slot = netmap_reset(na, NR_TX, 0, 0);
 	if (slot) {
 		/* initialize the tx ring for netmap mode */
-		for (i = 0; i < na->num_tx_desc; i++) {
-			si = netmap_idx_n2k(na->tx_rings[0], i);
-			PNMB(na, slot + si, &paddr);
+		kring = na->tx_rings[0];
+		n = nm_kr_rxspace(kring);
+		for (i = 0; i < n; i++) {
+			si = netmap_idx_n2k(kring, i);
+			PNMB_O(kring, slot + si, &paddr);
 			E1000_TX_DESC(*txr, i)->buffer_addr = htole64(paddr);
 		}
 	}
@@ -474,7 +476,7 @@ e1000_netmap_attach(struct SOFTC_T *adapter)
 
 	na.ifp = adapter->netdev;
 	na.pdev = &adapter->pdev->dev;
-	na.na_flags = NAF_MOREFRAG;
+	na.na_flags = NAF_MOREFRAG | NAF_OFFSETS;
 	na.num_tx_desc = adapter->tx_ring->count;
 	na.num_rx_desc = adapter->rx_ring->count;
 	na.num_tx_rings = na.num_rx_rings = 1;

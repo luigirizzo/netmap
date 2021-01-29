@@ -644,6 +644,7 @@ unref_exit:
 unlock_exit:
 	if (nmd)
 		netmap_mem_put(nmd);
+
 	NMG_UNLOCK();
 	return error;
 }
@@ -1471,15 +1472,30 @@ netmap_bwrap_config(struct netmap_adapter *na, struct nm_config_info *info)
 	info->num_rx_descs = hwna->num_tx_desc;
 	info->rx_buf_maxsize = hwna->rx_buf_maxsize;
 
-	if (na->na_flags & NAF_HOST_RINGS && na->na_flags & NAF_HOST_ALL) {
+	if (na->na_flags & NAF_HOST_RINGS) {
+		struct netmap_adapter *hostna = &bna->host.up;
 		enum txrx t;
-		for_rx_tx(t) {
-			int nr = nma_get_nrings(hwna, nm_txrx_swap(t));
-			nma_set_nrings(&bna->host.up, t, nr);
-			nma_set_host_nrings(&bna->up.up, t, nr);
-			nma_set_host_nrings(hwna, t, nma_get_nrings(hwna, t));
+
+		/* limit the number of host rings to that of hw */
+		if (na->na_flags & NAF_HOST_ALL) {
+			hostna->num_tx_rings = nma_get_nrings(hwna, NR_RX);
+			hostna->num_rx_rings = nma_get_nrings(hwna, NR_TX);
+		} else {
+			nm_bound_var(&hostna->num_tx_rings, 1, 1,
+				nma_get_nrings(hwna, NR_TX), NULL);
+			nm_bound_var(&hostna->num_rx_rings, 1, 1,
+				nma_get_nrings(hwna, NR_RX), NULL);
 		}
-		nm_prinf("%s NAF_HOST_ALL", na->name);
+		for_rx_tx(t) {
+			enum txrx r = nm_txrx_swap(t);
+			u_int nr = nma_get_nrings(hostna, t);
+
+			nma_set_host_nrings(na, t, nr);
+			if (nma_get_host_nrings(hwna, t) < nr) {
+				nma_set_host_nrings(hwna, t, nr);
+			}
+			nma_set_ndesc(hostna, t, nma_get_ndesc(hwna, r));
+		}
 	}
 
 	return 0;
@@ -1715,9 +1731,7 @@ netmap_bwrap_bdg_ctl(struct nmreq_header *hdr, struct netmap_adapter *na)
 		error = netmap_do_regif(npriv, na, hdr);
 		if (error) {
 			netmap_priv_delete(npriv);
-			netmap_mem_put(bna->hwna->nm_mem);
-			bna->hwna->nm_mem = bna->hwna->nm_mem_prev;
-			bna->hwna->nm_mem_prev = NULL;
+			netmap_mem_restore(bna->hwna);
 			return error;
 		}
 		bna->na_kpriv = npriv;
@@ -1729,12 +1743,7 @@ netmap_bwrap_bdg_ctl(struct nmreq_header *hdr, struct netmap_adapter *na)
 		netmap_priv_delete(bna->na_kpriv);
 		bna->na_kpriv = NULL;
 		na->na_flags &= ~NAF_BUSY;
-		if (hwna->nm_mem_prev) {
-			nm_prinf("restore nm_mem_prev");
-			netmap_mem_put(hwna->nm_mem);
-			hwna->nm_mem = hwna->nm_mem_prev;
-			hwna->nm_mem_prev = NULL;
-		}
+		netmap_mem_restore(bna->hwna);
 	}
 
 	return error;
@@ -1792,29 +1801,8 @@ netmap_bwrap_attach_common(struct netmap_adapter *na,
 		na->na_flags |= NAF_HOST_RINGS;
 		hostna = &bna->host.up;
 
-		/* bwrap_config() called in update_config() might
-		 * increase these default ring parameters.
-		 */
-
-		/* limit the number of host rings to that of hw */
-		nm_bound_var(&hostna->num_tx_rings, 1, 1,
-				nma_get_nrings(hwna, NR_TX), NULL);
-		nm_bound_var(&hostna->num_rx_rings, 1, 1,
-				nma_get_nrings(hwna, NR_RX), NULL);
-
 		snprintf(hostna->name, sizeof(hostna->name), "%s^", na->name);
 		hostna->ifp = hwna->ifp;
-		for_rx_tx(t) {
-			enum txrx r = nm_txrx_swap(t);
-			u_int nr = nma_get_nrings(hostna, t);
-
-			nma_set_nrings(hostna, t, nr);
-			nma_set_host_nrings(na, t, nr);
-			if (nma_get_host_nrings(hwna, t) < nr) {
-				nma_set_host_nrings(hwna, t, nr);
-			}
-			nma_set_ndesc(hostna, t, nma_get_ndesc(hwna, r));
-		}
 		// hostna->nm_txsync = netmap_bwrap_host_txsync;
 		// hostna->nm_rxsync = netmap_bwrap_host_rxsync;
 		hostna->nm_mem = netmap_mem_get(na->nm_mem);
@@ -1824,6 +1812,7 @@ netmap_bwrap_attach_common(struct netmap_adapter *na,
 			hostna->na_hostvp = &bna->host;
 		hostna->na_flags = NAF_BUSY; /* prevent NIOCREGIF */
 		hostna->rx_buf_maxsize = hwna->rx_buf_maxsize;
+		/* bwrap_config() will determine the number of host rings */
 	}
 	if (hwna->na_flags & NAF_MOREFRAG)
 		na->na_flags |= NAF_MOREFRAG;
