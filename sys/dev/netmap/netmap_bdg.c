@@ -1445,7 +1445,7 @@ netmap_bwrap_reg(struct netmap_adapter *na, int onoff)
 }
 
 /* nm_config callback for bwrap */
-int
+static int
 netmap_bwrap_config(struct netmap_adapter *na, struct nm_config_info *info)
 {
 	struct netmap_bwrap_adapter *bna =
@@ -1737,7 +1737,6 @@ netmap_bwrap_bdg_ctl(struct nmreq_header *hdr, struct netmap_adapter *na)
 		bna->na_kpriv = npriv;
 		na->na_flags |= NAF_BUSY;
 	} else {
-		struct netmap_adapter *hwna = bna->hwna;
 		if (na->active_fds == 0) /* not registered */
 			return EINVAL;
 		netmap_priv_delete(bna->na_kpriv);

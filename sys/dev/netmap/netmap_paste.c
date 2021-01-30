@@ -448,7 +448,7 @@ pst_poststack(struct netmap_kring *kring)
 			uint32_t next = fq->fq_head;
 
 			while (next != NM_FDT_NULL && likely(howmany)) {
-				const struct netmap_slot tmp = { next };
+				struct netmap_slot tmp = { next };
 				struct netmap_slot *ts, *rs;
 				struct nmcb *cb;
 
@@ -537,7 +537,7 @@ pst_prestack(struct netmap_kring *kring)
 			}
 			if (unlikely(nm_get_offset(kring, slot) !=
 				     sizeof(struct nmcb))) {
-				PST_DBG_LIM("bad offset %u",
+				PST_DBG_LIM("bad offset %lu",
 					    nm_get_offset(kring, slot));
 				continue;
 			}

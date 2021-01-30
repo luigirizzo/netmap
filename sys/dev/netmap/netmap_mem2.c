@@ -1487,9 +1487,9 @@ netmap_finalize_obj_allocator(struct netmap_obj_pool *p)
 	}
 	p->memtotal = (size_t)p->numclusters * (size_t)p->_clustsize;
 	if (netmap_verbose)
-		nm_prinf("Pre-allocated %d clusters (%d/%zuKB) for '%s'",
+		nm_prinf("Pre-allocated %d clusters (%u/%zuKB) for '%s'",
 		    p->numclusters, p->_clustsize >> 10,
-		    (int)(p->memtotal >> 10), p->name);
+		    p->memtotal >> 10, p->name);
 
 	return 0;
 
@@ -1719,7 +1719,7 @@ _netmap_mem_private_new(size_t size, struct netmap_obj_params *p, int grp_id,
 
 		if (n) {
 			if (netmap_verbose) {
-				nm_prinf("%s: adding %llu more buffers",
+				nm_prinf("%s: adding %lu more buffers",
 						d->pools[NETMAP_BUF_POOL].name, n);
 			}
 			d->params[NETMAP_BUF_POOL].num += n;

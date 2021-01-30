@@ -1294,7 +1294,7 @@ nm_os_build_mbuf(struct netmap_kring *kring, char *buf, u_int len)
 	}
 #endif
 	page = virt_to_page(buf);
-	get_page(page); // survive __kfree_skb()
+	page_ref_add(page, 1); // survive __kfree_skb()
 	skb_reserve(m, offset); // m->data and tail
 	skb_put(m, len - offset); // advance m->tail and m->len
 	return m;

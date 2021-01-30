@@ -1384,6 +1384,8 @@ pst_wso(struct pst_so_adapter *soa, NM_SOCK_T *so)
 	so->so_emuldata = (void *)soa;
 }
 #endif
+#define NMCB_SLT(_na, _slt)	NMCB_BUF(NMB(_na, (_slt)))
+
 /* these functions are non-static just beause netmap_linux.c refers them */
 int nm_os_pst_rx(struct netmap_kring *, struct netmap_slot *);
 int nm_os_pst_tx(struct netmap_kring *, struct netmap_slot *);

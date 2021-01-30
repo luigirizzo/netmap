@@ -91,7 +91,7 @@ vtnet_netmap_reg(struct netmap_adapter *na, int state)
 		vtnet_rxq_free_mbufs(rxq);
 		VTNET_RXQ_UNLOCK(rxq);
 	}
-	vtnet_init_locked(sc);
+	vtnet_init_locked(sc, state ? 1 : 2);
 	success = (ifp->if_drv_flags & IFF_DRV_RUNNING) ? 0 : ENXIO;
 
 	if (state) {

@@ -985,7 +985,7 @@ ptn_memdev_shutdown(device_t dev)
 #include <sys/protosw.h>
 
 int
-nm_os_st_upcall(NM_SOCK_T *so, void *x, int y)
+nm_os_pst_upcall(NM_SOCK_T *so, void *x, int y)
 {
 	struct mbuf *m, *n, *tmp;
 	struct mbuf *m0 = NULL;
@@ -994,12 +994,12 @@ nm_os_st_upcall(NM_SOCK_T *so, void *x, int y)
 	struct netmap_kring *kring = NULL;
 
 	if (unlikely(!sbavail(sb))) {
-		struct st_so_adapter *soa = st_so(so);
+		struct pst_so_adapter *soa = pst_so(so);
 
 		/* XXX We need trick to set zero-length buffer */
 		if (likely(soa)) {
-			struct netmap_stack_adapter *sna =
-				(struct netmap_stack_adapter *)soa->na;
+			struct netmap_pst_adapter *sna =
+				(struct netmap_pst_adapter *)soa->na;
 			sna->eventso[curcpu] = so;
 		}
 		return 0;
@@ -1046,18 +1046,17 @@ nm_os_st_upcall(NM_SOCK_T *so, void *x, int y)
 		tmp = m->m_next;
 		slot = nmcb_slot(cb);
 		if (unlikely(slot == NULL)) {
-			if (netmap_debug & NM_DEBUG_STACK)
-				nm_prlim(1, "no slot");
+			PST_DBG_LIM("no slot");
 			m_free(m);
 			continue;
 		}
-		nm_pst_setfd(slot, st_so(so)->fd);
+		nm_pst_setfd(slot, pst_so(so)->fd);
 		/* m_data points payload */
 		nm_offset = nm_get_offset(kring, slot);
 		nm_pst_setuoff(slot, m->m_data - M_START(m) - nm_offset);
 		/* XXX just leave the original ? */
 		slot->len = m->m_len + nm_pst_getuoff(slot) + nm_offset;
-		st_fdtable_add(cb, kring);
+		pst_fdtable_add(cb, kring);
 #ifdef PST_MB_RECYCLE
 		if (unlikely(nmcb_rstate(cb) == MB_QUEUED)) {
 			queued = 1;
@@ -1066,7 +1065,7 @@ nm_os_st_upcall(NM_SOCK_T *so, void *x, int y)
 		nmcb_wstate(cb, MB_TXREF);
 #ifdef PST_MB_RECYCLE
 		if (likely(!queued)) {
-			nm_os_st_mbuf_data_dtor(m);
+			nm_os_pst_mbuf_data_dtor(m);
 			kring->tx_pool[1] = m;
 		} else
 #endif /* PST_MB_RECYCLE */
@@ -1100,7 +1099,7 @@ nm_os_sock_fput(NM_SOCK_T *so, void *f)
 }
 
 int
-nm_os_st_sbdrain(struct netmap_adapter *na, NM_SOCK_T *so)
+nm_os_pst_sbdrain(struct netmap_adapter *na, NM_SOCK_T *so)
 {
 	struct mbuf * m;
 	struct nmcb *cb;
@@ -1116,17 +1115,17 @@ nm_os_st_sbdrain(struct netmap_adapter *na, NM_SOCK_T *so)
 	//nm_prinf("m %p m_ext.ext_buf %p", m, m->m_ext.ext_buf);
 	cb = NMCB_EXT(m, 0, NETMAP_BUF_SIZE(na));
 	if (!nmcb_valid(cb)) {
-		STACK_DBG("invalid cb");
+		PST_DBG("invalid cb");
 		return error;
 	}
 	SOCKBUF_LOCK(&so->so_rcv);
-	error = nm_os_st_upcall(so, NULL, 0);
+	error = nm_os_pst_upcall(so, NULL, 0);
 	SOCKBUF_UNLOCK(&so->so_rcv);
 	return error;
 }
 
 void
-nm_os_st_mbuf_data_dtor(struct mbuf *m)
+nm_os_pst_mbuf_data_dtor(struct mbuf *m)
 {
 	struct nmcb *cb = NMCB(m);
 
@@ -1134,7 +1133,7 @@ nm_os_st_mbuf_data_dtor(struct mbuf *m)
 		return;
 	}
 	nmcb_wstate(cb, MB_NOREF);
-	st_extra_deq(nmcb_kring(cb), nmcb_slot(cb));
+	pst_extra_deq(nmcb_kring(cb), nmcb_slot(cb));
 }
 
 #ifdef PST_MB_RECYCLE
@@ -1171,7 +1170,7 @@ maybe_new_mbuf(struct netmap_kring *kring)
 }
 
 int
-nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
+nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 {
 	struct netmap_adapter *na = kring->na;
 	struct ifnet *ifp = na->ifp;
@@ -1180,8 +1179,8 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	struct mbuf *m;
 	int ret = 0;
 #ifdef __FreeBSD__
-	struct netmap_stack_adapter *sna =
-		(struct netmap_stack_adapter *)stna(na);
+	struct netmap_pst_adapter *sna =
+		(struct netmap_pst_adapter *)stna(na);
 	sna->eventso[curcpu] = NULL;
 #endif /* __FreeBSD__ */
 
@@ -1192,12 +1191,12 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	}
 	m->m_ext.ext_buf = nmb;
 	m->m_ext.ext_size = slot->len;
-	m->m_ext.ext_free = nm_os_st_mbuf_data_dtor;
+	m->m_ext.ext_free = nm_os_pst_mbuf_data_dtor;
 	m->m_ext.ext_arg2 = NULL;
 	m->m_len = m->m_pkthdr.len = slot->len;
 	m->m_pkthdr.flowid = kring->ring_id;
 	m->m_pkthdr.rcvif = ifp;
-	m->m_data = nmb + VHLEN(na);
+	m->m_data = nmb + nm_get_offset(kring, slot);
 
 	nmcbw(cb, kring, slot);
 	nmcb_wstate(cb, MB_STACK);
@@ -1220,7 +1219,7 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	 */
 	if (unlikely(sna->eventso[curcpu] != NULL)) {
 		NM_SOCK_T *so = sna->eventso[curcpu];
-		struct st_so_adapter *soa = st_so(so);
+		struct pst_so_adapter *soa = pst_so(so);
 
 		if (unlikely(nm_pst_getfd(slot) != 0)) {
 			panic("eventso with slot fd set");
@@ -1230,15 +1229,15 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 		if (soa != NULL && nmcb_rstate(cb) == MB_NOREF) {
 			nm_pst_setfd(slot, soa->fd);
 			nm_prdis("soa %p soa->fd %d", soa, soa->fd);
-			slot->len = VHLEN(na);
+			//slot->len = VHLEN(na);
 			nm_pst_setuoff(slot, 0);
-			st_fdtable_add(cb, kring);
+			pst_fdtable_add(cb, kring);
 		}
 	}
 
 	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {
 		nmcb_wstate(cb, MB_QUEUED);
-		if (st_extra_enq(kring, slot)) {
+		if (pst_extra_enq(kring, slot)) {
 			ret = -EBUSY;
 		}
 	}
@@ -1246,10 +1245,10 @@ nm_os_st_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 }
 
 int
-nm_os_st_tx(struct netmap_kring *kring, struct netmap_slot *slot)
+nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 {
 	struct netmap_adapter *na = kring->na;
-	struct st_so_adapter *soa;
+	struct pst_so_adapter *soa;
 	struct mbuf *m;
 	char *nmb = NMB(na, slot);
 	int err;
@@ -1265,26 +1264,26 @@ nm_os_st_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	}
 	m->m_ext.ext_buf = m->m_data = nmb;
 	m->m_ext.ext_size = slot->len;
-	m->m_ext.ext_free = nm_os_st_mbuf_data_dtor;
+	m->m_ext.ext_free = nm_os_pst_mbuf_data_dtor;
 	m->m_len = m->m_pkthdr.len = slot->len - pst_offset - nm_offset;
 	m->m_data = nmb + nm_offset + pst_offset;
 
 	nmcb_wstate(cb, MB_STACK);
 
-	soa = st_soa_from_fd(na, nm_pst_getfd(slot));
+	soa = pst_soa_from_fd(na, nm_pst_getfd(slot));
 	if (unlikely(!soa)) {
-		STACK_DBG("no soa of fd %d (na %s)", nm_pst_getfd(slot), na->name);
+		PST_DBG("no soa of fd %d (na %s)", nm_pst_getfd(slot), na->name);
 		return 0;
 	}
 	err = sosend(soa->so, NULL, NULL, m, NULL, flags, curthread);
 	if (unlikely(err < 0)) {
-		STACK_DBG("error %d", err);
+		PST_DBG("error %d", err);
 		nmcb_invalidate(cb);
 	}
 
 	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {
 		nmcb_wstate(cb, MB_QUEUED);
-		if (likely(st_extra_enq(kring, slot))) {
+		if (likely(pst_extra_enq(kring, slot))) {
 			return -EBUSY;
 		}
 	}
@@ -1295,7 +1294,7 @@ int
 nm_os_set_nodelay(NM_SOCK_T *so)
 {
 	struct sockopt sopt;
-	int error;
+	int on = 1;
 
 	sopt.sopt_dir = SOPT_SET;
 	sopt.sopt_level = SOL_SOCKET;
