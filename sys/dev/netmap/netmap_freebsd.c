@@ -1197,7 +1197,9 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	m->m_pkthdr.flowid = kring->ring_id;
 	m->m_pkthdr.rcvif = ifp;
 	m->m_data = nmb + nm_get_offset(kring, slot);
-
+	PST_DBG("m %p slot->len %u type %d off %lu type (head) %d", m, slot->len,
+		ntohs(*(uint16_t *)((char *)m->m_data + 12)), nm_get_offset(kring, slot),
+		ntohs(*(uint16_t *)((char *)nmb + 12)));
 	nmcbw(cb, kring, slot);
 	nmcb_wstate(cb, MB_STACK);
 	nm_pst_setfd(slot, 0);

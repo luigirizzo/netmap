@@ -147,6 +147,7 @@ em_netmap_txsync(struct netmap_kring *kring, int flags)
 			u_int len = slot->len;
 			uint64_t paddr;
 			void *addr = PNMB(na, slot, &paddr);
+			uint64_t offset = nm_get_offset(kring, slot);
 
 			/* device-specific */
 			struct e1000_tx_desc *curr = &txr->tx_base[nic_i];
@@ -158,7 +159,7 @@ em_netmap_txsync(struct netmap_kring *kring, int flags)
 			NM_CHECK_ADDR_LEN(na, addr, len);
 
 			if (slot->flags & NS_BUF_CHANGED) {
-				curr->buffer_addr = htole64(paddr);
+				curr->buffer_addr = htole64(paddr + offset);
 				/* buffer has changed, reload map */
 				netmap_reload_map(na, txr->txtag, txbuf->map, addr);
 			}
@@ -269,7 +270,7 @@ em_netmap_rxsync(struct netmap_kring *kring, int flags)
 		for (n = 0; nm_i != head; n++) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			uint64_t paddr;
-			void *addr = PNMB(na, slot, &paddr);
+			void *addr = PNMB_O(na, slot, &paddr);
 
 			union e1000_rx_desc_extended *curr = &rxr->rx_base[nic_i];
 			struct em_rxbuffer *rxbuf = &rxr->rx_buffers[nic_i];
