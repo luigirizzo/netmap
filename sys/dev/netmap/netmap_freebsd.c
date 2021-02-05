@@ -1178,6 +1178,7 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	struct nmcb *cb = NMCB_BUF(nmb);
 	struct mbuf *m;
 	int ret = 0;
+	struct epoch_tracker et;
 #ifdef __FreeBSD__
 	struct netmap_pst_adapter *sna =
 		(struct netmap_pst_adapter *)stna(na);
@@ -1203,16 +1204,21 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	nmcbw(cb, kring, slot);
 	nmcb_wstate(cb, MB_STACK);
 	nm_pst_setfd(slot, 0);
+
 	if (ntohs(*(uint16_t *)((char *)m->m_data + 12)) == ETHERTYPE_IP) {
 		CURVNET_SET_QUIET(ifp->if_vnet);
 		M_SETFIB(m, ifp->if_fib);
 		m_clrprotoflags(m);
 		m_adj(m, ETHER_HDR_LEN);
 		//netisr_dispatch(NETISR_IP, m);
+		NET_EPOCH_ENTER(et);
 		ip_input(m);
+		NET_EPOCH_EXIT(et);
 		CURVNET_RESTORE();
 	} else {
+		NET_EPOCH_ENTER(et);
 		na->if_input(ifp, m);
+		NET_EPOCH_EXIT(et);
 	}
 
 	/*
@@ -1267,7 +1273,7 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	m->m_ext.ext_buf = m->m_data = nmb;
 	m->m_ext.ext_size = slot->len;
 	m->m_ext.ext_free = nm_os_pst_mbuf_data_dtor;
-	m->m_len = m->m_pkthdr.len = slot->len - pst_offset - nm_offset;
+	m->m_len = m->m_pkthdr.len = slot->len - pst_offset;
 	m->m_data = nmb + nm_offset + pst_offset;
 
 	nmcb_wstate(cb, MB_STACK);
