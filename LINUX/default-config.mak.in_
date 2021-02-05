@@ -100,7 +100,7 @@ $(1)@fetch	:= test -e @SRCDIR@/ext-drivers/mlnx-en-$(2)-ubuntu18.04-x86_64.tgz |
 $(1)@src	:= tar xf @SRCDIR@/ext-drivers/mlnx-en-$(2)-ubuntu18.04-x86_64.tgz && tar xf mlnx-en-$(2)-ubuntu18.04-x86_64/src/MLNX_EN_SRC-$(2).tgz && tar xf MLNX_EN_SRC-$(2)/SOURCES/mlnx-en_$($(1)@pv).orig.tar.gz && ln -s mlnx-en-$($(1)@pv) $(1)
 $(1)@patch	:= patches/mellanox--$(1)--$($(1)@pv)
 $(1)@prepare	:= @SRCDIR@/mlx5-prepare.sh @KSRC@
-$(1)@build	:= make -C $(1) NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ EXTRA_CFLAGS="$$($1)@cflags) $(EXTRA_CFLAGS)"
+$(1)@build	:= make -C $(1) NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ EXTRA_CFLAGS="$$($(1)@cflags) $(EXTRA_CFLAGS)"
 $(1)@install	:= make -C $(1) install_modules INSTALL_MOD_PATH=@MODPATH@ NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@
 $(1)@clean	:= if [ -d $(1) ]; then make -C $(1) clean; fi NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@
 $(1)@distclean  := rm -rf mlnx-en-$($(1)@pv) mlnx-en-$(2)
