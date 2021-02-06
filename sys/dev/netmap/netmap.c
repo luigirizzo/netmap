@@ -3997,7 +3997,9 @@ netmap_hw_reg(struct netmap_adapter *na, int onoff)
 		(struct netmap_hw_adapter*)na;
 	int error = 0;
 
+#ifndef __FreeBSD__
 	nm_os_ifnet_lock();
+#endif /* __FreeBSD__ */
 
 	if (nm_iszombie(na)) {
 		if (onoff) {
@@ -4011,7 +4013,9 @@ netmap_hw_reg(struct netmap_adapter *na, int onoff)
 	error = hwna->nm_hw_register(na, onoff);
 
 out:
+#ifndef __FreeBSD__
 	nm_os_ifnet_unlock();
+#endif /* __FreeBSD__ */
 
 	return error;
 }
