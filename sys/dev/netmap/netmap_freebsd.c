@@ -1023,19 +1023,7 @@ nm_os_pst_upcall(NM_SOCK_T *so, void *x, int y)
 	if (sb->sb_mb == NULL) {
 		SB_EMPTY_FIXUP(sb);
 	}
-#ifdef TCP_RCVD
-	if ((so->so_proto->pr_flags & PR_WANTRCVD) &&
-		((flags & MSG_WAITALL) || !(flags & MSG_SOCALLBCK))) {
-		SOCKBUF_UNLOCK(sb);
-		(*so->so_proto->pr_usrreqs->pru_rcvd)(so, flags);
-		SOCKBUF_LOCK(sb);
-	}
-#endif
 
-
-	/* XXX soreceive() has already iterated the mbuf chain.
-	 * We may have a room for optimization
-	 */
 	for (m = m0; m; m = tmp) {
 		struct nmcb *cb = NMCB(m);
 		struct netmap_slot *slot;
@@ -1071,6 +1059,16 @@ nm_os_pst_upcall(NM_SOCK_T *so, void *x, int y)
 #endif /* PST_MB_RECYCLE */
 		m_free(m);
 	}
+#ifdef TCP_RCVD
+	/* taken from soreceive_stream() */
+	if (paste_usrrcv && (so->so_proto->pr_flags & PR_WANTRCVD) &&
+		((flags & MSG_WAITALL) || !(flags & MSG_SOCALLBCK))) {
+		PST_DBG("WAITALL %d SOCALLBCK %d", flags & MSG_WAITALL, flags & MSG_SOCALLBCK);
+		SOCKBUF_UNLOCK(sb);
+		(*so->so_proto->pr_usrreqs->pru_rcvd)(so, flags);
+		SOCKBUF_LOCK(sb);
+	}
+#endif
 	return 0;
 }
 

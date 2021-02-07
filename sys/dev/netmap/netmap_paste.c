@@ -52,10 +52,12 @@
 
 int paste_host_batch = 1;
 static int paste_extra = 2048;
+int paste_usrrcv = 0;
 SYSBEGIN(vars_paste);
 SYSCTL_DECL(_dev_netmap);
 SYSCTL_INT(_dev_netmap, OID_AUTO, paste_host_batch, CTLFLAG_RW, &paste_host_batch, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, paste_extra, CTLFLAG_RW, &paste_extra, 0 , "");
+SYSCTL_INT(_dev_netmap, OID_AUTO, paste_usrrcv, CTLFLAG_RW, &paste_usrrcv, 1 , "");
 SYSEND;
 
 static int netmap_pst_bwrap_intr_notify(struct netmap_kring *kring, int flags);
