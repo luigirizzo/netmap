@@ -545,7 +545,6 @@ pst_prestack(struct netmap_kring *kring)
 			}
 
 		}
-		PST_DBG("%s k %u nmb %p", na->name, k, nmb);
 		nmcbw(NMCB_BUF(nmb), kring, slot);
 		err = tx ? nm_os_pst_tx(kring, slot) :
 			   nm_os_pst_rx(kring, slot);
