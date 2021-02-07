@@ -1209,7 +1209,7 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	void *file;
 	struct pst_so_adapter *soa;
 	struct netmap_pst_adapter *sna = tosna(na);
-	int error;
+	int error = 0;
 
 	if (unlikely(fd > NM_PST_FD_MAX)) {
 		return ENOMEM;
@@ -1267,9 +1267,11 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	pst_wso(soa, so);
 	sna->so_adapters[fd] = soa;
 	SOCKBUF_UNLOCK(&so->so_rcv);
-	error = nm_os_pst_sbdrain(na, so);
 unlock_return:
 	NM_SOCK_UNLOCK(so);
+	if (!error) {
+		error = nm_os_pst_sbdrain(na, so);
+	}
 	nm_os_sock_fput(so, file);
 	return error;
 }
