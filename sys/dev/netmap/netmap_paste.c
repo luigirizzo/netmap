@@ -1132,22 +1132,18 @@ netmap_pst_bwrap_intr_notify(struct netmap_kring *kring, int flags) {
  * Otherwise our sk->sk_destructor will cleanup stack states
  */
 static void
-pst_unregister_socket(struct pst_so_adapter *soa)
+pst_unregister_socket(struct pst_so_adapter *soa, int locked)
 {
 	NM_SOCK_T *so = soa->so;
 	struct netmap_pst_adapter *sna = tosna(soa->na);
 
 	nm_prdis("so %p soa %p fd %d", so, soa, soa->fd);
 	if (!sna) {
-		PST_DBG("no sna");
-		//nm_os_free(soa);
-		return;
+		panic("no sna");
 	}
-	if (!soa) {
-		PST_DBG("no soa");
-		return;
+	if (!locked) {
+		mtx_lock(&sna->so_adapters_lock);
 	}
-	mtx_lock(&sna->so_adapters_lock);
 	if (soa->fd >= sna->so_adapters_max) {
 		PST_DBG("non-registered or invalid fd %d", soa->fd);
 	} else {
@@ -1160,7 +1156,8 @@ pst_unregister_socket(struct pst_so_adapter *soa)
 		NM_SOCK_UNLOCK(so);
 	}
 	nm_os_free(soa);
-	mtx_unlock(&sna->so_adapters_lock);
+	if (!locked)
+		mtx_unlock(&sna->so_adapters_lock);
 }
 
 static void
@@ -1172,7 +1169,8 @@ pst_sodtor(NM_SOCK_T *so)
 		pst_wso(NULL, so);
 		return;
 	}
-	pst_unregister_socket(soa);
+	nm_prinf("unregistering sockets");
+	pst_unregister_socket(soa, 0);
 	if (so->so_dtor) {
 		so->so_dtor(so);
 	}
@@ -1189,15 +1187,18 @@ netmap_pst_bdg_dtor(const struct netmap_vp_adapter *vpna)
 		return;
 
 	sna = (struct netmap_pst_adapter *)(void *)(uintptr_t)vpna;
+	mtx_lock(&sna->so_adapters_lock);
+	nm_prinf("unregistering sockets");
 	for (i = 0; i < sna->so_adapters_max; i++) {
 		struct pst_so_adapter *soa = sna->so_adapters[i];
 		if (soa)
-			pst_unregister_socket(soa);
+			pst_unregister_socket(soa, 1);
 	}
 	bzero(sna->so_adapters, sizeof(uintptr_t) * sna->so_adapters_max);
 	sna->so_adapters_max = 0;
 	sna->so_adapters = NULL;
 	nm_os_free(sna->so_adapters);
+	mtx_unlock(&sna->so_adapters_lock);
 	mtx_destroy(&sna->so_adapters_lock);
 }
 
