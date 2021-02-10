@@ -1149,10 +1149,11 @@ pst_unregister_socket(struct pst_so_adapter *soa, int locked)
 	} else {
 		sna->so_adapters[soa->fd] = NULL;
 		NM_SOCK_LOCK(so);
-		/* socket is dying, no need to lock sockbuf */
+		SOCKBUF_LOCK(&so->so_rcv);
 		RESTORE_SOUPCALL(so, soa);
 		RESTORE_SODTOR(so, soa);
 		pst_wso(NULL, so);
+		SOCKBUF_UNLOCK(&so->so_rcv);
 		NM_SOCK_UNLOCK(so);
 	}
 	nm_os_free(soa);
