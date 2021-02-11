@@ -344,6 +344,8 @@ static int ipt_txsync(struct netmap_kring *kring, int flags)
 	}
 	kring->nr_hwcur = head;
 	kring->nr_hwtail = nm_prev(kring->nr_hwcur, lim);
+	/* We do not use this - but netmap_pipe_krings_delete does */
+	kring->pipe_tail = kring->nr_hwtail;
 	return 0;
 }
 
@@ -382,13 +384,18 @@ ipt_rxsync(struct netmap_kring *kring, int flags)
 	if (nm_i != head) {
 		/* Userspace has released some packets. */
 		for (n = 0; nm_i != head; n++) {
-			struct netmap_slot *slot = &ring->slot[nm_i];
-
-			slot->flags &= ~NS_BUF_CHANGED;
+			struct netmap_slot *rs = &kring->ring->slot[nm_i];
+			struct netmap_slot *ts = &kring->pipe->ring->slot[nm_i];
+			rs->flags &= ~NS_BUF_CHANGED;
+			/* Keep the TX ring synced even though we do not use it
+			   as it avoids double freeing buffers during cleanup */
+			*ts = *rs;
 			nm_i = nm_next(nm_i, lim);
 		}
 		kring->nr_hwcur = head;
 	}
+	/* We do not use this - but netmap_pipe_krings_delete does */
+	kring->pipe_tail = kring->nr_hwcur;
 
 	/*
 	 * Second part: import newly received packets.
