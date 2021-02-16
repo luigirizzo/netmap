@@ -176,6 +176,7 @@ struct nmport_extmem_from_file_cleanup_d {
 void nmport_extmem_from_file_cleanup(struct nmport_cleanup_d *c,
 		struct nmport_d *d)
 {
+	(void)d;
 	struct nmport_extmem_from_file_cleanup_d *cc =
 		(struct nmport_extmem_from_file_cleanup_d *)c;
 
@@ -657,7 +658,7 @@ nmport_mmap(struct nmport_d *d)
 	struct nmctx *ctx = d->ctx;
 	struct nmem_d *m = NULL;
 	u_int num_tx, num_rx;
-	int i;
+	unsigned int i;
 
 	if (d->mmap_done) {
 		errno = EINVAL;
