@@ -1105,6 +1105,12 @@ nm_os_generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *r
 			*tx = netmap_generic_ringsize;
 		}
 		error = 0;
+	}else{
+#define DMA_TX_SIZE 512
+#define DMA_RX_SIZE 512
+		*tx = DMA_TX_SIZE;
+		*rx = DMA_RX_SIZE;
+		error = 0;
 	}
 #endif /* HAVE_GET_RINGPARAM */
 	return error;
