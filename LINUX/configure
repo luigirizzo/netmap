@@ -112,7 +112,7 @@ subsys enable null
 subsys enable ptnetmap
 
 # available drivers
-driver_avail="r8169.c virtio_net.c forcedeth.c veth.c \
+driver_avail="stmmac_eth r8169.c virtio_net.c forcedeth.c veth.c \
 	e1000 e1000e igb ixgbe ixgbevf i40e vmxnet3 mlx5"
 # enabled drivers (bitfield)
 driver=
@@ -883,7 +883,7 @@ EOF
 		message " NOTE  " <<EOF
 We are trying to download the original sources for driver
 $d using the following command:
-  
+
   $drv_fetch
 
 If this fails, please download the above file and put it
@@ -927,17 +927,21 @@ EOF
 Since the generic driver has been disabled, the corresponding NICs
 will NOT be usable by netmap.
 EOF
-				fi 
+				fi
 			} | warning
 			else
 				src=$(cd $src; pwd)
 				src_found=1
-			fi 
+			fi
 			src_checked=1
 		fi
 		drv_kernel_src=
 		if [ -n "$src_found" ]; then
-			drv_kernel_src=$(find $src/drivers/ -name "$d" -print -quit)
+			if [ "$d" = "stmmac_eth" ]; then
+				drv_kernel_src=$(find $src/drivers/ -name "stmmac" -print -quit)
+			else
+				drv_kernel_src=$(find $src/drivers/ -name "$d" -print -quit)
+			fi
 		fi
 		if [ -z "$drv_kernel_src" ]; then
 			drverror <<EOF
@@ -1046,7 +1050,7 @@ else
 	drverror <<EOF
 There were problems copying the sources of driver $1.
 
-If you need this driver, please check that the $1@src variable 
+If you need this driver, please check that the $1@src variable
 points to the correct path contaning the driver sources.
 
 Disabling $1.
@@ -1072,7 +1076,7 @@ Disabling $1.
 EOF
 	drv disable $1
 	edrv disable $1
-  }	
+  }
 
   for d in $(edrv print); do
 	if !(cdrv enabled $d); then
@@ -1089,7 +1093,7 @@ There were problems patching the driver $1.
 Disabling $1.
 EOF
 	drv disable $1
-  }	
+  }
 
   for d in $(drv print); do
 	  edrv enabled $d && continue
@@ -1176,7 +1180,7 @@ EOF
   for n in 2 3 4; do
   	add_test "define SELECT_QUEUE $n" <<EOF
   		#include <linux/netdevice.h>
-  
+
   		u16 dummy(struct net_device_ops *ndo)
   		{
   		        return ndo->ndo_select_queue($params);
@@ -1823,66 +1827,66 @@ EOF
   #####################################################
   # checks related to drivers                         #
   #####################################################
-  
+
   # e1000e
   if drv enabled e1000e; then
-  
+
   add_file_exists_check e1000e/e1000.h true "drv_source_error e1000e"
-  
+
   add_test 'have E1000E_HWADDR' <<EOF
   	#include "e1000e/e1000.h"
-  
+
   	void* dummy(struct e1000_adapter *adapter,
   	        struct e1000_ring *ring)
   	{
   		return adapter->hw.hw_addr + ring->tail;
   	}
 EOF
-  
+
   add_test 'have E1000E_DOWN2' <<EOF
   	#include "e1000e/e1000.h"
-  
+
   	void dummy(struct e1000_adapter *adapter)
   	{
   		e1000e_down(adapter, false);
   	}
 EOF
-  
+
   add_test "grep -q '\<e1000_rx_desc_extended\>' $TMPDIR/e1000e/netdev.c \
   	&& have E1000E_EXT_RXDESC" </dev/null
   fi # e1000e
-  
+
   # rtl8169
   if drv enabled r8169.c; then
-  
+
   add_file_exists_check r8169.c true "drv_source_error r8169.c"
-  
+
   add_test 'define RTL_OPEN rtl8169_open' 'define RTL_OPEN rtl_open' <<EOF
   	#include "r8169.c"
-  
+
   	static int dummy(struct net_device *dev) {
   		return rtl8169_open(dev);
   	}
 EOF
-  
+
   add_test 'have RTL_WFQ' <<EOF
   	#include "r8169.c"
-  
+
   	static void dummy(struct net_device *dev) {
   		rtl8169_wait_for_quiescence(dev);
   	}
 EOF
   fi # r8169.c
-  
+
   # ixgbe
   if drv enabled ixgbe; then
-  
+
   add_file_exists_check ixgbe/ixgbe.h true "drv_source_error ixgbe"
-  
+
   # different versions of IXGBE_?X_DESC
   add_test 'define IXGBE_DESC 1' <<EOF
   	#include "ixgbe/ixgbe.h"
-  
+
   	union ixgbe_adv_tx_desc *
   	dummy(struct ixgbe_ring *ring) {
   		return IXGBE_TX_DESC_ADV(*ring, 0);
@@ -1890,7 +1894,7 @@ EOF
 EOF
   add_test 'define IXGBE_DESC 2' <<EOF
   	#include "ixgbe/ixgbe.h"
-  
+
   	union ixgbe_adv_tx_desc *
   	dummy(struct ixgbe_ring *ring) {
   		return IXGBE_TX_DESC_ADV(ring, 0);
@@ -1898,17 +1902,17 @@ EOF
 EOF
   add_test 'define IXGBE_DESC 3' <<EOF
   	#include "ixgbe/ixgbe.h"
-  
+
   	union ixgbe_adv_tx_desc *
   	dummy(struct ixgbe_ring *ring) {
   		return IXGBE_TX_DESC(ring, 0);
   	}
 EOF
-  
+
   # array of rings or array of poiners to rings?
   add_test 'define IXGBE_PTR_ARRAY' <<EOF
   	#include "ixgbe/ixgbe.h"
-  
+
   	struct ixgbe_ring *
   	dummy(struct ixgbe_adapter *adapter) {
   		return adapter->tx_ring[0];
@@ -1964,7 +1968,7 @@ EOF
   # array of rings or array of poiners to rings?
   add_test 'define IXGBEVF_PTR_ARRAY' <<EOF
   	#include "ixgbevf/ixgbevf.h"
-  
+
   	struct ixgbevf_ring *
   	dummy(struct ixgbevf_adapter *adapter) {
   		return adapter->tx_ring[0];
@@ -1987,9 +1991,9 @@ EOF
     if edrv enabled virtio_net.c; then
         VNETDIR="virtio_net.c/"
     fi
-  
+
     add_file_exists_check ${VNETDIR}virtio_net.c true "drv_source_error virtio_net.c"
-  
+
     add_test 'define VIRTIO_NET_HDR_FROM_SKB_5ARGS' <<EOF
 	#include <linux/virtio_net.h>
 
@@ -2148,45 +2152,45 @@ EOF
 
     add_test 'define VIRTIO_CB_DELAYED' <<EOF
   	#include <linux/virtio.h>
-  
+
   	bool
   	dummy(struct virtqueue *vq) {
   		return virtqueue_enable_cb_delayed(vq);
   	}
 EOF
-  
+
     add_test 'define VIRTIO_GET_VRSIZE' <<EOF
   	#include <linux/virtio.h>
-  
+
   	unsigned int
   	dummy(struct virtqueue *vq) {
   		return virtqueue_get_vring_size(vq);
   	}
 EOF
-  
+
     add_test 'define VIRTIO_FREE_PAGES' <<EOF
 	#include "${VNETDIR}virtio_net.c"
-  
+
   	void
   	dummy(struct virtnet_info *vi) {
   		free_receive_bufs(vi);
   	}
 EOF
-  
+
     add_test 'define VIRTIO_FUNCTIONS' <<EOF
   	#include <linux/virtio.h>
-  
+
   	void
   	dummy(struct virtqueue *vq) {
   		(void)virtqueue_kick(vq);
   	}
 EOF
-  
+
     for s in "" _gfp; do
   	f="virtqueue_add_buf$s"
   	add_test "define VIRTIO_ADD_BUF $f" <<EOF
   		#include <linux/virtio.h>
-  
+
   		int
   		dummy(struct virtqueue *vq, struct scatterlist sg[],
   			unsigned int out_num, unsigned int in_num,
@@ -2196,43 +2200,43 @@ EOF
   		}
 EOF
   done
-  
+
     add_test 'define VIRTIO_MULTI_QUEUE' <<EOF
 	#include "${VNETDIR}virtio_net.c"
-  
+
   	struct virtqueue *
   	dummy(struct virtnet_info *vi) {
   		return vi->rq[0].vq;
   	}
 EOF
-  
+
     add_test 'define VIRTIO_RQ_NUM' <<EOF
 	#include "${VNETDIR}virtio_net.c"
-  
+
   	int
   	dummy(struct virtnet_info *vi) {
   		return vi->rq[0].num;
   	}
 EOF
-  
+
     add_test 'define VIRTIO_SG' <<EOF
 	#include "${VNETDIR}virtio_net.c"
-  
+
   	struct scatterlist *
   	dummy(struct virtnet_info *vi) {
   		return vi->rx_sg;
   	}
 EOF
-  
+
      add_test 'define VIRTIO_NOTIFY' <<EOF
   	#include <linux/virtio.h>
-  
+
   	void
   	dummy(struct virtqueue *_vq) {
   		(void)virtqueue_notify(_vq);
   	}
 EOF
-  
+
      add_test 'have GET_LINK_KSETTINGS' <<EOF
 	#include <linux/ethtool.h>
 
@@ -2244,17 +2248,17 @@ EOF
 EOF
 
   fi # virtio-net
-  
+
   if drv enabled i40e; then
     add_test 'define I40E_PTR_ARRAY' <<EOF
   	#include "i40e/i40e.h"
-  
+
   	struct i40e_ring *
   	dummy(struct i40e_vsi *vsi) {
   		return vsi->tx_rings[0];
   	}
 EOF
-   
+
    add_test 'define I40E_PTR_STATE' <<EOF
    	#include "i40e/i40e.h"
 	#include <linux/bitops.h>
@@ -2286,17 +2290,17 @@ EOF
        }
 EOF
   fi # igb
-  
+
   # END_TESTS
-  
+
   # now we actually create the file
-  
+
   rm -f $configh
   cat > $configh <<EOF
   	#ifndef NETMAP_LINUX_CONFIG_H
   	#define NETMAP_LINUX_CONFIG_H
 EOF
-  
+
   # the TESTPOSTPROC script will add macros to $configh
   message " NOTE  " <<EOF
 Now running compile tests to adapt the code to your
@@ -2304,7 +2308,7 @@ kernel version. Please wait.
 EOF
   run_tests
 
-# check for exported split_page 
+# check for exported split_page
   cat >> config.log <<EOF
 ##############################################################################
 ## CHECKING FOR split_page
@@ -2328,15 +2332,15 @@ EOF
   if [ -n "$DMASYNC" ]; then
 	  have DMASYNC
   fi
-  
+
   define DRIVER_SUFFIX \"$drvsuffix\"
-  
+
   # file end
   cat >> $configh <<EOF
-  
+
   	#endif
 EOF
-  
+
   if [ -d "$cache" ]; then
   	cp $configh "$cache"
   fi

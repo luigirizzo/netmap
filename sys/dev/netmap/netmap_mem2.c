@@ -330,7 +330,7 @@ netmap_mem_get_id(struct netmap_mem_d *nmd)
 
 /* circular list of all existing allocators */
 static struct netmap_mem_d *netmap_last_mem_d = &nm_mem;
-NM_MTX_T nm_mem_list_lock;
+static NM_MTX_T nm_mem_list_lock;
 
 struct netmap_mem_d *
 __netmap_mem_get(struct netmap_mem_d *nmd, const char *func, int line)
@@ -524,7 +524,7 @@ static struct netmap_obj_params netmap_min_priv_params[NETMAP_POOLS_NR] = {
 		.num  = 4,
 	},
 	[NETMAP_BUF_POOL] = {
-		.size = 2048,
+		.size = 2048,	/* we are using 'size = 4096,' so that native mode works with mtu >= 3800 */
 		.num  = 4098,
 	},
 };
@@ -571,7 +571,7 @@ struct netmap_mem_d nm_mem = {	/* Our memory allocator. */
 			.num  = 200,
 		},
 		[NETMAP_BUF_POOL] = {
-			.size = 2048,
+			.size = 2048,	/* again  we are using '.size = 4096,' for mtu >= 3800 */
 			.num  = NETMAP_BUF_MAX_NUM,
 		},
 	},
@@ -1534,10 +1534,10 @@ netmap_mem_unmap(struct netmap_obj_pool *p, struct netmap_adapter *na)
 	struct netmap_lut *lut;
 	if (na == NULL || na->pdev == NULL)
 		return 0;
-	
+
 	lut = &na->na_lut;
 
-	
+
 
 #if defined(__FreeBSD__)
 	/* On FreeBSD mapping and unmapping is performed by the txsync
