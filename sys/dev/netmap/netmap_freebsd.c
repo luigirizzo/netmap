@@ -1306,6 +1306,25 @@ nm_os_set_nodelay(NM_SOCK_T *so)
 	sopt.sopt_valsize = sizeof(on);
 	return sosetopt(so, &sopt);
 }
+
+void
+nm_os_pst_kwait(void *data)
+{
+	struct netmap_pst_adapter *sna = (struct netmap_pst_adapter *)data;
+	struct netmap_priv_d *kpriv = sna->kpriv;
+
+	for (;sna->num_so_adapters > 0;) {
+		PST_DBG("waiting for %d sockets to go", sna->num_so_adapters);
+		pause("netmap-pst-kwait-pause", 200);
+	}
+	PST_DBG("%s deleting priv", sna->up.up.name);
+	NMG_LOCK();
+	sna->kpriv = NULL;
+	sna->kwaittdp = NULL;
+	netmap_priv_delete(kpriv);
+	NMG_UNLOCK();
+	kthread_exit();
+}
 #endif /* WITH_PASTE */
 
 /*

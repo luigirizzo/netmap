@@ -874,6 +874,12 @@ soopton(int fd, int level, int type)
 static int inline
 do_setsockopt(int fd)
 {
+#ifdef __FreeBSD__
+	struct linger sl = {.l_onoff = 1, .l_linger = 0};
+
+	if (setsockopt(fd, SOL_SOCKET, SO_LINGER, &sl, sizeof(sl)))
+		return -EFAULT;
+#endif
 	if (soopton(fd, SOL_SOCKET, SO_REUSEADDR) ||
 	    soopton(fd, SOL_SOCKET, SO_REUSEPORT) ||
 #ifdef __FreeBSD__

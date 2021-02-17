@@ -1267,10 +1267,13 @@ struct netmap_pst_adapter {
 	struct pst_so_adapter **so_adapters;
 #define DEFAULT_SK_ADAPTERS	65535
 	u_int so_adapters_max;
+	u_int num_so_adapters;
 	NM_LOCK_T so_adapters_lock;
 #ifdef __FreeBSD__
+	struct thread *kwaittdp;
 	void *eventso[64];
 #endif
+	struct netmap_priv_d *kpriv;
 };
 
 struct netmap_adapter *stna(const struct netmap_adapter *slave);
@@ -1351,6 +1354,7 @@ nmcb_rstate(struct nmcb *cb)
 NM_SOCK_T *nm_os_sock_fget(int, void **);
 void nm_os_sock_fput(NM_SOCK_T *, void *);
 int nm_os_pst_sbdrain(struct netmap_adapter *, NM_SOCK_T *);
+void nm_os_pst_kwait(void *);
 #ifdef linux
 void nm_os_pst_upcall(NM_SOCK_T *);
 netdev_tx_t linux_pst_start_xmit(struct mbuf *, struct ifnet *);
@@ -1395,6 +1399,7 @@ int pst_extra_enq(struct netmap_kring *, struct netmap_slot *);
 void pst_extra_deq(struct netmap_kring *, struct netmap_slot *);
 void pst_fdtable_add(struct nmcb *, struct netmap_kring *);
 int netmap_pst_transmit(struct ifnet *, struct mbuf *);
+void pst_priv_delete(struct netmap_priv_d *);
 extern int paste_usrrcv;
 
 
