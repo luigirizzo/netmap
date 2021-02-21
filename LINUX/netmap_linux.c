@@ -1434,6 +1434,26 @@ nm_os_set_nodelay(NM_SOCK_T *so)
 #endif
 	return 0; // FreeBSD returns status
 }
+
+int
+nm_os_pst_kwait(void *data)
+{
+	struct netmap_pst_adapter *sna = (struct netmap_pst_adapter *)data;
+	struct netmap_priv_d *kpriv = sna->kpriv;
+
+	for (;sna->num_so_adapters > 0;) {
+		PST_DBG("waiting for %d sockets to go", sna->num_so_adapters);
+		usleep_range(200000, 300000); // 200-300ms
+	}
+	PST_DBG("%s deleting priv", sna->up.up.name);
+	NMG_LOCK();
+	sna->kpriv = NULL;
+	sna->kwaittdp = NULL;
+	netmap_priv_delete(kpriv);
+	NMG_UNLOCK();
+	return 0;
+}
+
 #endif /* WITH_PASTE */
 
 /* Use ethtool to find the current NIC rings lengths, so that the netmap

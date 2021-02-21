@@ -1183,22 +1183,22 @@ static void
 netmap_pst_bdg_dtor(const struct netmap_vp_adapter *vpna)
 {
 	struct netmap_pst_adapter *sna;
-#ifndef __FreeBSD__
-	int i;
-#endif
+//#ifndef __FreeBSD__
+//	int i;
+//#endif
 
 	if (&vpna->up != stna(&vpna->up))
 		return;
 
 	sna = (struct netmap_pst_adapter *)(void *)(uintptr_t)vpna;
 	mtx_lock(&sna->so_adapters_lock);
-#ifndef __FreeBSD__
-	for (i = 0; i < sna->so_adapters_max; i++) {
-		struct pst_so_adapter *soa = sna->so_adapters[i];
-		if (soa)
-			pst_unregister_socket(soa, 1);
-	}
-#endif /* __FreeBSD__ */
+//#ifndef __FreeBSD__
+//	for (i = 0; i < sna->so_adapters_max; i++) {
+//		struct pst_so_adapter *soa = sna->so_adapters[i];
+//		if (soa)
+//			pst_unregister_socket(soa, 1);
+//	}
+//#endif /* __FreeBSD__ */
 	bzero(sna->so_adapters, sizeof(uintptr_t) * sna->so_adapters_max);
 	sna->so_adapters_max = 0;
 	sna->so_adapters = NULL;
@@ -1309,7 +1309,6 @@ static int
 netmap_pst_reg(struct netmap_adapter *na, int onoff)
 {
 	struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter *)na;
-	struct netmap_pst_adapter *sna = (struct netmap_pst_adapter *)vpna;
 	int err;
 
 	if (onoff) {
@@ -1324,10 +1323,10 @@ netmap_pst_reg(struct netmap_adapter *na, int onoff)
 	if (!onoff) {
 		struct nm_bridge *b = vpna->na_bdg;
 		int i;
+		struct netmap_pst_adapter *sna = (struct netmap_pst_adapter *)na;
 
 		if (na->active_fds > 0)
 			goto vp_reg;
-#ifdef __FreeBSD__
 		PST_DBG("%s active_fds %d num_so_adapters %d", na->name,
 			na->active_fds, sna->num_so_adapters);
 		if (sna->num_so_adapters > 0) {
@@ -1369,12 +1368,18 @@ del_kpriv:
 
 			if (sna->kwaittdp != NULL)
 				panic("kwait already running");
-			PST_DBG("spwaning kwait");
+			nm_prinf("spwaning kwait");
+#ifdef __FreeBSD__
 			kthread_add(nm_os_pst_kwait, (void *)sna, NULL,
 				    &sna->kwaittdp, 0, 0, "netmap-pst-kwait");
+#else
+			sna->kwaittdp = kthread_create(nm_os_pst_kwait,
+					(void *)sna, "netmap-pst-kwait");
+			wake_up_process(sna->kwaittdp);
+#endif
 			return EBUSY; // XXX the caller doesn't care
 		}
-#endif /* __FreeBSD__ */
+
 		for_bdg_ports(i, b) {
 			struct netmap_vp_adapter *s;
 			struct netmap_adapter *slvna;
