@@ -158,7 +158,42 @@ struct pst_extra_pool {
 	uint32_t free_tail;
 	uint32_t busy;
 	uint32_t busy_tail;
+	u_int refcount;
 };
+
+void
+pst_get_extra_ref(struct netmap_kring *kring)
+{
+	kring->extra->refcount++;
+	nm_prinf("%s %d", kring->na->name, kring->extra->refcount);
+}
+
+void
+pst_put_extra_ref(struct netmap_kring *kring)
+{
+	kring->extra->refcount--;
+	nm_prinf("%s %d", kring->na->name, kring->extra->refcount);
+}
+
+int
+pst_bdg_freeable(struct netmap_adapter *na)
+{
+	struct netmap_adapter *port_na;
+	struct nm_bridge *b = ((struct netmap_vp_adapter *)na)->na_bdg;
+	enum txrx t;
+	int i, j;
+
+	for_bdg_ports(i, b) {
+		port_na = &b->bdg_ports[i]->up;
+		for_rx_tx(t) {
+			for (j = 0; j < netmap_real_rings(port_na, t); j++) {
+				if (NMR(port_na, t)[j]->extra->refcount > 0)
+					return 0;
+			}
+		}
+	}
+	return 1;
+}
 
 #define NM_EXT_NULL	((uint16_t)~0)
 #define EXTRA_APPEND(name, pool, xtra, slots, pos) \
@@ -467,6 +502,12 @@ pst_poststack(struct netmap_kring *kring)
 				}
 				if (nmcb_rstate(cb) == MB_TXREF)
 					nonfree[nonfree_num++] = j;
+
+				if (stna(na) == na) { // XXX
+					pst_put_extra_ref(nmcb_kring(cb));
+					pst_get_extra_ref(rxr);
+				}
+
 				nmcbw(cb, rxr, rs);
 				nm_swap_reset(ts, rs);
 skip:

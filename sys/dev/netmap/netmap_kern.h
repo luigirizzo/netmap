@@ -1402,7 +1402,9 @@ int pst_extra_enq(struct netmap_kring *, struct netmap_slot *);
 void pst_extra_deq(struct netmap_kring *, struct netmap_slot *);
 void pst_fdtable_add(struct nmcb *, struct netmap_kring *);
 int netmap_pst_transmit(struct ifnet *, struct mbuf *);
-void pst_priv_delete(struct netmap_priv_d *);
+int pst_bdg_freeable(struct netmap_adapter *);
+void pst_get_extra_ref(struct netmap_kring *);
+void pst_put_extra_ref(struct netmap_kring *);
 extern int paste_usrrcv;
 
 

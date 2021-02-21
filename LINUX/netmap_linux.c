@@ -1114,6 +1114,8 @@ nm_os_pst_mbuf_data_dtor(struct ubuf_info *uarg,
 		return;
 	}
 	nmcb_wstate(cb, MB_NOREF);
+	nm_prinf("next put_extra_ref");
+	pst_put_extra_ref(nmcb_kring(cb));
 	pst_extra_deq(nmcb_kring(cb), nmcb_slot(cb));
 }
 
@@ -1313,6 +1315,9 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	if (unlikely(!m))
 		return 0; // drop and skip
 
+	nm_prinf("next get_extra_ref");
+	pst_get_extra_ref(kring);
+
 	nmcb_wstate(cb, MB_STACK);
 	nm_pst_setfd(slot, 0);
 	if (slot->flags & NS_CSUM) {
@@ -1329,6 +1334,7 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	 */
 	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {
 		nmcb_wstate(cb, MB_QUEUED);
+
 		if (pst_extra_enq(kring, slot)) {
 			ret = -EBUSY;
 		}
@@ -1389,6 +1395,9 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 		PST_DBG_LIM("NULL sk->sk_socket");
 		return 0;
 	}
+	nm_prinf("next get_extra_ref");
+	pst_get_extra_ref(kring);
+
 #ifdef NETMAP_LINUX_HAVE_KERNEL_SENDPAGE_LOCKED
 	/*
 	 * We don't really own lock. But since we only actively receive packets,
@@ -1416,6 +1425,7 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 			return 0;
 		}
 		nmcb_wstate(cb, MB_QUEUED);
+
 		if (likely(pst_extra_enq(kring, slot))) {
 			return -EBUSY;
 		}
@@ -1441,11 +1451,13 @@ nm_os_pst_kwait(void *data)
 	struct netmap_pst_adapter *sna = (struct netmap_pst_adapter *)data;
 	struct netmap_priv_d *kpriv = sna->kpriv;
 
-	for (;sna->num_so_adapters > 0;) {
+	for (;sna->num_so_adapters > 0 || !pst_bdg_freeable(&sna->up.up);) {
 		PST_DBG("waiting for %d sockets to go", sna->num_so_adapters);
 		usleep_range(200000, 300000); // 200-300ms
 	}
 	PST_DBG("%s deleting priv", sna->up.up.name);
+	nm_prinf("%s deleting priv pool_freeable %d",
+			sna->up.up.name, pst_bdg_freeable(&sna->up.up));
 	NMG_LOCK();
 	sna->kpriv = NULL;
 	sna->kwaittdp = NULL;
