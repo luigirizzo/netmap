@@ -2368,7 +2368,6 @@ nm_os_vi_persist(const char *name, struct ifnet **ret)
 	}
 #ifdef CONFIG_NET_NS
 	dev_net_set(ifp, current->nsproxy->net_ns);
-	ifp->features |= NETIF_F_NETNS_LOCAL; /* just for safety */
 #endif
 	ifp->dev.driver = &linux_dummy_drv;
 	error = register_netdev(ifp);
