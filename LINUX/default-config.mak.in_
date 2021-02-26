@@ -127,3 +127,6 @@ virtio_net.c@force	:= 1
 endef
 
 $(foreach d,$(filter virtio_net.c,$(E_DRIVERS)),$(eval $(call virtio_net)))
+
+octeon@src := cp -Rp @KSRC@/source/drivers/staging/octeon octeon
+octeon@conf := CONFIG_OCTEON_ETHERNET
