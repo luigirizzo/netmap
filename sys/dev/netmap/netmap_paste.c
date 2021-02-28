@@ -159,20 +159,21 @@ struct pst_extra_pool {
 	uint32_t busy;
 	uint32_t busy_tail;
 	u_int refcount;
+	u_int dbg;
 };
 
 void
 pst_get_extra_ref(struct netmap_kring *kring)
 {
 	kring->extra->refcount++;
-	nm_prinf("%s %d", kring->na->name, kring->extra->refcount);
+	//nm_prinf("%s %d", kring->na->name, kring->extra->refcount);
 }
 
 void
 pst_put_extra_ref(struct netmap_kring *kring)
 {
 	kring->extra->refcount--;
-	nm_prinf("%s %d", kring->na->name, kring->extra->refcount);
+	//nm_prinf("%s %d", kring->na->name, kring->extra->refcount);
 }
 
 int
@@ -187,8 +188,15 @@ pst_bdg_freeable(struct netmap_adapter *na)
 		port_na = &b->bdg_ports[i]->up;
 		for_rx_tx(t) {
 			for (j = 0; j < netmap_real_rings(port_na, t); j++) {
-				if (NMR(port_na, t)[j]->extra->refcount > 0)
+				if (NMR(port_na, t)[j]->extra->refcount > 0) {
+					nm_prinf("%s %s ref %d",
+					    port_na->name,
+					    NMR(port_na,
+						    t)[j]->name,
+					    NMR(port_na,
+						    t)[j]->extra->refcount);
 					return 0;
+				}
 			}
 		}
 	}
@@ -256,6 +264,12 @@ pst_extra_deq(struct netmap_kring *kring, struct netmap_slot *slot)
 }
 #undef BETWEEN
 
+u_int
+pst_extra_peek(struct netmap_kring *kring, struct netmap_slot *slot)
+{
+	return kring->extra->free_tail;
+}
+
 int
 pst_extra_enq(struct netmap_kring *kring, struct netmap_slot *slot)
 {
@@ -282,7 +296,8 @@ pst_extra_enq(struct netmap_kring *kring, struct netmap_slot *slot)
 
 	cb = NMCB_SLT(na, slot);
 	nm_swap_reset(slot, &xtra->slot);
-	nmcbw(cb, kring, &xtra->slot);
+	//nmcbw(cb, kring, &xtra->slot);
+	nmcbw(cb, nmcb_kring(cb), &xtra->slot);
 
 	return 0;
 }
@@ -333,11 +348,19 @@ pst_fdtable_add(struct nmcb *cb, struct netmap_kring *kring)
 	struct pst_fdtable *ft = pst_fdt(kring);
 	struct pst_fdt_q *fde;
 
+	u_int d_fd;
+	struct netmap_slot *d_slot;
+	struct nmcb *d_cb;
+
 	fde = ft->fde + nm_pst_getfd(slot);
 
 	cb->next = NM_FDT_NULL;
 	nm_prdis("kring %p ft %p fde %p fd %d", kring, ft, fde, nm_pst_getfd(slot));
 	if (fde->fq_head == NM_FDT_NULL) {
+		d_fd = nm_pst_getfd(slot);
+		d_slot = slot;
+		d_cb = cb;
+
 		fde->fq_head = fde->fq_tail = slot->buf_idx;
 		ft->fds[ft->nfds++] = nm_pst_getfd(slot);
 	} else {
@@ -346,6 +369,9 @@ pst_fdtable_add(struct nmcb *cb, struct netmap_kring *kring)
 
 		/* invalid prev is not seen */
 		prev->next = fde->fq_tail = slot->buf_idx;
+	}
+	if (cb != NMB(kring->na, nmcb_slot(cb))) {
+		nm_prinf("added head fd %d cb %p nmb %p slot %p", d_fd, d_cb, NMB(kring->na, nmcb_slot(cb)), d_slot);
 	}
 	ft->npkts++;
 }
@@ -497,19 +523,21 @@ pst_poststack(struct netmap_kring *kring)
 					NM_FDT_NULL : cb->next;
 				ts = nmcb_slot(cb);
 				if (unlikely(ts == NULL)) {
-					PST_ASSERT("null ts nxt %u", next);
+					PST_ASSERT("null ts nxt %u fd %d hmny %u bufi %u valid %d cb %p nmb %p", next, fd, howmany, tmp.buf_idx, nmcb_valid(cb), cb, NMB(na, &tmp));
 					goto skip;
+				} else if (cb != NMB(na, nmcb_slot(cb))) {
+					nm_prinf("fd %d cb %p != nmb %p len %d", fd, cb,
+					  NMB(na, nmcb_slot(cb)), ts->len);
 				}
 				if (nmcb_rstate(cb) == MB_TXREF)
 					nonfree[nonfree_num++] = j;
 
-				if (stna(na) == na) { // XXX
-					pst_put_extra_ref(nmcb_kring(cb));
-					pst_get_extra_ref(rxr);
-				}
-
-				nmcbw(cb, rxr, rs);
 				nm_swap_reset(ts, rs);
+				nmcbw(cb, nmcb_kring(cb), rs);// needed?
+				//if (cb != NMB(rxna, nmcb_slot(cb))) {
+				//	nm_prinf("cb %p != nmb %p", cb, NMB(rxna, nmcb_slot(cb)));
+				//}
+
 skip:
 				j = nm_next(j, lim_rx);
 				sent++;
@@ -535,8 +563,9 @@ skip:
 	/* swap out packets still referred by the stack */
 	for (j = 0; likely(j < nonfree_num); j++) {
 		struct netmap_slot *slot = &rxr->ring->slot[nonfree[j]];
+		struct nmcb *cb = NMCB_SLT(rxna, slot);
 
-		if (unlikely(pst_extra_enq(rxr, slot))) {
+		if (unlikely(pst_extra_enq(nmcb_kring(cb), slot))) {
 			/* Don't reclaim on/after this positon */
 			u_long nm_i = slot - rxr->ring->slot;
 			rxr->nkr_hwlease = nm_i;
@@ -1174,7 +1203,7 @@ netmap_pst_bwrap_intr_notify(struct netmap_kring *kring, int flags) {
  * Otherwise our sk->sk_destructor will cleanup stack states
  */
 static void
-pst_unregister_socket(struct pst_so_adapter *soa, int locked)
+pst_unregister_socket(struct pst_so_adapter *soa)
 {
 	NM_SOCK_T *so = soa->so;
 	struct netmap_pst_adapter *sna = tosna(soa->na);
@@ -1183,25 +1212,28 @@ pst_unregister_socket(struct pst_so_adapter *soa, int locked)
 	if (!sna) {
 		panic("no sna");
 	}
-	if (!locked) {
-		mtx_lock(&sna->so_adapters_lock);
-	}
-	if (soa->fd >= sna->so_adapters_max) {
-		PST_DBG("non-registered or invalid fd %d", soa->fd);
-	} else {
-		sna->so_adapters[soa->fd] = NULL;
-		sna->num_so_adapters--;
-		NM_SOCK_LOCK(so);
-		SOCKBUF_LOCK(&so->so_rcv);
-		RESTORE_SOUPCALL(so, soa);
-		RESTORE_SODTOR(so, soa);
-		pst_wso(NULL, so);
-		SOCKBUF_UNLOCK(&so->so_rcv);
-		NM_SOCK_UNLOCK(so);
-	}
+	if (soa->fd >= sna->so_adapters_max)
+		panic("non-registered or invalid fd %d", soa->fd);
+	sna->so_adapters[soa->fd] = NULL;
+	sna->num_so_adapters--;
+	NM_SOCK_LOCK(so);
+	SOCKBUF_LOCK(&so->so_rcv);
+	RESTORE_SOUPCALL(so, soa);
+	RESTORE_SODTOR(so, soa);
+	pst_wso(NULL, so);
+	SOCKBUF_UNLOCK(&so->so_rcv);
+	NM_SOCK_UNLOCK(so);
 	nm_os_free(soa);
-	if (!locked)
-		mtx_unlock(&sna->so_adapters_lock);
+}
+
+static void
+pst_unregister_socket_unlocked(struct pst_so_adapter *soa)
+{
+	struct netmap_pst_adapter *sna = tosna(soa->na);
+
+	mtx_lock(&sna->so_adapters_lock);
+	pst_unregister_socket(soa);
+	mtx_unlock(&sna->so_adapters_lock);
 }
 
 static void
@@ -1213,8 +1245,12 @@ pst_sodtor(NM_SOCK_T *so)
 		pst_wso(NULL, so);
 		return;
 	}
-	pst_unregister_socket(soa, 0);
+	pst_unregister_socket_unlocked(soa);
 	if (so->so_dtor) {
+		if (so->so_dtor == pst_sodtor) {
+			nm_prinf("BUG recursive so_dtor");
+			panic("");
+		}
 		so->so_dtor(so);
 	}
 }
@@ -1248,6 +1284,7 @@ netmap_pst_bdg_dtor(const struct netmap_vp_adapter *vpna)
 	mtx_destroy(&sna->so_adapters_lock);
 }
 
+/* not NMG_LOCK held */
 static int
 pst_register_fd(struct netmap_adapter *na, int fd)
 {
@@ -1260,6 +1297,9 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	if (unlikely(fd > NM_PST_FD_MAX)) {
 		return ENOMEM;
 	}
+	so = nm_os_sock_fget(fd, &file);
+	if (!so)
+		return EINVAL;
 	NMG_LOCK();
 	mtx_lock(&sna->so_adapters_lock);
 	/* first check table size */
@@ -1272,7 +1312,7 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 		if (!new) {
 			PST_ASSERT("failed to extend fdtable");
 			mtx_unlock(&sna->so_adapters_lock);
-			NMG_UNLOCK();
+			nm_os_sock_fput(so, file);
 			return ENOMEM;
 		}
 		if (old) {
@@ -1282,15 +1322,7 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 		sna->so_adapters = new;
 		sna->so_adapters_max = newsize;
 	}
-	mtx_unlock(&sna->so_adapters_lock);
-	NMG_UNLOCK();
 
-	so = nm_os_sock_fget(fd, &file);
-	if (!so)
-		return EINVAL;
-	if (nm_os_set_nodelay(so) < 0) {
-		PST_DBG_LIM("failed to set TCP_NODELAY");
-	}
 	/*serialize simultaneous accept/config */
 	NM_SOCK_LOCK(so); // sosetopt() internally locks socket
 	if (pst_so(so)) {
@@ -1315,9 +1347,19 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	sna->num_so_adapters++;
 	SOCKBUF_UNLOCK(&so->so_rcv);
 unlock_return:
-	NM_SOCK_UNLOCK(so);
+	//mtx_unlock(&sna->so_adapters_lock);
 	if (!error) {
+		soa->debug = curcpu+1;
 		error = nm_os_pst_sbdrain(na, so);
+		soa->debug = 0;
+	}
+	NM_SOCK_UNLOCK(so);
+	mtx_unlock(&sna->so_adapters_lock);
+	NMG_UNLOCK();
+	if (!error) {
+		if (nm_os_set_nodelay(so) < 0) {
+			PST_DBG_LIM("failed to set TCP_NODELAY");
+		}
 	}
 	nm_os_sock_fput(so, file);
 	return error;
@@ -1409,7 +1451,7 @@ del_kpriv:
 
 			if (sna->kwaittdp != NULL)
 				panic("kwait already running");
-			nm_prinf("spwaning kwait");
+			nm_prinf("spawning kwait");
 #ifdef __FreeBSD__
 			kthread_add(nm_os_pst_kwait, (void *)sna, NULL,
 				    &sna->kwaittdp, 0, 0, "netmap-pst-kwait");

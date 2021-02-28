@@ -1255,6 +1255,7 @@ struct pst_so_adapter {
 	int (*save_soupcall)(NM_SOCK_T *, void *, int);
 	void (*save_sodtor)(NM_SOCK_T *);
 #endif
+	int debug;
 };
 
 struct netmap_pst_adapter {
@@ -1399,6 +1400,7 @@ int nm_os_pst_tx(struct netmap_kring *, struct netmap_slot *);
 int nm_os_set_nodelay(NM_SOCK_T *);
 struct pst_so_adapter * pst_soa_from_fd(struct netmap_adapter *, int);
 int pst_extra_enq(struct netmap_kring *, struct netmap_slot *);
+u_int pst_extra_peek(struct netmap_kring *, struct netmap_slot *);
 void pst_extra_deq(struct netmap_kring *, struct netmap_slot *);
 void pst_fdtable_add(struct nmcb *, struct netmap_kring *);
 int netmap_pst_transmit(struct ifnet *, struct mbuf *);

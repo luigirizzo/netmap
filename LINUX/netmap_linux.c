@@ -1114,9 +1114,8 @@ nm_os_pst_mbuf_data_dtor(struct ubuf_info *uarg,
 		return;
 	}
 	nmcb_wstate(cb, MB_NOREF);
-	nm_prinf("next put_extra_ref");
-	pst_put_extra_ref(nmcb_kring(cb));
 	pst_extra_deq(nmcb_kring(cb), nmcb_slot(cb));
+	pst_put_extra_ref(nmcb_kring(cb));
 }
 
 static void
@@ -1175,6 +1174,7 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 			 * We need better workaround */
 			if (unlikely(!kring)) {
 				//PST_DBG_LIM("WARNING: no kring");
+				nm_prinf("WARNING: m %p no kring", m);
 				SET_MBUF_DESTRUCTOR(m, NULL);
 				nm_os_set_mbuf_data_destructor(m, &cb->ui, NULL);
 				__skb_unlink(m, queue);
@@ -1191,6 +1191,7 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 		if (unlikely(m->sk == NULL || pst_so(m->sk) == NULL)) {
 			PST_ASSERT("m->sk %p soa %p",
 					m->sk, m->sk ? pst_so(m->sk) : NULL);
+			nm_prinf("m %p cb %p no sk", m, cb);
 			continue;
 		}
 		nm_pst_setfd(slot, pst_so(sk)->fd);
@@ -1208,8 +1209,16 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 			//PST_DBG_LIM("fd %d ring_id %u",
 			//		nm_pst_getfd(slot), kring->ring_id);
 			queued = 1;
+			if (cb != NMB(kring->na, slot)) {
+				nm_prinf("fd %d m %p cb %p nmb %p bufi %u slt %p sl %u ml %u dr %d",
+					nm_pst_getfd(slot), m, cb,
+					NMB(kring->na, slot), slot->buf_idx,
+					slot, slot->len, skb_headlen(m),
+					pst_so(m->sk)->debug);
+			}
 		}
 #endif
+
 		nmcb_wstate(cb, MB_TXREF);
 
 		/* XXX use new sk_eat_skb() > 5.1 */
@@ -1282,6 +1291,7 @@ nm_os_build_mbuf(struct netmap_kring *kring, char *buf, u_int len)
 		shinfo = skb_shinfo(m);
 		bzero(shinfo, offsetof(struct skb_shared_info, dataref));
 		*(int *)(&shinfo->dataref) = 1;
+		//shinfo->tx_flags |= SKBTX_DEV_ZEROCOPY;
 	} else
 #endif
 	{
@@ -1315,7 +1325,6 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	if (unlikely(!m))
 		return 0; // drop and skip
 
-	nm_prinf("next get_extra_ref");
 	pst_get_extra_ref(kring);
 
 	nmcb_wstate(cb, MB_STACK);
@@ -1333,11 +1342,15 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	 * in __netif_receive_skb_core().
 	 */
 	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {
+		struct netmap_slot *orig_slot = slot;
+		u_int peeked = pst_extra_peek(kring, slot);
+
 		nmcb_wstate(cb, MB_QUEUED);
 
 		if (pst_extra_enq(kring, slot)) {
 			ret = -EBUSY;
 		}
+		nm_prinf("queued m %p cb %p nmb %p slot %p (orig %p) mlen %d c %d bufi %u rs %d", m, cb, p, nmcb_slot(cb), orig_slot, skb_headlen(m), curcpu, slot->buf_idx, nmcb_rstate(cb));
 	}
 
 #ifdef PST_MB_RECYCLE
@@ -1349,7 +1362,7 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 		if (likely(uarg->callback)) {
 			uarg->callback(uarg, true);
 		} else {
-			PST_DBG("no destructor in recycling m %p", m);
+			nm_prinf("no destructor in recycling m %p", m);
 		}
 		kring->tx_pool[1] = m;
 	} else {
@@ -1395,7 +1408,6 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 		PST_DBG_LIM("NULL sk->sk_socket");
 		return 0;
 	}
-	nm_prinf("next get_extra_ref");
 	pst_get_extra_ref(kring);
 
 #ifdef NETMAP_LINUX_HAVE_KERNEL_SENDPAGE_LOCKED
@@ -1451,9 +1463,20 @@ nm_os_pst_kwait(void *data)
 	struct netmap_pst_adapter *sna = (struct netmap_pst_adapter *)data;
 	struct netmap_priv_d *kpriv = sna->kpriv;
 
-	for (;sna->num_so_adapters > 0 || !pst_bdg_freeable(&sna->up.up);) {
-		PST_DBG("waiting for %d sockets to go", sna->num_so_adapters);
-		usleep_range(200000, 300000); // 200-300ms
+	for (;;) {
+		int s = 0;
+		if (sna->num_so_adapters > 0) {
+			nm_prinf("waiting for %d sockets to go",
+					sna->num_so_adapters);
+			s = 1;
+		}
+		if (!pst_bdg_freeable(&sna->up.up)) {
+			nm_prinf("waiting for mbufs gone");
+			s = 1;
+		}
+		if (!s)
+			break;
+		usleep_range(500000, 600000); // 200-300ms
 	}
 	PST_DBG("%s deleting priv", sna->up.up.name);
 	nm_prinf("%s deleting priv pool_freeable %d",
