@@ -532,6 +532,10 @@ pst_poststack(struct netmap_kring *kring)
 				if (nmcb_rstate(cb) == MB_TXREF)
 					nonfree[nonfree_num++] = j;
 
+				if (nmcb_rstate(cb) == MB_FTREF) {
+					nmcb_wstate(cb, MB_NOREF);
+					pst_extra_deq(nmcb_kring(cb), ts);
+				}
 				nm_swap_reset(ts, rs);
 				nmcbw(cb, nmcb_kring(cb), rs);// needed?
 				//if (cb != NMB(rxna, nmcb_slot(cb))) {

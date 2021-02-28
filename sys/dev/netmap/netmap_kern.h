@@ -1291,6 +1291,7 @@ enum {
 	MB_STACK=1,
 	MB_QUEUED,
 	MB_TXREF,
+	MB_FTREF,
 	MB_NOREF,
 };
 

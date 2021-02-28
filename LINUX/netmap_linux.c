@@ -1113,8 +1113,10 @@ nm_os_pst_mbuf_data_dtor(struct ubuf_info *uarg,
 		nmcb_wstate(cb, MB_NOREF); // XXX also clear GONE
 		return;
 	}
-	nmcb_wstate(cb, MB_NOREF);
-	pst_extra_deq(nmcb_kring(cb), nmcb_slot(cb));
+	if (nmcb_rstate(cb) != MB_FTREF) {
+		nmcb_wstate(cb, MB_NOREF);
+		pst_extra_deq(nmcb_kring(cb), nmcb_slot(cb));
+	}
 	pst_put_extra_ref(nmcb_kring(cb));
 }
 
@@ -1219,7 +1221,7 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 		}
 #endif
 
-		nmcb_wstate(cb, MB_TXREF);
+		nmcb_wstate(cb, MB_FTREF);
 
 		/* XXX use new sk_eat_skb() > 5.1 */
 		__skb_unlink(m, queue);
@@ -1355,7 +1357,7 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 
 #ifdef PST_MB_RECYCLE
 	/* XXX avoid refcount_read... */
-	if (nmcb_rstate(cb) == MB_TXREF && likely(!skb_shared(m))) {
+	if (nmcb_rstate(cb) == MB_FTREF && likely(!skb_shared(m))) {
 		/* we can recycle this mbuf (see nm_os_pst_data_ready) */
 		struct ubuf_info *uarg = skb_shinfo(m)->destructor_arg;
 
