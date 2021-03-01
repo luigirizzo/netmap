@@ -370,9 +370,9 @@ pst_fdtable_add(struct nmcb *cb, struct netmap_kring *kring)
 		/* invalid prev is not seen */
 		prev->next = fde->fq_tail = slot->buf_idx;
 	}
-	if (cb != NMB(kring->na, nmcb_slot(cb))) {
-		nm_prinf("added head fd %d cb %p nmb %p slot %p", d_fd, d_cb, NMB(kring->na, nmcb_slot(cb)), d_slot);
-	}
+	//if (cb != NMB(kring->na, nmcb_slot(cb))) {
+	//	nm_prinf("added head fd %d cb %p nmb %p slot %p", d_fd, d_cb, NMB(kring->na, nmcb_slot(cb)), d_slot);
+	//}
 	ft->npkts++;
 }
 
@@ -523,20 +523,20 @@ pst_poststack(struct netmap_kring *kring)
 					NM_FDT_NULL : cb->next;
 				ts = nmcb_slot(cb);
 				if (unlikely(ts == NULL)) {
-					PST_ASSERT("null ts nxt %u fd %d hmny %u bufi %u valid %d cb %p nmb %p", next, fd, howmany, tmp.buf_idx, nmcb_valid(cb), cb, NMB(na, &tmp));
+					PST_ASSERT("null ts nxt %u fd %d hmny %u bufi %u valid %d cb %p ft %d", next, fd, howmany, tmp.buf_idx, nmcb_valid(cb), cb, nmcb_ft(cb));
 					goto skip;
 				} else if (cb != NMB(na, nmcb_slot(cb))) {
-					nm_prinf("fd %d cb %p != nmb %p len %d", fd, cb,
-					  NMB(na, nmcb_slot(cb)), ts->len);
+					nm_prinf("fd %d cb %p != nmb %p len %d state %d", fd, cb,
+					  NMB(na, nmcb_slot(cb)), ts->len, nmcb_ft(cb));
 				}
 				if (nmcb_rstate(cb) == MB_TXREF)
 					nonfree[nonfree_num++] = j;
 
-				if (nmcb_rstate(cb) == MB_FTREF) {
-					nmcb_wstate(cb, MB_NOREF);
+				nm_swap_reset(ts, rs);
+				if (nmcb_ft(cb)) {
+					nmcb_clr_ft(cb);
 					pst_extra_deq(nmcb_kring(cb), ts);
 				}
-				nm_swap_reset(ts, rs);
 				nmcbw(cb, nmcb_kring(cb), rs);// needed?
 				//if (cb != NMB(rxna, nmcb_slot(cb))) {
 				//	nm_prinf("cb %p != nmb %p", cb, NMB(rxna, nmcb_slot(cb)));

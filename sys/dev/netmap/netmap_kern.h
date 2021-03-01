@@ -1291,7 +1291,6 @@ enum {
 	MB_STACK=1,
 	MB_QUEUED,
 	MB_TXREF,
-	MB_FTREF,
 	MB_NOREF,
 };
 
@@ -1307,6 +1306,7 @@ struct nmcb {
 #define MB_MAGIC		0x12345600	/* XXX do better */
 #define MB_MAGIC_MASK	0xffffff00	/* XXX do better */
 #define SCB_GONE		0x00000010
+#define SCB_FT			0x00000020
 	uint32_t flags;
 	uint32_t next;
 	uint32_t cmd;
@@ -1315,7 +1315,8 @@ struct nmcb {
 static inline void
 nmcb_wstate(struct nmcb *cb, u_int newstate)
 {
-	cb->flags = (MB_MAGIC | newstate);
+	cb->flags = (cb->flags & SCB_FT) | (MB_MAGIC | newstate);
+	//cb->flags = (MB_MAGIC | newstate);
 }
 
 static inline void
@@ -1336,10 +1337,28 @@ nmcb_gone(struct nmcb *cb)
 	return !!(cb->flags & SCB_GONE);
 }
 
+static inline int
+nmcb_ft(struct nmcb *cb)
+{
+	return !!(cb->flags & SCB_FT);
+}
+
 static inline void
 nmcb_set_gone(struct nmcb *cb)
 {
 	cb->flags |= SCB_GONE;
+}
+
+static inline void
+nmcb_set_ft(struct nmcb *cb)
+{
+	cb->flags |= SCB_FT;
+}
+
+static inline void
+nmcb_clr_ft(struct nmcb *cb)
+{
+	cb->flags &= ~SCB_FT;
 }
 
 static inline void
@@ -1352,7 +1371,7 @@ static inline int
 nmcb_rstate(struct nmcb *cb)
 {
 	return likely(nmcb_valid(cb)) ?
-		(cb->flags & ~MB_MAGIC_MASK) : 0;
+		((cb->flags & ~MB_MAGIC_MASK) & ~SCB_FT) : 0;
 }
 
 NM_SOCK_T *nm_os_sock_fget(int, void **);

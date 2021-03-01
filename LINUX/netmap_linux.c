@@ -1107,14 +1107,18 @@ nm_os_pst_mbuf_data_dtor(struct ubuf_info *uarg,
 {
 	struct nmcb *cb;
 	struct nm_ubuf_info *u = (struct nm_ubuf_info *)uarg;
+	int prev_state;
 
 	cb = container_of(u, struct nmcb, ui);
 	if (unlikely(nmcb_gone(cb))) {
 		nmcb_wstate(cb, MB_NOREF); // XXX also clear GONE
 		return;
 	}
-	if (nmcb_rstate(cb) != MB_FTREF) {
-		nmcb_wstate(cb, MB_NOREF);
+	prev_state = nmcb_rstate(cb);
+	nmcb_wstate(cb, MB_NOREF);
+	if (!nmcb_ft(cb)) {
+		//if (nmcb_slot(cb)->len == 110)
+		//	nm_prinf("cb %p to be deqed state %d", cb, prev_state);
 		pst_extra_deq(nmcb_kring(cb), nmcb_slot(cb));
 	}
 	pst_put_extra_ref(nmcb_kring(cb));
@@ -1205,6 +1209,10 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 		 * the same fd value. Overwrite it if this is new connection.
 		 */
 		pst_fdtable_add(cb, kring);
+	//	if (pst_so(sk)->debug) {
+	//		nm_prinf("fdtable added fd %d cb %p nmb %p", pst_so(sk)->fd, cb,
+	//				NMB(kring->na, slot));
+	//	}
 		/* see comment in pst_transmit() */
 #ifdef PST_MB_RECYCLE
 		if (unlikely(nmcb_rstate(cb) == MB_QUEUED)) {
@@ -1221,7 +1229,8 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 		}
 #endif
 
-		nmcb_wstate(cb, MB_FTREF);
+		nmcb_wstate(cb, MB_TXREF);
+		nmcb_set_ft(cb);
 
 		/* XXX use new sk_eat_skb() > 5.1 */
 		__skb_unlink(m, queue);
@@ -1346,18 +1355,20 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {
 		struct netmap_slot *orig_slot = slot;
 		u_int peeked = pst_extra_peek(kring, slot);
+		uint16_t port;
 
 		nmcb_wstate(cb, MB_QUEUED);
 
 		if (pst_extra_enq(kring, slot)) {
 			ret = -EBUSY;
 		}
-		nm_prinf("queued m %p cb %p nmb %p slot %p (orig %p) mlen %d c %d bufi %u rs %d", m, cb, p, nmcb_slot(cb), orig_slot, skb_headlen(m), curcpu, slot->buf_idx, nmcb_rstate(cb));
+		port = ntohs(*(uint16_t *)((char *)cb + sizeof(*cb) + 14 + 20 + 0));
+		nm_prinf("queued m %p cb %p nmb %p slot %p (orig %p) mlen %d c %d bufi %u rs %d peeked %u port %u", m, cb, p, nmcb_slot(cb), orig_slot, skb_headlen(m), curcpu, slot->buf_idx, nmcb_rstate(cb), peeked, port);
 	}
 
 #ifdef PST_MB_RECYCLE
 	/* XXX avoid refcount_read... */
-	if (nmcb_rstate(cb) == MB_FTREF && likely(!skb_shared(m))) {
+	if (nmcb_rstate(cb) == MB_TXREF && likely(!skb_shared(m))) {
 		/* we can recycle this mbuf (see nm_os_pst_data_ready) */
 		struct ubuf_info *uarg = skb_shinfo(m)->destructor_arg;
 
