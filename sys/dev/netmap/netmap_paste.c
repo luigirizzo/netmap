@@ -523,18 +523,18 @@ pst_poststack(struct netmap_kring *kring)
 					NM_FDT_NULL : cb->next;
 				ts = nmcb_slot(cb);
 				if (unlikely(ts == NULL)) {
-					PST_ASSERT("null ts nxt %u fd %d hmny %u bufi %u valid %d cb %p ft %d", next, fd, howmany, tmp.buf_idx, nmcb_valid(cb), cb, nmcb_ft(cb));
+					PST_ASSERT("null ts nxt %u fd %d hmny %u bufi %u valid %d cb %p ft %d", next, fd, howmany, tmp.buf_idx, nmcb_valid(cb), cb, nmcb_rstate(cb) == MB_FTREF);
 					goto skip;
 				} else if (cb != NMB(na, nmcb_slot(cb))) {
 					nm_prinf("fd %d cb %p != nmb %p len %d state %d", fd, cb,
-					  NMB(na, nmcb_slot(cb)), ts->len, nmcb_ft(cb));
+					  NMB(na, nmcb_slot(cb)), ts->len, nmcb_rstate(cb) == MB_FTREF);
 				}
 				if (nmcb_rstate(cb) == MB_TXREF)
 					nonfree[nonfree_num++] = j;
 
 				nm_swap_reset(ts, rs);
-				if (nmcb_ft(cb)) {
-					nmcb_clr_ft(cb);
+				if (nmcb_rstate(cb) == MB_FTREF) {
+					nmcb_wstate(cb, MB_NOREF);
 					pst_extra_deq(nmcb_kring(cb), ts);
 				}
 				nmcbw(cb, nmcb_kring(cb), rs);// needed?

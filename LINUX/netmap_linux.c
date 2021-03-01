@@ -1114,12 +1114,9 @@ nm_os_pst_mbuf_data_dtor(struct ubuf_info *uarg,
 		nmcb_wstate(cb, MB_NOREF); // XXX also clear GONE
 		return;
 	}
-	prev_state = nmcb_rstate(cb);
-	nmcb_wstate(cb, MB_NOREF);
-	if (!nmcb_ft(cb)) {
-		//if (nmcb_slot(cb)->len == 110)
-		//	nm_prinf("cb %p to be deqed state %d", cb, prev_state);
+	if (nmcb_rstate(cb) != MB_FTREF) {
 		pst_extra_deq(nmcb_kring(cb), nmcb_slot(cb));
+		nmcb_wstate(cb, MB_NOREF);
 	}
 	pst_put_extra_ref(nmcb_kring(cb));
 }
@@ -1229,8 +1226,7 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 		}
 #endif
 
-		nmcb_wstate(cb, MB_TXREF);
-		nmcb_set_ft(cb);
+		nmcb_wstate(cb, MB_FTREF);
 
 		/* XXX use new sk_eat_skb() > 5.1 */
 		__skb_unlink(m, queue);
