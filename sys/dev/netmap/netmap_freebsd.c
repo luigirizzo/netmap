@@ -1131,7 +1131,7 @@ nm_os_pst_mbuf_data_dtor(struct mbuf *m)
 		return;
 	}
 	nmcb_wstate(cb, MB_NOREF);
-	rxr->pool->refcount--;
+	pst_put_extra_ref(nmcb_kring(cb));
 	pst_extra_deq(nmcb_kring(cb), nmcb_slot(cb));
 }
 
@@ -1241,7 +1241,7 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 
 	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {
 		nmcb_wstate(cb, MB_QUEUED);
-		kring->pool->refcount++;
+		pst_get_extra_ref(kring);
 		if (pst_extra_enq(kring, slot)) {
 			ret = -EBUSY;
 		}
@@ -1289,7 +1289,7 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {
 		nmcb_wstate(cb, MB_QUEUED);
 
-		kring->pool->refcount++;
+		pst_get_extra_ref(kring);
 
 		if (likely(pst_extra_enq(kring, slot))) {
 			return -EBUSY;
@@ -1324,7 +1324,7 @@ nm_os_pst_kwait(void *data)
 	}
 	PST_DBG("%s deleting priv", sna->up.up.name);
 	nm_prinf("%s deleting priv pool_freeable %d",
-			sna->up.up.name, pst_pool_freeable(&sna->up.up);
+			sna->up.up.name, pst_bdg_freeable(&sna->up.up));
 	NMG_LOCK();
 	sna->kpriv = NULL;
 	sna->kwaittdp = NULL;

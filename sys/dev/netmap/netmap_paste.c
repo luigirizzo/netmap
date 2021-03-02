@@ -176,6 +176,12 @@ pst_put_extra_ref(struct netmap_kring *kring)
 	//nm_prinf("%s %d", kring->na->name, kring->extra->refcount);
 }
 
+u_int
+pst_peek_extra_ref(struct netmap_kring *kring)
+{
+	return kring->extra->refcount;
+}
+
 int
 pst_bdg_freeable(struct netmap_adapter *na)
 {
@@ -263,12 +269,6 @@ pst_extra_deq(struct netmap_kring *kring, struct netmap_slot *slot)
 	EXTRA_APPEND(free, pool, xtra, slots, pos);
 }
 #undef BETWEEN
-
-u_int
-pst_extra_peek(struct netmap_kring *kring, struct netmap_slot *slot)
-{
-	return kring->extra->free_tail;
-}
 
 int
 pst_extra_enq(struct netmap_kring *kring, struct netmap_slot *slot)
@@ -523,11 +523,18 @@ pst_poststack(struct netmap_kring *kring)
 					NM_FDT_NULL : cb->next;
 				ts = nmcb_slot(cb);
 				if (unlikely(ts == NULL)) {
-					PST_ASSERT("null ts nxt %u fd %d hmny %u bufi %u valid %d cb %p ft %d", next, fd, howmany, tmp.buf_idx, nmcb_valid(cb), cb, nmcb_rstate(cb) == MB_FTREF);
+					PST_ASSERT("null ts nxt %u fd %d bufi "
+						   "%u valid %d cb %p ft %d",
+						   next, fd, tmp.buf_idx,
+						   nmcb_valid(cb), cb,
+						   nmcb_rstate(cb) == MB_FTREF);
 					goto skip;
-				} else if (cb != NMB(na, nmcb_slot(cb))) {
-					nm_prinf("fd %d cb %p != nmb %p len %d state %d", fd, cb,
-					  NMB(na, nmcb_slot(cb)), ts->len, nmcb_rstate(cb) == MB_FTREF);
+				} else if (unlikely(cb != NMB(na, ts))) {
+					PST_ASSERT("fd %d cb %p != nmb %p "
+						   "len %d state %d", fd, cb,
+					  	   NMB(na, nmcb_slot(cb)),
+						   ts->len,
+						   nmcb_rstate(cb) == MB_FTREF);
 				}
 				if (nmcb_rstate(cb) == MB_TXREF)
 					nonfree[nonfree_num++] = j;
@@ -1252,8 +1259,7 @@ pst_sodtor(NM_SOCK_T *so)
 	pst_unregister_socket_unlocked(soa);
 	if (so->so_dtor) {
 		if (so->so_dtor == pst_sodtor) {
-			nm_prinf("BUG recursive so_dtor");
-			panic("");
+			panic("recursive so_dtor");
 		}
 		so->so_dtor(so);
 	}
@@ -1353,9 +1359,7 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 unlock_return:
 	//mtx_unlock(&sna->so_adapters_lock);
 	if (!error) {
-		soa->debug = curcpu+1;
 		error = nm_os_pst_sbdrain(na, so);
-		soa->debug = 0;
 	}
 	NM_SOCK_UNLOCK(so);
 	mtx_unlock(&sna->so_adapters_lock);
