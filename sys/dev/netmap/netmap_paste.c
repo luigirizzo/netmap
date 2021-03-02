@@ -1309,7 +1309,7 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	so = nm_os_sock_fget(fd, &file);
 	if (!so)
 		return EINVAL;
-	NMG_LOCK();
+	//NMG_LOCK();
 	mtx_lock(&sna->so_adapters_lock);
 	/* first check table size */
 	if (fd >= sna->so_adapters_max) {
@@ -1362,7 +1362,7 @@ unlock_return:
 	}
 	NM_SOCK_UNLOCK(so);
 	mtx_unlock(&sna->so_adapters_lock);
-	NMG_UNLOCK();
+	//NMG_UNLOCK();
 	if (!error) {
 		if (nm_os_set_nodelay(so) < 0) {
 			PST_DBG_LIM("failed to set TCP_NODELAY");
