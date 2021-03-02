@@ -1050,7 +1050,7 @@ nm_os_pst_upcall(NM_SOCK_T *so, void *x, int y)
 			queued = 1;
 		}
 #endif /* PST_MB_RECYCLE */
-		nmcb_wstate(cb, MB_TXREF);
+		nmcb_wstate(cb, MB_FTREF);
 #ifdef PST_MB_RECYCLE
 		if (likely(!queued)) {
 			nm_os_pst_mbuf_data_dtor(m);
