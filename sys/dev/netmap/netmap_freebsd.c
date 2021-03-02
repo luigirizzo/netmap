@@ -1201,6 +1201,8 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	nmcb_wstate(cb, MB_STACK);
 	nm_pst_setfd(slot, 0);
 
+	pst_get_extra_ref(kring);
+
 	if (ntohs(*(uint16_t *)((char *)m->m_data + 12)) == ETHERTYPE_IP) {
 		CURVNET_SET_QUIET(ifp->if_vnet);
 		M_SETFIB(m, ifp->if_fib);
@@ -1241,7 +1243,7 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 
 	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {
 		nmcb_wstate(cb, MB_QUEUED);
-		pst_get_extra_ref(kring);
+		//pst_get_extra_ref(kring);
 		if (pst_extra_enq(kring, slot)) {
 			ret = -EBUSY;
 		}
@@ -1280,6 +1282,7 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 		PST_DBG("no soa of fd %d (na %s)", nm_pst_getfd(slot), na->name);
 		return 0;
 	}
+	pst_get_extra_ref(nmcb_kring(cb));
 	err = sosend(soa->so, NULL, NULL, m, NULL, flags, curthread);
 	if (unlikely(err < 0)) {
 		PST_DBG("error %d", err);
@@ -1288,9 +1291,6 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 
 	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {
 		nmcb_wstate(cb, MB_QUEUED);
-
-		pst_get_extra_ref(kring);
-
 		if (likely(pst_extra_enq(kring, slot))) {
 			return -EBUSY;
 		}
@@ -1318,8 +1318,19 @@ nm_os_pst_kwait(void *data)
 	struct netmap_pst_adapter *sna = (struct netmap_pst_adapter *)data;
 	struct netmap_priv_d *kpriv = sna->kpriv;
 
-	for (;sna->num_so_adapters > 0;) {
-		PST_DBG("waiting for %d sockets to go", sna->num_so_adapters);
+	for (;;) {
+		int s = 0;
+		if (sna->num_so_adapters > 0) {
+			nm_prinf("waiting for %d sockets to go",
+					sna->num_so_adapters);
+			s = 1;
+		}
+		if (!pst_bdg_freeable(&sna->up.up)) {
+			nm_prinf("waiting for mbufs gone");
+			s = 1;
+		}
+		if (!s)
+			break;
 		pause("netmap-pst-kwait-pause", 200);
 	}
 	PST_DBG("%s deleting priv", sna->up.up.name);

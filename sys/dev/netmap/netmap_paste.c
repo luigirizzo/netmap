@@ -195,8 +195,7 @@ pst_bdg_freeable(struct netmap_adapter *na)
 		for_rx_tx(t) {
 			for (j = 0; j < netmap_real_rings(port_na, t); j++) {
 				if (NMR(port_na, t)[j]->extra->refcount > 0) {
-					nm_prinf("%s %s ref %d",
-					    port_na->name,
+					nm_prinf("%s ref %d",
 					    NMR(port_na,
 						    t)[j]->name,
 					    NMR(port_na,
