@@ -1252,6 +1252,7 @@ pst_sodtor(NM_SOCK_T *so)
 	struct pst_so_adapter *soa = pst_so(so);
 
 	if (soa->so != so) {
+		nm_prinf("BUG soa->so != so");
 		pst_wso(NULL, so);
 		return;
 	}

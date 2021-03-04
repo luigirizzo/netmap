@@ -1189,6 +1189,7 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 		/* append this buffer to the scratchpad */
 		slot = nmcb_slot(cb);
 		if (unlikely(slot == NULL)) {
+			nm_prinf("m %p no slot", m);
 			//PST_DBG_LIM("no slot");
 			continue;
 		}
@@ -1344,7 +1345,6 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 			ret = -EBUSY;
 		}
 	}
-
 #ifdef PST_MB_RECYCLE
 	/* XXX avoid refcount_read... */
 	if (nmcb_rstate(cb) == MB_FTREF && likely(!skb_shared(m))) {
