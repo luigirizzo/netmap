@@ -1462,10 +1462,10 @@ nm_os_pst_kwait(void *data)
 					sna->num_so_adapters);
 			s = 1;
 		}
-		if (!pst_bdg_freeable(&sna->up.up)) {
-			nm_prinf("waiting for mbufs gone");
-			s = 1;
-		}
+		//if (!pst_bdg_freeable(&sna->up.up)) {
+		//	nm_prinf("waiting for mbufs gone");
+		//	s = 1;
+		//}
 		if (!s)
 			break;
 		usleep_range(500000, 600000); // 200-300ms
