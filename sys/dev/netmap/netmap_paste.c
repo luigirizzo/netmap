@@ -1372,6 +1372,7 @@ unlock_return:
 	return error;
 }
 
+/* under BDG_LCOK */
 static int
 netmap_pst_bdg_config(struct nm_ifreq *ifr)
 {
@@ -1381,16 +1382,16 @@ netmap_pst_bdg_config(struct nm_ifreq *ifr)
 	int error;
 
 	strncpy(hdr.nr_name, ifr->nifr_name, sizeof(hdr.nr_name));
-	NMG_LOCK();
+	//NMG_LOCK();
 	error = netmap_get_pst_na(&hdr, &na, NULL, 0);
-	NMG_UNLOCK();
+	//NMG_UNLOCK();
 	if (!error && na != NULL) {
 		error = pst_register_fd(na, fd);
 	}
 	if (na) {
-		NMG_LOCK();
+		//NMG_LOCK();
 		netmap_adapter_put(na);
-		NMG_UNLOCK();
+		//NMG_UNLOCK();
 	}
 	return error;
 }
