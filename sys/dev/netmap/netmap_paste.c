@@ -1084,6 +1084,9 @@ pst_mbufpool_free(struct netmap_adapter *na)
 
 		if (kring->tx_pool == NULL)
 			continue;
+		if (kring->tx_pool[1]) {
+			m_freem((struct mbuf *)kring->tx_pool[1]);
+		}
 		if (kring->tx_pool[0])
 			nm_os_free(kring->tx_pool[0]);
 		nm_os_free(kring->tx_pool);
@@ -1295,8 +1298,8 @@ netmap_pst_bdg_dtor(const struct netmap_vp_adapter *vpna)
 //#endif /* __FreeBSD__ */
 	bzero(sna->so_adapters, sizeof(uintptr_t) * sna->so_adapters_max);
 	sna->so_adapters_max = 0;
-	sna->so_adapters = NULL;
 	nm_os_free(sna->so_adapters);
+	sna->so_adapters = NULL;
 	mtx_unlock(&sna->so_adapters_lock);
 	mtx_destroy(&sna->so_adapters_lock);
 }
