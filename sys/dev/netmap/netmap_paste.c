@@ -810,6 +810,7 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 	int mismatch;
 	const u_int bufsize = NETMAP_BUF_SIZE(na);
 
+	PST_DBG("m %p len %u proto %x", m, m->len, ntohs(m->protocol));
 #ifdef __FreeBSD__
 	struct mbuf *md = m;
 
@@ -868,7 +869,7 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 		/* Length has already been validated */
 		memcpy(nmb + nm_get_offset(kring, slot), MBUF_DATA(m),
 		       nm_pst_getuoff(slot));
-		PST_DBG_LIM("zero copy tx uoff %u roff %u", nm_pst_getuoff(slot), (u_int)(slot->ptr & kring->offset_mask));
+		PST_DBG("zero copy tx uoff %u roff %u", nm_pst_getuoff(slot), (u_int)(slot->ptr & kring->offset_mask));
 	} else {
 		m_copydata(m, 0, MBUF_LEN(m), nmb + nm_get_offset(kring, slot));
 		slot->len += mismatch;

@@ -1333,6 +1333,7 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 		slot->flags &= ~NS_CSUM;
 	}
 	m->protocol = eth_type_trans(m, m->dev);
+	PST_DBG("cb %p len %u slen %u off %u proto %x", cb, m->len, slot->len, nm_get_offset(kring, slot), ntohs(*(uint16_t *)(p+sizeof(*cb)+12)));
 	/* have orphan() set data_destructor */
 	SET_MBUF_DESTRUCTOR(m, nm_os_pst_mbuf_destructor);
 	netif_receive_skb_core(m);
