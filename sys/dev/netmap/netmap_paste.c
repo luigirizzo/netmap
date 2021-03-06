@@ -197,11 +197,23 @@ pst_bdg_freeable(struct netmap_adapter *na)
 		for_rx_tx(t) {
 			for (j = 0; j < netmap_real_rings(port_na, t); j++) {
 				if (NMR(port_na, t)[j]->extra->refcount > 0) {
+					struct pst_extra_pool *p;
+					u_int k;
+
 					nm_prinf("%s ref %d",
 					    NMR(port_na,
 						    t)[j]->name,
 					    NMR(port_na,
 						    t)[j]->extra->refcount);
+					/* where is it? */
+
+					p = NMR(port_na, t)[j]->extra;
+					for (k = p->busy; k != p->busy_tail;) {
+						struct pst_extra_slot *slot;
+						slot = &p->slots[k];
+						nm_prinf("busy extra %u", k);
+						k = slot->next;
+					}
 					return 0;
 				}
 			}
