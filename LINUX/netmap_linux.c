@@ -1405,6 +1405,9 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 		return 0;
 	}
 
+	PST_DBG("cb %p ulen %u uoff %u off %u fd %d",
+			cb, len, nm_pst_getuoff(slot), offset, nm_pst_getfd(slot));
+
 #ifdef NETMAP_LINUX_HAVE_KERNEL_SENDPAGE_LOCKED
 	/*
 	 * We don't really own lock. But since we only actively receive packets,
