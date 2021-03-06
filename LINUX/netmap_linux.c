@@ -1132,7 +1132,7 @@ nm_os_pst_mbuf_destructor(struct sk_buff *skb)
 		nm_os_set_mbuf_data_destructor(skb, &cb->ui,
 				nm_os_pst_mbuf_data_dtor);
 	else
-		PST_DBG_LIM("invalid cb in our mbuf destructor");
+		panic("invalid cb in our mbuf destructor");
 }
 
 void
