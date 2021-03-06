@@ -54,11 +54,13 @@
 int paste_host_batch = 1;
 static int paste_extra = 2048;
 int paste_usrrcv = 0;
+int paste_optim_sendpage = 1;
 SYSBEGIN(vars_paste);
 SYSCTL_DECL(_dev_netmap);
 SYSCTL_INT(_dev_netmap, OID_AUTO, paste_host_batch, CTLFLAG_RW, &paste_host_batch, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, paste_extra, CTLFLAG_RW, &paste_extra, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, paste_usrrcv, CTLFLAG_RW, &paste_usrrcv, 1 , "");
+SYSCTL_INT(_dev_netmap, OID_AUTO, paste_optim_sendpage, CTLFLAG_RW, &paste_usrrcv, 1 , "");
 SYSEND;
 
 static int netmap_pst_bwrap_intr_notify(struct netmap_kring *kring, int flags);
@@ -823,33 +825,31 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 		return 0;
 	}
 	kring = nmcb_kring(cb);
-	if (unlikely(nmcb_rstate(cb) != MB_STACK) ||
+	if (unlikely(nmcb_rstate(cb) != MB_STACK)
+#ifdef __FreeBSD__
 	    /* FreeBSD ARP reply recycles the request mbuf */
-	    unlikely(kring && kring->na->na_private == na->na_private)) {
+	    || unlikely(kring && kring->na->na_private == na->na_private)
+#endif /* __FreeBSD__ */
+	    ) {
+#ifdef linux
+		if (unlikely(nmcb_rstate(cb) == MB_QUEUED)) {
+			int i;
+			for (i = 0; i < MBUF_CLUSTERS(m); i++)
+				nmcb_wstate(NMCB_EXT(m, i, bufsize), MB_NOREF);
+			pst_extra_deq(kring, nmcb_slot(cb));
+		}
+#endif
 		MBUF_LINEARIZE(m); // XXX
 		csum_transmit(na, m);
 		return 0;
 	}
 	/* Valid cb, txsync-ing packet. */
+
 	slot = nmcb_slot(cb);
-	if (unlikely(nmcb_rstate(cb) == MB_QUEUED)) {
-		/* originated by netmap but has been queued in either extra
-		 * or txring slot. The backend might drop this packet.
-		 */
-#ifdef linux
-		int i, n = MBUF_CLUSTERS(m);
-
-		for (i = 0; i < n; i++)
-			nmcb_wstate(NMCB_EXT(m, i, bufsize), MB_NOREF);
-#else
-		/* To be done */
-#endif /* linux */
-		MBUF_LINEARIZE(m);
-		csum_transmit(na, m);
-		return 0;
-	}
-
 	nmb = NMB(na, slot);
+	if (unlikely(nmb != cb)) {
+		panic("nmb %p cb %p", nmb, cb);
+	}
 	/* bring protocol headers in */
 	mismatch = MBUF_HEADLEN(m) - (int)nm_pst_getuoff(slot);
 	if (!mismatch) {
@@ -889,18 +889,13 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 #ifdef linux
 csum_done:
 #endif
-	if (cb == NULL) {
-		nm_prinf("WARNING: NULL cb (na %s)", na->name);
-	}
 	pst_fdtable_add(cb, kring);
 
 	/* the stack might hold reference via clone, so let's see */
-	if (cb == NULL) {
-		PST_ASSERT("na %s kring %p cb NULL", na->name, kring);
-	}
 	nmcb_wstate(cb, MB_TXREF);
 #ifdef linux
 	/* for FreeBSD mbuf comes from our code */
+	pst_get_extra_ref(nmcb_kring(cb));
 	nm_os_set_mbuf_data_destructor(m, &cb->ui,
 			nm_os_pst_mbuf_data_dtor);
 #endif /* linux */

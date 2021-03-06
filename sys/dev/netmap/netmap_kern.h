@@ -1408,6 +1408,7 @@ void pst_get_extra_ref(struct netmap_kring *);
 void pst_put_extra_ref(struct netmap_kring *);
 u_int pst_peek_extra_ref(struct netmap_kring *);
 extern int paste_usrrcv;
+extern int paste_optim_sendpage;
 
 
 #endif /* WITH_PASTE */

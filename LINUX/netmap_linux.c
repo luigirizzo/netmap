@@ -1401,17 +1401,20 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 		PST_DBG_LIM("NULL sk->sk_socket");
 		return 0;
 	}
-	pst_get_extra_ref(nmcb_kring(cb));
 
 #ifdef NETMAP_LINUX_HAVE_KERNEL_SENDPAGE_LOCKED
 	/*
 	 * We don't really own lock. But since we only actively receive packets,
 	 * the RX path never tries to lock the socket.
+	 * If the kernel is configured to detect incorrect locking, disable
+	 * paste_optim_sendpage.
 	 */
-	err = kernel_sendpage_locked(sk, page, poff, len, MSG_DONTWAIT);
-#else
-	err = kernel_sendpage(sk->sk_socket, page, poff, len, MSG_DONTWAIT);
+	if (paste_optim_sendpage) {
+		err = kernel_sendpage_locked(sk, page, poff, len, MSG_DONTWAIT);
+	} else
 #endif /* NETMAP_LINUX_HAVE_KERNEL_SENDPAGE_LOCKED */
+		err = kernel_sendpage(sk->sk_socket, page, poff, len,
+					MSG_DONTWAIT);
 	if (unlikely(err < 0)) {
 		/* XXX check if it is enough to assume EAGAIN only */
 		PST_DBG_LIM("error %d in sendpage() slot %ld",
