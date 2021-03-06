@@ -1100,6 +1100,7 @@ linux_pst_start_xmit(struct sk_buff *skb, struct net_device *dev)
 /* We have no way to track subsequent fragments, but such fragments 
  * are always sent after queueing.
  * XXX !zerocopy_success might need to be handled explicitly
+ * zerocopy_success is false when MB_TXREF and the slot is not on-ring.
  */
 void
 nm_os_pst_mbuf_data_dtor(struct ubuf_info *uarg,
