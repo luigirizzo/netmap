@@ -1396,9 +1396,11 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 
 	if (unlikely(!sk)) {
 		PST_DBG_LIM("NULL sk");
+		nmcb_invalidate(cb);
 		return 0;
 	} else if (unlikely(!sk->sk_socket)) {
 		PST_DBG_LIM("NULL sk->sk_socket");
+		nmcb_invalidate(cb);
 		return 0;
 	}
 
