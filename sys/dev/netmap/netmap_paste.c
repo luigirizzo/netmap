@@ -54,13 +54,13 @@
 int paste_host_batch = 1;
 static int paste_extra = 2048;
 int paste_usrrcv = 0;
-int paste_optim_sendpage = 1;
+int paste_optim_sendpage = 0;
 SYSBEGIN(vars_paste);
 SYSCTL_DECL(_dev_netmap);
 SYSCTL_INT(_dev_netmap, OID_AUTO, paste_host_batch, CTLFLAG_RW, &paste_host_batch, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, paste_extra, CTLFLAG_RW, &paste_extra, 0 , "");
 SYSCTL_INT(_dev_netmap, OID_AUTO, paste_usrrcv, CTLFLAG_RW, &paste_usrrcv, 1 , "");
-SYSCTL_INT(_dev_netmap, OID_AUTO, paste_optim_sendpage, CTLFLAG_RW, &paste_usrrcv, 1 , "");
+SYSCTL_INT(_dev_netmap, OID_AUTO, paste_optim_sendpage, CTLFLAG_RW, &paste_optim_sendpage, 1 , "");
 SYSEND;
 
 static int netmap_pst_bwrap_intr_notify(struct netmap_kring *kring, int flags);
@@ -197,8 +197,8 @@ pst_bdg_freeable(struct netmap_adapter *na)
 		for_rx_tx(t) {
 			for (j = 0; j < netmap_real_rings(port_na, t); j++) {
 				if (NMR(port_na, t)[j]->extra->refcount > 0) {
-					struct pst_extra_pool *p;
-					u_int k;
+					//struct pst_extra_pool *p;
+					//u_int k;
 
 					nm_prinf("%s ref %d",
 					    NMR(port_na,
@@ -207,13 +207,13 @@ pst_bdg_freeable(struct netmap_adapter *na)
 						    t)[j]->extra->refcount);
 					/* where is it? */
 
-					p = NMR(port_na, t)[j]->extra;
-					for (k = p->busy; k != p->busy_tail;) {
-						struct pst_extra_slot *slot;
-						slot = &p->slots[k];
-						nm_prinf("busy extra %u", k);
-						k = slot->next;
-					}
+					//p = NMR(port_na, t)[j]->extra;
+					//for (k = p->busy; k != p->busy_tail;) {
+					//	struct pst_extra_slot *slot;
+					//	slot = &p->slots[k];
+					//	PST_DBG("busy extra %u", k);
+					//	k = slot->next;
+					//}
 					return 0;
 				}
 			}
@@ -487,10 +487,12 @@ pst_poststack(struct netmap_kring *kring)
 	j = rxr->nr_hwtail;
 
 	/* under lock */
-	mtx_lock(&rxr->q_lock);
+	//mtx_lock(&rxr->q_lock);
+	mtx_lock(&kring->q_lock);
 
 	if (unlikely(rxr->nkr_stopped)) {
-		mtx_unlock(&rxr->q_lock);
+		//mtx_unlock(&rxr->q_lock);
+		mtx_unlock(&kring->q_lock);
 		goto runlock;
 	}
 	howmany = pst_kr_rxspace(rxr);
@@ -578,7 +580,8 @@ skip:
 	}
 
 	rxr->nr_hwtail = j; // no update if !sent
-	mtx_unlock(&rxr->q_lock);
+	//mtx_unlock(&rxr->q_lock);
+	mtx_unlock(&kring->q_lock);
 
 	if (likely(sent))
 		rxr->nm_notify(rxr, 0);
@@ -810,10 +813,11 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 	int mismatch;
 	const u_int bufsize = NETMAP_BUF_SIZE(na);
 
-	PST_DBG("m %p len %u proto %x", m, m->len, ntohs(m->protocol));
 #ifdef __FreeBSD__
 	struct mbuf *md = m;
 
+	PST_DBG("m %p len %u proto %x", m, m->m_len,
+		ntohs(*(uint16_t *)(mtod(m, char *)+ETHER_ADDR_LEN*2)));
 	/* M_EXT or multiple mbufs (i.e., chain) */
 	if ((m->m_flags & M_EXT)) // not TCP case
 		cb = NMCB_EXT(m, 0, bufsize);
@@ -825,6 +829,7 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 		md = m->m_next;
 	}
 #elif defined(linux)
+	PST_DBG("m %p len %u proto %x", m, m->len, ntohs(m->protocol));
 	/* txsync-ing TX packets are always frags */
 	if (!MBUF_NONLINEAR(m)) {
 		csum_transmit(na, m);
@@ -833,7 +838,7 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 
 	cb = NMCB_EXT(m, 0, bufsize);
 #endif /* __FreeBSD__ */
-	if (!(cb && nmcb_valid(cb))) {
+	if (unlikely(!(cb && nmcb_valid(cb)))) {
 		csum_transmit(na, m);
 		return 0;
 	}
@@ -860,7 +865,7 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 
 	slot = nmcb_slot(cb);
 	nmb = NMB(na, slot);
-	if (unlikely(nmb != cb)) {
+	if (unlikely((struct nmcb *)nmb != cb)) {
 		panic("nmb %p cb %p", nmb, cb);
 	}
 	/* bring protocol headers in */
@@ -1229,45 +1234,32 @@ pst_unregister_socket(struct pst_so_adapter *soa)
 	NM_SOCK_T *so = soa->so;
 	struct netmap_pst_adapter *sna = tosna(soa->na);
 
-	nm_prdis("so %p soa %p fd %d", so, soa, soa->fd);
-	if (!sna) {
-		panic("no sna");
-	}
+	//nm_prinf("so %p soa %p fd %d", so, soa, soa->fd);
+	mtx_lock(&sna->so_adapters_lock);
 	if (soa->fd >= sna->so_adapters_max)
 		panic("non-registered or invalid fd %d", soa->fd);
 	sna->so_adapters[soa->fd] = NULL;
 	sna->num_so_adapters--;
-	NM_SOCK_LOCK(so);
+	//nm_prinf("so %p soa %p fd %d", so, soa, soa->fd);
+	//nm_prinf("so %p locked", so);
 	SOCKBUF_LOCK(&so->so_rcv);
 	RESTORE_SOUPCALL(so, soa);
 	RESTORE_SODTOR(so, soa);
-	pst_wso(NULL, so);
 	SOCKBUF_UNLOCK(&so->so_rcv);
-	NM_SOCK_UNLOCK(so);
+	pst_wso(NULL, so);
+	bzero(soa, sizeof(*soa));
 	nm_os_free(soa);
-}
-
-static void
-pst_unregister_socket_unlocked(struct pst_so_adapter *soa)
-{
-	struct netmap_pst_adapter *sna = tosna(soa->na);
-
-	mtx_lock(&sna->so_adapters_lock);
-	pst_unregister_socket(soa);
 	mtx_unlock(&sna->so_adapters_lock);
+	mb();
 }
 
 static void
 pst_sodtor(NM_SOCK_T *so)
 {
-	struct pst_so_adapter *soa = pst_so(so);
-
-	if (soa->so != so) {
-		nm_prinf("BUG soa->so != so");
-		pst_wso(NULL, so);
-		return;
-	}
-	pst_unregister_socket_unlocked(soa);
+	NM_SOCK_LOCK(so);
+	if (pst_so(so))
+		pst_unregister_socket(pst_so(so));
+	NM_SOCK_UNLOCK(so);
 	if (so->so_dtor) {
 		if (so->so_dtor == pst_sodtor) {
 			panic("recursive so_dtor");
@@ -1303,6 +1295,8 @@ netmap_pst_bdg_dtor(const struct netmap_vp_adapter *vpna)
 	sna->so_adapters = NULL;
 	mtx_unlock(&sna->so_adapters_lock);
 	mtx_destroy(&sna->so_adapters_lock);
+	mb();
+	nm_prinf("destroyed everything");
 }
 
 /* not NMG_LOCK held */
@@ -1314,15 +1308,35 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	struct pst_so_adapter *soa;
 	struct netmap_pst_adapter *sna = tosna(na);
 	int error = 0;
+	register_t intr;
+       
 
 	if (unlikely(fd > NM_PST_FD_MAX)) {
 		return ENOMEM;
 	}
+	if (unlikely(fd < 3)) {
+		nm_prinf("bad fd %d", fd);
+		return EINVAL;
+	}
 	so = nm_os_sock_fget(fd, &file);
 	if (!so)
 		return EINVAL;
-	//NMG_LOCK();
+	NM_SOCK_LOCK(so); // sosetopt() internally locks socket
+#ifdef linux
+	if (sock_flag(so, SOCK_DEAD)) {
+		nm_prinf("so %p SOCK_DEAD", so);
+		NM_SOCK_UNLOCK(so);
+		nm_os_sock_fput(so, file);
+		intr_restore(intr);
+		return EINVAL;
+	}
+#endif /* linux */
 	mtx_lock(&sna->so_adapters_lock);
+	intr = intr_disable();
+	if (pst_so(so)) {
+		error = EBUSY;
+		goto unlock_return;
+	}
 	/* first check table size */
 	if (fd >= sna->so_adapters_max) {
 		struct pst_so_adapter **old = sna->so_adapters, **new;
@@ -1332,12 +1346,12 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 		new = nm_os_malloc(sizeof(new) * newsize);
 		if (!new) {
 			PST_ASSERT("failed to extend fdtable");
-			mtx_unlock(&sna->so_adapters_lock);
-			nm_os_sock_fput(so, file);
-			return ENOMEM;
+			error = ENOMEM;
+			goto unlock_return;
 		}
 		if (old) {
 			memcpy(new, old, sizeof(old) * oldsize);
+			bzero(old, sizeof(old) * oldsize);
 			nm_os_free(old);
 		}
 		sna->so_adapters = new;
@@ -1345,11 +1359,6 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	}
 
 	/*serialize simultaneous accept/config */
-	NM_SOCK_LOCK(so); // sosetopt() internally locks socket
-	if (pst_so(so)) {
-		error = EBUSY;
-		goto unlock_return;
-	}
 	soa = nm_os_malloc(sizeof(*soa));
 	if (!soa) {
 		error = ENOMEM;
@@ -1357,6 +1366,9 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	}
 	SOCKBUF_LOCK(&so->so_rcv);
 	SAVE_SOUPCALL(so, soa);
+	if (so->sk_destruct) {
+		nm_prinf("warning so %p sk_destruct exists", so);
+	}
 	SAVE_SODTOR(so, soa);
 	soa->na = na;
 	soa->so = so;
@@ -1367,14 +1379,17 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	sna->so_adapters[fd] = soa;
 	sna->num_so_adapters++;
 	SOCKBUF_UNLOCK(&so->so_rcv);
+	mb();
 unlock_return:
-	//mtx_unlock(&sna->so_adapters_lock);
+	intr_restore(intr);
 	if (!error) {
 		error = nm_os_pst_sbdrain(na, so);
+		//nm_prinf("drained so %p", so);
 	}
-	NM_SOCK_UNLOCK(so);
 	mtx_unlock(&sna->so_adapters_lock);
-	//NMG_UNLOCK();
+	NM_SOCK_UNLOCK(so);
+	//nm_prinf("%p unlocked %d", so, curcpu);
+	//udelay(20);
 	if (!error) {
 		if (nm_os_set_nodelay(so) < 0) {
 			PST_DBG_LIM("failed to set TCP_NODELAY");

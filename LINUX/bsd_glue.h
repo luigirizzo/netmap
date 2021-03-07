@@ -577,8 +577,10 @@ void netmap_bns_unregister(void);
 #define NM_LIST_HEAD	struct hlist_head
 
 #define NM_SOCK_T	struct sock
-#define NM_SOCK_LOCK(_s)	bh_lock_sock_nested(_s)
-#define NM_SOCK_UNLOCK(_s)	bh_unlock_sock(_s)
+//#define NM_SOCK_LOCK(_s)	bh_lock_sock_nested(_s)
+//#define NM_SOCK_UNLOCK(_s)	bh_unlock_sock(_s)
+#define NM_SOCK_LOCK(_s)	lock_sock(_s)
+#define NM_SOCK_UNLOCK(_s)	release_sock(_s)
 #define	SOCKBUF_LOCK(sb)
 #define	SOCKBUF_UNLOCK(sb)
 

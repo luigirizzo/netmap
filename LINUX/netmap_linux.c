@@ -1110,6 +1110,10 @@ nm_os_pst_mbuf_data_dtor(struct ubuf_info *uarg,
 	struct nm_ubuf_info *u = (struct nm_ubuf_info *)uarg;
 
 	cb = container_of(u, struct nmcb, ui);
+	if (!nmcb_valid(cb)) {
+		nm_prinf("invalid cb %p", cb);
+		return;
+	}
 	pst_put_extra_ref(nmcb_kring(cb));
 	//if (strncmp(nmcb_kring(cb)->na->name, "pst:0", 5))
 	//	nm_prinf("%s ref %d", nmcb_kring(cb)->na->name, pst_peek_extra_ref(nmcb_kring(cb)));
@@ -1186,6 +1190,7 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 				__kfree_skb(m);
 				continue;
 			}
+			mtx_lock(&kring->q_lock);
 		}
 		/* append this buffer to the scratchpad */
 		slot = nmcb_slot(cb);
@@ -1198,6 +1203,9 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 			PST_ASSERT("m->sk %p soa %p",
 					m->sk, m->sk ? pst_so(m->sk) : NULL);
 			continue;
+		}
+		if (pst_so(sk)->fd < 3) {
+			nm_prinf("invalid fd %d", pst_so(sk)->fd);
 		}
 		nm_pst_setfd(slot, pst_so(sk)->fd);
 		nm_pst_setuoff(slot, (uint16_t)
@@ -1229,6 +1237,8 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 			__kfree_skb(m);
 		nm_prdis("ate %p state %x", m, nmcb_rstate(cb));
 	}
+	if (kring)
+		mtx_unlock(&kring->q_lock);
 }
 
 NM_SOCK_T *
@@ -1253,10 +1263,14 @@ nm_os_pst_sbdrain(struct netmap_adapter *na, NM_SOCK_T *sk)
 
 	/* XXX All the packets must be originated from netmap */
 	m = skb_peek(&sk->sk_receive_queue);
-	if (!m)
+	if (!m) {
+		nm_prinf("nothing to drain");
 		return 0;
-	else if (!nmcb_valid(NMCB(m)))
+	}
+	else if (!nmcb_valid(NMCB(m))) {
+		nm_prinf("invalid m to drain");
 		return 0;
+	}
 	/* No need for BDG_RLOCK() - we don't move packets to pst na */
 	nm_os_pst_upcall(sk);
 	return 0;
@@ -1472,10 +1486,10 @@ nm_os_pst_kwait(void *data)
 					sna->num_so_adapters);
 			s = 1;
 		}
-		//if (!pst_bdg_freeable(&sna->up.up)) {
-		//	nm_prinf("waiting for mbufs gone");
-		//	s = 1;
-		//}
+		if (!pst_bdg_freeable(&sna->up.up)) {
+			nm_prinf("waiting for mbufs gone");
+			s = 1;
+		}
 		if (!s)
 			break;
 		usleep_range(500000, 600000); // 200-300ms
