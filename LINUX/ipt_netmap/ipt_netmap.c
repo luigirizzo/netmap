@@ -697,22 +697,22 @@ static unsigned int nmring_tg4(struct sk_buff *skb,
 	skb->protocol = htons(ETH_P_IP);
 	skb_set_priv(skb, priv);
 
-	if (skb->len > mtu) {
+	if (skb_is_gso(skb) && priv->hooknum == NF_INET_LOCAL_OUT) {
+		/* We need to hand the GSO segmentation ourselves. */
+		struct sk_buff *next;
+		struct sk_buff *segments = skb_gso_segment(skb, 0);
+		m_freem(skb);
+		if (!IS_ERR(segments) && segments)
+		{
+			skb_list_walk_safe(segments, skb, next) {
+				/* This no longer needs GSO */
+				copy_pkt_to_queue(priv->net, skb->sk, skb);
+			}
+		}
+		return NF_STOLEN;
+	} else if (skb->len > mtu) {
 		if ((iph->frag_off & htons(IP_DF)) == 0) {
 			error = ip_do_fragment(priv->net, NULL, skb, copy_pkt_to_queue);
-		}
-		else if (skb_is_gso(skb) && priv->hooknum == NF_INET_LOCAL_OUT) {
-			/* We need to hand the GSO segmentation outselves. */
-			struct sk_buff *next;
-			struct sk_buff *segments = skb_gso_segment(skb, 0);
-			m_freem(skb);
-			if (!IS_ERR(segments) && segments)
-			{
-				skb_list_walk_safe(segments, skb, next) {
-					copy_pkt_to_queue(priv->net, skb->sk, skb);
-				}
-			}
-			return NF_STOLEN;
 		}
 		else if (unlikely(!skb->ignore_df ||
 				(IPCB(skb)->frag_max_size &&
