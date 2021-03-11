@@ -1308,7 +1308,6 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	struct pst_so_adapter *soa;
 	struct netmap_pst_adapter *sna = tosna(na);
 	int error = 0;
-	register_t intr;
        
 
 	if (unlikely(fd > NM_PST_FD_MAX)) {
@@ -1327,12 +1326,10 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 		nm_prinf("so %p SOCK_DEAD", so);
 		NM_SOCK_UNLOCK(so);
 		nm_os_sock_fput(so, file);
-		intr_restore(intr);
 		return EINVAL;
 	}
 #endif /* linux */
 	mtx_lock(&sna->so_adapters_lock);
-	intr = intr_disable();
 	if (pst_so(so)) {
 		error = EBUSY;
 		goto unlock_return;
@@ -1366,9 +1363,6 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	}
 	SOCKBUF_LOCK(&so->so_rcv);
 	SAVE_SOUPCALL(so, soa);
-	if (so->sk_destruct) {
-		nm_prinf("warning so %p sk_destruct exists", so);
-	}
 	SAVE_SODTOR(so, soa);
 	soa->na = na;
 	soa->so = so;
@@ -1381,7 +1375,6 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	SOCKBUF_UNLOCK(&so->so_rcv);
 	mb();
 unlock_return:
-	intr_restore(intr);
 	if (!error) {
 		error = nm_os_pst_sbdrain(na, so);
 		//nm_prinf("drained so %p", so);
