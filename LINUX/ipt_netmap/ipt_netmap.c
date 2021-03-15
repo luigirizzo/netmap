@@ -706,6 +706,7 @@ static unsigned int nmring_tg4(struct sk_buff *skb,
 		{
 			skb_list_walk_safe(segments, skb, next) {
 				/* This no longer needs GSO */
+				skb_mark_not_on_list(skb);
 				copy_pkt_to_queue(priv->net, skb->sk, skb);
 			}
 		}
