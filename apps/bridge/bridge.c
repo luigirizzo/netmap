@@ -323,13 +323,11 @@ main(int argc, char **argv)
 		n1 = rx_slots_avail(pb);
 #if defined(_WIN32) || defined(BUSYWAIT)
 		if (n0) {
-			ioctl(pollfd[1].fd, NIOCTXSYNC, NULL);
 			pollfd[1].revents = POLLOUT;
 		} else {
 			ioctl(pollfd[0].fd, NIOCRXSYNC, NULL);
 		}
 		if (n1) {
-			ioctl(pollfd[0].fd, NIOCTXSYNC, NULL);
 			pollfd[0].revents = POLLOUT;
 		} else {
 			ioctl(pollfd[1].fd, NIOCRXSYNC, NULL);
@@ -375,11 +373,19 @@ main(int argc, char **argv)
 			D("error on fd1, rx [%d,%d,%d)",
 			    rx->head, rx->cur, rx->tail);
 		}
-		if (pollfd[0].revents & POLLOUT)
+		if (pollfd[0].revents & POLLOUT) {
 			ports_move(pb, pa, burst, msg_b2a);
+#if defined(_WIN32) || defined(BUSYWAIT)
+			ioctl(pollfd[0].fd, NIOCTXSYNC, NULL);
+#endif
+		}
 
-		if (pollfd[1].revents & POLLOUT)
+		if (pollfd[1].revents & POLLOUT) {
 			ports_move(pa, pb, burst, msg_a2b);
+#if defined(_WIN32) || defined(BUSYWAIT)
+			ioctl(pollfd[1].fd, NIOCTXSYNC, NULL);
+#endif
+		}
 
 		/*
 		 * We don't need ioctl(NIOCTXSYNC) on the two file descriptors.
