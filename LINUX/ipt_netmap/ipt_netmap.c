@@ -475,8 +475,12 @@ ipt_rxsync(struct netmap_kring *kring, int flags)
 			ring->slot[nm_i].iif = m->skb_iif;
 		}
 		else if (priv->hooknum == NF_INET_LOCAL_OUT &&
-				skb_dst(m) && skb_dst(m)->dev) {
+		         skb_dst(m) && skb_dst(m)->dev) {
 			ring->slot[nm_i].iif = skb_dst(m)->dev->ifindex;
+		}
+		else
+		{
+			ring->slot[nm_i].iif = 0;
 		}
 
 		nmaddr = NMB(na, &ring->slot[nm_i]);
@@ -633,6 +637,10 @@ static int copy_pkt_to_queue(struct net *net, struct sock *sk, struct sk_buff *s
 		pr_err("NMRING: calculate checksum failed\n");
 		return -EFAULT;
 	}
+
+	/* We need to make sure we hold a reference to the dest */
+	if (skb_dst_is_noref(skb))
+		skb_dst_force(skb);
 
 	mbq_safe_enqueue(&rx_kring->rx_queue, skb);
 	rx_kring->nm_notify(rx_kring, 0);
