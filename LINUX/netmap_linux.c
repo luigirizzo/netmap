@@ -424,7 +424,7 @@ nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
 	if (ifp->rx_handler)
 #endif
 	m->priority = NM_MAGIC_PRIORITY_RX; /* do not reinject to netmap */
-	netif_rx(m);
+	netif_rx_ni(m);
 	return NULL;
 }
 
