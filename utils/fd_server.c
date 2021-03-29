@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <net/if.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
