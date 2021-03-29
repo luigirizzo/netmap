@@ -1520,7 +1520,7 @@ netmap_bwrap_krings_create_common(struct netmap_adapter *na)
 	for_rx_tx(t) {
 		for (i = 0; i < netmap_all_rings(hwna, t); i++) {
 			NMR(hwna, t)[i]->users++;
-			/* this to prevent deleation of the rings through
+			/* this to prevent deletion of the rings through
 			 * our krings, instead of through the hwna ones */
 			NMR(na, t)[i]->nr_kflags |= NKR_NEEDRING;
 		}
