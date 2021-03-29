@@ -2334,7 +2334,7 @@ netmap_offsets_init(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 			if ((kring->offset_mask & mask) != mask ||
 			     kring->offset_max < max_offset) {
 				if (netmap_verbose)
-					nm_prinf("%s: cannot decrease"
+					nm_prinf("%s: cannot increase"
 						 "offset mask and/or max"
 						 "(current: mask=%llx,max=%llu",
 							kring->name,
@@ -2408,7 +2408,7 @@ netmap_compute_buf_len(struct netmap_priv_d *priv)
 			maxframe = mtu + ETH_HLEN +
 				ETH_FCS_LEN + VLAN_HLEN;
 			if (maxframe < target) {
-				target = kring->offset_gap;
+				target = maxframe;
 			}
 		}
 
@@ -3248,6 +3248,7 @@ nmreq_opt_size_by_type(uint32_t nro_reqtype, uint64_t nro_size)
 		break;
 	case NETMAP_REQ_OPT_OFFSETS:
 		rv = sizeof(struct nmreq_opt_offsets);
+		break;
 	}
 	/* subtract the common header */
 	return rv - sizeof(struct nmreq_option);

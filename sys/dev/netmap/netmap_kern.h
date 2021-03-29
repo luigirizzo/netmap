@@ -828,11 +828,11 @@ struct netmap_adapter {
 	 *      for RX rings, where we want to disallow writes outside of the
 	 *      netmap buffer. The l value must be computed taking into account
 	 *      the stipulated max_offset (o), possibily increased if there are
-	 *      alignemnt constrains, the maxframe (m), if known, and the
+	 *      alignment constraints, the maxframe (m), if known, and the
 	 *      current NETMAP_BUF_SIZE (b) of the memory region used by the
 	 *      adapter. We want the largest supported l such that o + l <= b.
 	 *      If m is known to be <= b - o, the callback may also choose the
-	 *      largest l <= b, ignoring the offset.  The buf_align field is
+	 *      largest l <= m, ignoring the offset.  The buf_align field is
 	 *      most important for TX rings when there are offsets.  The user
 	 *      will see this value in the ring->buf_align field.  Misaligned
 	 *      offsets will cause the corresponding packets to be silently
