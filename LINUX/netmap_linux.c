@@ -1113,6 +1113,9 @@ nm_os_pst_mbuf_data_dtor(struct ubuf_info *uarg,
 	if (!nmcb_valid(cb)) {
 		nm_prinf("invalid cb %p", cb);
 		return;
+	} else if (nmcb_kring(cb) == NULL) {
+		nm_prinf("no kring in cb %p", cb);
+		return;
 	}
 	pst_put_extra_ref(nmcb_kring(cb));
 	//if (strncmp(nmcb_kring(cb)->na->name, "pst:0", 5))
@@ -1166,17 +1169,22 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 	struct sk_buff *m;
 	struct netmap_kring *kring = NULL;
 
+	rcu_read_lock();
 	/* OOO segment(s) might have been enqueued in the same rxsync round */
 	while ((m = skb_peek(queue)) != NULL) {
 		struct nmcb *cb = NMCB(m);
 		struct netmap_slot *slot;
 		int queued = 0;
-//
+
 //		if (unlikely(!nmcb_valid(nmcb))) {
 //			D("invalid nmcb %p (m %p len %u cpu %d)",
 //				nmcb, m, skb_headlen(m), smp_processor_id());
 //			goto ignore;
 //		}
+		if (!nmcb_valid(cb)) {
+			nm_prinf("invalid cb %p", cb);
+			panic(" ");
+		}
 		if (!kring) {
 			kring = nmcb_kring(cb);
 			/* XXX this happens when stack goes away.
@@ -1192,6 +1200,10 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 			}
 			mtx_lock(&kring->q_lock);
 		}
+		if (nmcb_kring(cb) != kring) {
+			nm_prinf("nmcb_kring(cb) %p kring %p", nmcb_kring(cb), kring);
+			panic(" ");
+		}
 		/* append this buffer to the scratchpad */
 		slot = nmcb_slot(cb);
 		if (unlikely(slot == NULL)) {
@@ -1199,10 +1211,19 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 			//PST_DBG_LIM("no slot");
 			continue;
 		}
+		if (!pst_slot_in_extra(slot, kring) &&
+		    !pst_slot_in_kring(slot, kring)) {
+			nm_prinf("invalid slot");
+			continue;
+		}
 		if (unlikely(m->sk == NULL || pst_so(m->sk) == NULL)) {
 			PST_ASSERT("m->sk %p soa %p",
 					m->sk, m->sk ? pst_so(m->sk) : NULL);
 			continue;
+		}
+		if (pst_so(sk) == NULL) {
+			nm_prinf("no soa");
+			panic(" ");
 		}
 		if (pst_so(sk)->fd < 3) {
 			nm_prinf("invalid fd %d", pst_so(sk)->fd);
@@ -1222,7 +1243,16 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 			//PST_DBG_LIM("fd %d ring_id %u",
 			//		nm_pst_getfd(slot), kring->ring_id);
 			queued = 1;
-		}
+			if (!pst_slot_in_extra(slot, kring)) {
+				nm_prinf("queued slot %p not in extra", slot);
+			}
+	       		if ((uintptr_t)slot >= (uintptr_t)kring->ring->slot &&
+					(uintptr_t)slot < (uintptr_t)(kring->ring->slot + kring->nkr_num_slots)) {
+				nm_prinf("queued slot %p inside the ring", slot);
+			}
+		}// else {
+			//udelay(1000);
+		//}
 #endif
 
 		nmcb_wstate(cb, MB_FTREF);
@@ -1239,6 +1269,7 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 	}
 	if (kring)
 		mtx_unlock(&kring->q_lock);
+	rcu_read_unlock();
 }
 
 NM_SOCK_T *
@@ -1264,7 +1295,6 @@ nm_os_pst_sbdrain(struct netmap_adapter *na, NM_SOCK_T *sk)
 	/* XXX All the packets must be originated from netmap */
 	m = skb_peek(&sk->sk_receive_queue);
 	if (!m) {
-		nm_prinf("nothing to drain");
 		return 0;
 	}
 	else if (!nmcb_valid(NMCB(m))) {
@@ -1351,6 +1381,9 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	/* have orphan() set data_destructor */
 	SET_MBUF_DESTRUCTOR(m, nm_os_pst_mbuf_destructor);
 	netif_receive_skb_core(m);
+	//if (nmcb_rstate(cb) == MB_FTREF)
+	//	udelay(2000);
+	//udelay(1000);
 
 	/* setting data destructor is safe only after skb_orphan_frag()
 	 * in __netif_receive_skb_core().
@@ -1443,6 +1476,9 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 		return -EAGAIN;
 	}
 
+	if (!nmcb_valid(cb)) {
+		panic(" ");
+	}
 	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {
 		/* The stack might have just dropped a page reference (e.g.,
 		 * linearized in skb_checksum_help() in __dev_queue_xmit().
@@ -1478,8 +1514,9 @@ nm_os_pst_kwait(void *data)
 {
 	struct netmap_pst_adapter *sna = (struct netmap_pst_adapter *)data;
 	struct netmap_priv_d *kpriv = sna->kpriv;
+	int lim = 20;
 
-	for (;;) {
+	for (;lim > 0;) {
 		int s = 0;
 		if (sna->num_so_adapters > 0) {
 			nm_prinf("waiting for %d sockets to go",
@@ -1489,17 +1526,19 @@ nm_os_pst_kwait(void *data)
 		if (!pst_bdg_freeable(&sna->up.up)) {
 			nm_prinf("waiting for mbufs gone");
 			s = 1;
+			lim--;
 		}
 		if (!s)
 			break;
-		usleep_range(500000, 600000); // 200-300ms
+		usleep_range(200000, 300000); // 200-300ms
 	}
 	PST_DBG("%s deleting priv", sna->up.up.name);
 	nm_prinf("%s deleting priv pool_freeable %d",
 			sna->up.up.name, pst_bdg_freeable(&sna->up.up));
 	NMG_LOCK();
 	sna->kpriv = NULL;
-	sna->kwaittdp = NULL;
+	/* we don't clear sna->kwaittdp to indicate my run */
+	//sna->kwaittdp = NULL;
 	netmap_priv_delete(kpriv);
 	NMG_UNLOCK();
 	return 0;

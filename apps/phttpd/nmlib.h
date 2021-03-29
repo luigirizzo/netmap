@@ -1059,6 +1059,7 @@ netmap_worker(void *data)
 				struct nm_ifreq *ifreq = &g->ifreq;
 				int newfd;
 				socklen_t len = sizeof(tmp);
+				int e;
 
 				if (!(pfd[i].revents & POLLIN))
 					continue;
@@ -1069,18 +1070,25 @@ netmap_worker(void *data)
 					continue;
 				}
 				memcpy(ifreq->data, &newfd, sizeof(newfd));
-				if (ioctl(t->fd, NIOCCONFIG, ifreq)) {
+				//D("registering fd %d", newfd);
+				e = ioctl(t->fd, NIOCCONFIG, ifreq);
+				//D("done fd %d", newfd);
+				//if (ioctl(t->fd, NIOCCONFIG, ifreq)) {
+				if (e) {
+					perror("ioctl");
 					if (errno == ENOTCONN) {
-						perror("ioctl");
+						D("ENOTCONN closing newfd %d", newfd);
 						close(newfd);
 					} else if (errno == ENOMEM) {
-						perror("ioctl");
+						D("ENOMEM closing newfd %d", newfd);
 						close(newfd);
 close_pfds:
 						for (i = 1; i < g->fdnum; i++) {
 							close(pfd[i].fd);
 						}
 						goto quit;
+					} else {
+						D("undefined error %d", errno);
 					}
 				}
 				if (unlikely(newfd >= t->fdtable_siz)) {

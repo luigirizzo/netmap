@@ -1276,6 +1276,7 @@ struct netmap_pst_adapter {
 	struct task_struct *kwaittdp;
 #endif
 	struct netmap_priv_d *kpriv;
+	int first_fds[64];
 };
 
 struct netmap_adapter *stna(const struct netmap_adapter *slave);
@@ -1407,6 +1408,8 @@ int pst_bdg_freeable(struct netmap_adapter *);
 void pst_get_extra_ref(struct netmap_kring *);
 void pst_put_extra_ref(struct netmap_kring *);
 u_int pst_peek_extra_ref(struct netmap_kring *);
+int pst_slot_in_extra(struct netmap_slot *, struct netmap_kring *);
+int pst_slot_in_kring(struct netmap_slot *, struct netmap_kring *);
 extern int paste_usrrcv;
 extern int paste_optim_sendpage;
 
