@@ -25,7 +25,7 @@
  */
 
 /*
- * $FreeBSD: head/sys/dev/netmap/netmap_zmon.c 270063 2014-08-16 15:00:01Z luigi $
+ * $FreeBSD$
  *
  * Monitors
  *

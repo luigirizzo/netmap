@@ -38,7 +38,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h> /* prerequisite */
-__FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 241723 2012-10-19 09:41:45Z glebius $");
+__FBSDID("$FreeBSD$");
 
 #include <sys/types.h>
 #include <sys/malloc.h>
@@ -1720,7 +1720,8 @@ _netmap_mem_private_new(size_t size, struct netmap_obj_params *p, int grp_id,
 		if (n) {
 			if (netmap_verbose) {
 				nm_prinf("%s: adding %llu more buffers",
-						d->pools[NETMAP_BUF_POOL].name, n);
+				    d->pools[NETMAP_BUF_POOL].name,
+				    (unsigned long long)n);
 			}
 			d->params[NETMAP_BUF_POOL].num += n;
 		}

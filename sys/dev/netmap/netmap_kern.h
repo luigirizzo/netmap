@@ -28,7 +28,7 @@
  */
 
 /*
- * $FreeBSD: head/sys/dev/netmap/netmap_kern.h 238985 2012-08-02 11:59:43Z luigi $
+ * $FreeBSD$
  *
  * The header contains the definitions of constants and function
  * prototypes used only in kernelspace.
@@ -1414,19 +1414,19 @@ nm_native_on(struct netmap_adapter *na)
 static inline struct netmap_kring *
 netmap_kring_on(struct netmap_adapter *na, u_int q, enum txrx t)
 {
-        struct netmap_kring *kring = NULL;
+	struct netmap_kring *kring = NULL;
 
-        if (!nm_native_on(na))
-                return NULL;
+	if (!nm_native_on(na))
+		return NULL;
 
-        if (t == NR_RX && q < na->num_rx_rings)
-                kring = na->rx_rings[q];
-        else if (t == NR_TX && q < na->num_tx_rings)
-                kring = na->tx_rings[q];
-        else
-                return NULL;
+	if (t == NR_RX && q < na->num_rx_rings)
+		kring = na->rx_rings[q];
+	else if (t == NR_TX && q < na->num_tx_rings)
+		kring = na->tx_rings[q];
+	else
+		return NULL;
 
-        return (kring->nr_mode == NKR_NETMAP_ON) ? kring : NULL;
+	return (kring->nr_mode == NKR_NETMAP_ON) ? kring : NULL;
 }
 
 static inline int
@@ -1673,7 +1673,6 @@ int netmap_adapter_put(struct netmap_adapter *na);
 #define NETMAP_BUF_BASE(_na)	((_na)->na_lut.lut[0].vaddr)
 #define NETMAP_BUF_SIZE(_na)	((_na)->na_lut.objsize)
 extern int netmap_no_pendintr;
-extern int netmap_mitigate;
 extern int netmap_verbose;
 #ifdef CONFIG_NETMAP_DEBUG
 extern int netmap_debug;		/* for debugging */
@@ -1695,7 +1694,6 @@ enum {                                  /* debug flags */
 };
 
 extern int netmap_txsync_retry;
-extern int netmap_flags;
 extern int netmap_generic_hwcsum;
 extern int netmap_generic_mit;
 extern int netmap_generic_ringsize;
