@@ -636,7 +636,7 @@ void
 netmap_disable_all_rings(struct ifnet *ifp)
 {
 	if (NM_NA_VALID(ifp)) {
-		netmap_set_all_rings(NA(ifp), NM_KR_LOCKED);
+		netmap_set_all_rings(NA(ifp), NM_KR_STOPPED);
 	}
 }
 
