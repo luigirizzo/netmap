@@ -17,6 +17,10 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#if defined(_WIN32)
+#define BUSYWAIT
+#endif
+
 static int verbose = 0;
 
 static int do_abort = 0;
@@ -321,7 +325,7 @@ main(int argc, char **argv)
 		pollfd[0].revents = pollfd[1].revents = 0;
 		n0 = rx_slots_avail(pa);
 		n1 = rx_slots_avail(pb);
-#if defined(_WIN32) || defined(BUSYWAIT)
+#ifdef BUSYWAIT
 		if (n0) {
 			pollfd[1].revents = POLLOUT;
 		} else {
@@ -333,7 +337,7 @@ main(int argc, char **argv)
 			ioctl(pollfd[1].fd, NIOCRXSYNC, NULL);
 		}
 		ret = 1;
-#else
+#else  /* !defined(BUSYWAIT) */
 		if (n0)
 			pollfd[1].events |= POLLOUT;
 		else
@@ -345,7 +349,7 @@ main(int argc, char **argv)
 
 		/* poll() also cause kernel to txsync/rxsync the NICs */
 		ret = poll(pollfd, 2, 2500);
-#endif /* defined(_WIN32) || defined(BUSYWAIT) */
+#endif /* !defined(BUSYWAIT) */
 		if (ret <= 0 || verbose)
 		    D("poll %s [0] ev %x %x rx %d@%d tx %d,"
 			     " [1] ev %x %x rx %d@%d tx %d",
@@ -375,14 +379,14 @@ main(int argc, char **argv)
 		}
 		if (pollfd[0].revents & POLLOUT) {
 			ports_move(pb, pa, burst, msg_b2a);
-#if defined(_WIN32) || defined(BUSYWAIT)
+#ifdef BUSYWAIT
 			ioctl(pollfd[0].fd, NIOCTXSYNC, NULL);
 #endif
 		}
 
 		if (pollfd[1].revents & POLLOUT) {
 			ports_move(pa, pb, burst, msg_a2b);
-#if defined(_WIN32) || defined(BUSYWAIT)
+#ifdef BUSYWAIT
 			ioctl(pollfd[1].fd, NIOCTXSYNC, NULL);
 #endif
 		}
