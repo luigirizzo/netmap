@@ -29,7 +29,7 @@
  */
 
 /*
- * $FreeBSD: head/sys/dev/netmap/netmap_mem2.c 234290 2012-04-14 16:44:18Z luigi $
+ * $FreeBSD$
  *
  * (New) memory allocator for netmap
  */

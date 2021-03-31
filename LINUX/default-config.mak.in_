@@ -84,6 +84,9 @@ ixgbevf@prepare := $(if $(filter $(ixgbevf@v),4.7.1 4.8.1 4.9.3 4.10.2),@SRCDIR@
 ixgbe@prepare := $(if $(filter $(ixgbe@v),5.8.1 5.9.4 5.10.2),@SRCDIR@/intel-fix.sh ixgbe,)
 i40e@prepare := $(if $(filter $(i40e@v),2.12.6 2.14.13),@SRCDIR@/intel-fix.sh i40e,)
 
+# some additional, driver-specific configuration
+stmmac@conf := CONFIG_STMMAC_ETH
+
 # set all the default versions (can be overrided by --select-version=)
 $(eval $(call default,ixgbe,5.3.8))
 $(eval $(call default,ixgbevf,4.3.2))
@@ -100,7 +103,7 @@ $(1)@fetch	:= test -e @SRCDIR@/ext-drivers/mlnx-en-$(2)-ubuntu18.04-x86_64.tgz |
 $(1)@src	:= tar xf @SRCDIR@/ext-drivers/mlnx-en-$(2)-ubuntu18.04-x86_64.tgz && tar xf mlnx-en-$(2)-ubuntu18.04-x86_64/src/MLNX_EN_SRC-$(2).tgz && tar xf MLNX_EN_SRC-$(2)/SOURCES/mlnx-en_$($(1)@pv).orig.tar.gz && ln -s mlnx-en-$($(1)@pv) $(1)
 $(1)@patch	:= patches/mellanox--$(1)--$($(1)@pv)
 $(1)@prepare	:= @SRCDIR@/mlx5-prepare.sh @KSRC@
-$(1)@build	:= make -C $(1) NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ EXTRA_CFLAGS="$$($1)@cflags) $(EXTRA_CFLAGS)"
+$(1)@build	:= make -C $(1) NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ EXTRA_CFLAGS="$$($(1)@cflags) $(EXTRA_CFLAGS)"
 $(1)@install	:= make -C $(1) install_modules INSTALL_MOD_PATH=@MODPATH@ NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@
 $(1)@clean	:= if [ -d $(1) ]; then make -C $(1) clean; fi NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@
 $(1)@distclean  := rm -rf mlnx-en-$($(1)@pv) mlnx-en-$(2)

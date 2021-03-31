@@ -38,7 +38,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h> /* prerequisite */
-__FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 241723 2012-10-19 09:41:45Z glebius $");
+__FBSDID("$FreeBSD$");
 
 #include <sys/types.h>
 #include <sys/malloc.h>
@@ -330,7 +330,7 @@ netmap_mem_get_id(struct netmap_mem_d *nmd)
 
 /* circular list of all existing allocators */
 static struct netmap_mem_d *netmap_last_mem_d = &nm_mem;
-NM_MTX_T nm_mem_list_lock;
+static NM_MTX_T nm_mem_list_lock;
 
 struct netmap_mem_d *
 __netmap_mem_get(struct netmap_mem_d *nmd, const char *func, int line)
@@ -1534,10 +1534,10 @@ netmap_mem_unmap(struct netmap_obj_pool *p, struct netmap_adapter *na)
 	struct netmap_lut *lut;
 	if (na == NULL || na->pdev == NULL)
 		return 0;
-	
+
 	lut = &na->na_lut;
 
-	
+
 
 #if defined(__FreeBSD__)
 	/* On FreeBSD mapping and unmapping is performed by the txsync
@@ -1719,8 +1719,9 @@ _netmap_mem_private_new(size_t size, struct netmap_obj_params *p, int grp_id,
 
 		if (n) {
 			if (netmap_verbose) {
-				nm_prinf("%s: adding %lu more buffers",
-						d->pools[NETMAP_BUF_POOL].name, n);
+				nm_prinf("%s: adding %llu more buffers",
+				    d->pools[NETMAP_BUF_POOL].name,
+				    (unsigned long long)n);
 			}
 			d->params[NETMAP_BUF_POOL].num += n;
 		}

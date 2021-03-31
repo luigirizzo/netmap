@@ -137,7 +137,7 @@ index 62a38bc..d45ba17 100644
  
  	netdev_err(sq->channel->netdev,
 diff --git a/mlx5/drivers/net/ethernet/mellanox/mlx5/core/en_main.c b/mlx5/drivers/net/ethernet/mellanox/mlx5/core/en_main.c
-index d40b62e..54672e7 100644
+index d40b62e..b5767c5 100644
 --- a/mlx5/drivers/net/ethernet/mellanox/mlx5/core/en_main.c
 +++ b/mlx5/drivers/net/ethernet/mellanox/mlx5/core/en_main.c
 @@ -78,8 +78,21 @@
@@ -162,18 +162,7 @@ index d40b62e..54672e7 100644
  	bool striding_rq_umr = MLX5_CAP_GEN(mdev, striding_rq) &&
  		MLX5_CAP_GEN(mdev, umr_ptr_rlky) &&
  		MLX5_CAP_ETH(mdev, reg_umr_sq);
-@@ -840,6 +853,10 @@ static int mlx5e_alloc_rq(struct mlx5e_channel *c,
- 		rq->dim_obj.dim.mode = DIM_CQ_PERIOD_MODE_START_FROM_EQE;
- 	}
- 
-+#ifdef DEV_NETMAP
-+	mlx5e_netmap_configure_rx_ring(rq, rq->ix);
-+#endif /* DEV_NETMAP */
-+
- 	return 0;
- 
- err_free:
-@@ -1061,6 +1078,12 @@ int mlx5e_wait_for_min_rx_wqes(struct mlx5e_rq *rq, int wait_time)
+@@ -1061,6 +1074,12 @@ int mlx5e_wait_for_min_rx_wqes(struct mlx5e_rq *rq, int wait_time)
  	unsigned long exp_time = jiffies + msecs_to_jiffies(wait_time);
  	struct mlx5e_channel *c = rq->channel;
  
@@ -186,7 +175,7 @@ index d40b62e..54672e7 100644
  	u16 min_wqes = mlx5_min_rx_wqes(rq->wq_type, mlx5e_rqwq_get_size(rq));
  
  	do {
-@@ -1125,6 +1148,10 @@ void mlx5e_free_rx_descs(struct mlx5e_rq *rq)
+@@ -1125,6 +1144,10 @@ void mlx5e_free_rx_descs(struct mlx5e_rq *rq)
  
  		while (!mlx5_wq_cyc_is_empty(wq)) {
  			wqe_ix = mlx5_wq_cyc_get_tail(wq);
@@ -197,6 +186,17 @@ index d40b62e..54672e7 100644
  			rq->dealloc_wqe(rq, wqe_ix);
  			mlx5_wq_cyc_pop(wq);
  		}
+@@ -1233,6 +1256,10 @@ int mlx5e_open_rq(struct mlx5e_channel *c, struct mlx5e_params *params,
+ 	if (MLX5E_GET_PFLAG(params, MLX5E_PFLAG_SKB_XMIT_MORE))
+ 		__set_bit(MLX5E_RQ_STATE_SKB_XMIT_MORE, &c->rq.state);
+ 
++#ifdef DEV_NETMAP
++	mlx5e_netmap_configure_rx_ring(rq, rq->ix);
++#endif /* DEV_NETMAP */
++
+ 	return 0;
+ 
+ err_destroy_rq:
 @@ -1245,6 +1272,9 @@ err_free_rq:
  
  void mlx5e_activate_rq(struct mlx5e_rq *rq)

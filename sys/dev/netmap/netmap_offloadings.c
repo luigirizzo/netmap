@@ -26,7 +26,7 @@
  * SUCH DAMAGE.
  */
 
-/* $FreeBSD: head/sys/dev/netmap/netmap_offloadings.c 261909 2014-02-15 04:53:04Z luigi $ */
+/* $FreeBSD$ */
 
 #if defined(__FreeBSD__)
 #include <sys/cdefs.h> /* prerequisite */

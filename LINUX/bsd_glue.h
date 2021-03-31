@@ -54,6 +54,7 @@
 #include <linux/delay.h>	// msleep
 #include <linux/skbuff.h>		// skb_copy_to_linear_data_offset
 #include <linux/vmalloc.h>
+#include <linux/ethtool.h>
 
 #include <linux/io.h>	// virt_to_phys
 #include <linux/hrtimer.h>

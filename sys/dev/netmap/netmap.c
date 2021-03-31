@@ -619,6 +619,10 @@ netmap_set_all_rings(struct netmap_adapter *na, int stopped)
 	if (!nm_netmap_on(na))
 		return;
 
+	if (netmap_verbose) {
+		nm_prinf("%s: %sable all rings", na->name,
+		    (stopped ? "dis" : "en"));
+	}
 	for_rx_tx(t) {
 		for (i = 0; i < netmap_real_rings(na, t); i++) {
 			netmap_set_ring(na, i, t, stopped);
@@ -2342,7 +2346,7 @@ netmap_offsets_init(struct netmap_priv_d *priv, struct nmreq_header *hdr)
 			if ((kring->offset_mask & mask) != mask ||
 			     kring->offset_max < max_offset) {
 				if (netmap_verbose)
-					nm_prinf("%s: cannot decrease"
+					nm_prinf("%s: cannot increase"
 						 "offset mask and/or max"
 						 "(current: mask=%llx,max=%llu",
 							kring->name,
@@ -2416,7 +2420,7 @@ netmap_compute_buf_len(struct netmap_priv_d *priv)
 			maxframe = mtu + ETH_HLEN +
 				ETH_FCS_LEN + VLAN_HLEN;
 			if (maxframe < target) {
-				target = kring->offset_gap;
+				target = maxframe;
 			}
 		}
 
@@ -2871,6 +2875,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 		case NETMAP_REQ_PORT_INFO_GET: {
 			struct nmreq_port_info_get *req =
 				(struct nmreq_port_info_get *)(uintptr_t)hdr->nr_body;
+			int nmd_ref = 0;
 
 			NMG_LOCK();
 			do {
@@ -2912,6 +2917,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 						error = EINVAL;
 						break;
 					}
+					nmd_ref = 1;
 				}
 
 				error = netmap_mem_get_info(nmd, &req->nr_memsize, &memflags,
@@ -2929,6 +2935,8 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 				req->nr_host_rx_rings = na->num_host_rx_rings;
 			} while (0);
 			netmap_unget_na(na, ifp);
+			if (nmd_ref)
+				netmap_mem_put(nmd);
 			NMG_UNLOCK();
 			break;
 		}
@@ -3267,6 +3275,7 @@ nmreq_opt_size_by_type(uint32_t nro_reqtype, uint64_t nro_size)
 		break;
 	case NETMAP_REQ_OPT_OFFSETS:
 		rv = sizeof(struct nmreq_opt_offsets);
+		break;
 	}
 	/* subtract the common header */
 	return rv - sizeof(struct nmreq_option);
@@ -4591,7 +4600,9 @@ netmap_init(void)
 	if (error)
 		goto fail;
 
+#if !defined(__FreeBSD__) || defined(KLD_MODULE)
 	nm_prinf("netmap: loaded module");
+#endif
 	return (0);
 fail:
 	netmap_fini();

@@ -843,7 +843,16 @@ static inline void nm_ldld_barrier(void)
 #define nm_ldld_barrier	atomic_thread_fence_acq
 #define nm_stld_barrier	atomic_thread_fence_seq_cst
 #else  /* !_KERNEL */
+
+#ifdef __cplusplus
+#include <atomic>
+using std::memory_order_release;
+using std::memory_order_acquire;
+
+#else /* __cplusplus */
 #include <stdatomic.h>
+#endif /* __cplusplus */
+
 static inline void nm_stst_barrier(void)
 {
 	atomic_thread_fence(memory_order_release);

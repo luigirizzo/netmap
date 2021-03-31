@@ -58,7 +58,7 @@ ports attached to the switch)
 
 #if defined(__FreeBSD__)
 #include <sys/cdefs.h> /* prerequisite */
-__FBSDID("$FreeBSD: head/sys/dev/netmap/netmap.c 257176 2013-10-26 17:58:36Z glebius $");
+__FBSDID("$FreeBSD$");
 
 #include <sys/types.h>
 #include <sys/errno.h>
@@ -1550,7 +1550,7 @@ netmap_bwrap_krings_create_common(struct netmap_adapter *na)
 	for_rx_tx(t) {
 		for (i = 0; i < netmap_all_rings(hwna, t); i++) {
 			NMR(hwna, t)[i]->users++;
-			/* this to prevent deleation of the rings through
+			/* this to prevent deletion of the rings through
 			 * our krings, instead of through the hwna ones */
 			NMR(na, t)[i]->nr_kflags |= NKR_NEEDRING;
 		}
