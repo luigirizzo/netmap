@@ -1258,8 +1258,15 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	int err;
 	struct nmcb *cb = NMCB_BUF(nmb);
 	int flags = MSG_DONTWAIT | MSG_DONTROUTE;
-	const u_int nm_offset = nm_get_offset(kring, slot);
+	const u_int offset = nm_get_offset(kring, slot);
 	const u_int pst_offset = nm_pst_getuoff(slot);
+
+	if (unlikely(slot->len <  pst_offset)) {
+		return -EINVAL;
+	} else if (unlikely(offset != sizeof(*cb))) {
+		PST_DBG("bad offset %u", offset);
+		return -EINVAL;
+	}
 
 	/* Link to the external mbuf storage */
 	m = nm_os_get_mbuf(na->ifp, NETMAP_BUF_SIZE(na));
@@ -1270,7 +1277,7 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	m->m_ext.ext_size = slot->len;
 	m->m_ext.ext_free = nm_os_pst_mbuf_data_dtor;
 	m->m_len = m->m_pkthdr.len = slot->len - pst_offset;
-	m->m_data = nmb + nm_offset + pst_offset;
+	m->m_data = nmb + offset + pst_offset;
 
 	nmcb_wstate(cb, MB_STACK);
 

@@ -1390,6 +1390,13 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	const u_int offset = nm_get_offset(kring, slot);
 	const u_int pst_offset = nm_pst_getuoff(slot);
 
+	if (unlikely(slot->len <  pst_offset)) {
+		return -EINVAL;
+	} else if (unlikely(offset != sizeof(*cb))) {
+		PST_DBG("bad offset %lu", offset);
+		return -EINVAL;
+	}
+
 	nmb = NMB(na, slot);
 	soa = pst_soa_from_fd(na, nm_pst_getfd(slot));
 	if (unlikely(!soa)) {

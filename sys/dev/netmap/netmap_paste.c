@@ -639,33 +639,18 @@ pst_prestack(struct netmap_kring *kring)
 		kring->nkr_hwlease = rhead; // skip loop below
 	for (k = kring->nkr_hwlease; k != rhead; k = nm_next(k, lim_tx)) {
 		struct netmap_slot *slot = &kring->ring->slot[k];
-		char *nmb = NMB(na, slot);
 		int err;
 
-		__builtin_prefetch(nmb);
 		if (unlikely(slot->len == 0))
 			continue;
-		/* validate user-supplied data */
-		if (tx) {
-			if (unlikely(slot->len < nm_pst_getuoff(slot))) {
-				continue;
-			}
-			if (unlikely(nm_get_offset(kring, slot) !=
-				     sizeof(struct nmcb))) {
-				PST_DBG("bad offset %lu",
-					nm_get_offset(kring, slot));
-				continue;
-			}
-
-		}
-		nmcbw(NMCB_BUF(nmb), kring, slot);
+		nmcbw(NMCB_SLT(na, slot), kring, slot);
 		err = tx ? nm_os_pst_tx(kring, slot) :
 			   nm_os_pst_rx(kring, slot);
 		if (unlikely(err)) {
 			/*
-			 * EBUSY advances the pointer as the stack has consumed
-			 * data (see nm_os_pst_tx()). Other errors stops it as
-			 * the client is likely misbehaving.
+			 * EBUSY advances the cursor as the stack has consumed
+			 * data (see nm_os_pst_tx()). EINVAL stops that as the
+			 * client is likely misbehaving.
 			 */
 			if (err == -EBUSY)
 				k = nm_next(k, lim_tx);
