@@ -278,15 +278,6 @@ pst_extra_deq(struct netmap_kring *kring, struct netmap_slot *slot)
 		return;
 	}
 	pool = kring->extra;
-	if (unlikely(!pool)) {
-		PST_DBG("pool gone");
-		return;
-	}
-	if (unlikely(!pool->num)) {
-		PST_DBG("pool->num gone");
-		return;
-	}
-
 	slots = pool->slots;
 	ring = kring->ring;
 	/* nothing to do if I am on the ring */
