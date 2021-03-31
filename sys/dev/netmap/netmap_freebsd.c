@@ -1034,7 +1034,7 @@ nm_os_pst_upcall(NM_SOCK_T *so, void *x, int y)
 		tmp = m->m_next;
 		slot = nmcb_slot(cb);
 		if (unlikely(slot == NULL)) {
-			PST_DBG_LIM("no slot");
+			PST_DBG("no slot");
 			m_free(m);
 			continue;
 		}
@@ -1180,7 +1180,7 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	struct epoch_tracker et;
 #ifdef __FreeBSD__
 	struct netmap_pst_adapter *sna =
-		(struct netmap_pst_adapter *)stna(na);
+		(struct netmap_pst_adapter *)pst_na(na);
 	sna->eventso[curcpu] = NULL;
 #endif /* __FreeBSD__ */
 
@@ -1285,7 +1285,7 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	pst_get_extra_ref(nmcb_kring(cb));
 	err = sosend(soa->so, NULL, NULL, m, NULL, flags, curthread);
 	if (unlikely(err < 0)) {
-		PST_DBG("error %d", err);
+		PST_DBG("sosend error %d", err);
 		nmcb_invalidate(cb);
 	}
 
@@ -1325,7 +1325,7 @@ nm_os_pst_kwait(void *data)
 					sna->num_so_adapters);
 			s = 1;
 		}
-		if (!pst_bdg_freeable(&sna->up.up)) {
+		if (!pst_extra_noref(&sna->up.up)) {
 			nm_prinf("waiting for mbufs gone");
 			s = 1;
 		}
@@ -1334,14 +1334,19 @@ nm_os_pst_kwait(void *data)
 		pause("netmap-pst-kwait-pause", 200);
 	}
 	PST_DBG("%s deleting priv", sna->up.up.name);
-	nm_prinf("%s deleting priv pool_freeable %d",
-			sna->up.up.name, pst_bdg_freeable(&sna->up.up));
 	NMG_LOCK();
 	sna->kpriv = NULL;
 	sna->kwaittdp = NULL;
 	netmap_priv_delete(kpriv);
 	NMG_UNLOCK();
 	kthread_exit();
+}
+
+int
+nm_os_kthread_add(void *f, void *arg, void *proc, struct thread **tdptr,
+		int flags, int pages, const char *fmt)
+{
+	return kthread_add(f, arg, proc, tdptr, flags, pages, fmt);
 }
 #endif /* WITH_PASTE */
 

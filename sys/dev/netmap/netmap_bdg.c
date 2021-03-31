@@ -125,13 +125,6 @@ nm_bdg_reqtype_attach(uint16_t type)
 	return type == NETMAP_REQ_VALE_ATTACH || type == NETMAP_REQ_PST_ATTACH;
 }
 
-static int
-nm_bdg_reqtype_detach(uint16_t type)
-{
-	return type == NETMAP_REQ_VALE_DETACH || type == NETMAP_REQ_PST_DETACH;
-}
-
-
 #ifndef CONFIG_NET_NS
 /*
  * XXX in principle nm_bridges could be created dynamically
@@ -1552,9 +1545,6 @@ netmap_bwrap_krings_create_common(struct netmap_adapter *na)
 	if (error) {
 		return error;
 	}
-	nm_prinf("%s krings_create(hwna) done all_rings RX %d TX %d", na->name,
-		netmap_all_rings(hwna, NR_RX), netmap_all_rings(hwna, NR_TX));
-
 
 	/* increment the usage counter for all the hwna krings */
 	for_rx_tx(t) {

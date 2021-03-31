@@ -1227,6 +1227,7 @@ struct netmap_pipe_adapter {
 
 #ifdef WITH_PASTE
 
+#ifdef CONFIG_NETMAP_DEBUG
 #define	PST_DBG(format, ...)					\
 	do {							\
 		if (netmap_debug & NM_DEBUG_PST) {		\
@@ -1239,7 +1240,10 @@ struct netmap_pipe_adapter {
 			nm_prlim(1, format, ##__VA_ARGS__);	\
 		}						\
 	} while (0)
-#define PST_ASSERT(format, ...) nm_prinf(format, ##__VA_ARGS__)
+#else
+#define PST_DBG(format, ...)
+#define PST_DBG_LIM(format, ...)
+#endif /* CONFIG_NETMAP_DEBUG */
 #define PST_MB_RECYCLE
 struct pst_extra_pool;
 
@@ -1273,13 +1277,13 @@ struct netmap_pst_adapter {
 	void *eventso[64];
 	struct thread *kwaittdp;
 #else
-	struct task_struct *kwaittdp;
+	struct thread *kwaittdp;
 #endif
 	struct netmap_priv_d *kpriv;
 	int first_fds[64];
 };
 
-struct netmap_adapter *stna(const struct netmap_adapter *slave);
+struct netmap_adapter *pst_na(const struct netmap_adapter *slave);
 
 /* to be embedded in the buf */
 /* struct skb_shared_info takes 320 byte so far.
@@ -1399,22 +1403,20 @@ pst_wso(struct pst_so_adapter *soa, NM_SOCK_T *so)
 int nm_os_pst_rx(struct netmap_kring *, struct netmap_slot *);
 int nm_os_pst_tx(struct netmap_kring *, struct netmap_slot *);
 int nm_os_set_nodelay(NM_SOCK_T *);
+int nm_os_kthread_add(void *, void *, void *, struct thread **, int, int, const char *);
 struct pst_so_adapter * pst_soa_from_fd(struct netmap_adapter *, int);
 int pst_extra_enq(struct netmap_kring *, struct netmap_slot *);
 void pst_extra_deq(struct netmap_kring *, struct netmap_slot *);
 void pst_fdtable_add(struct nmcb *, struct netmap_kring *);
 int netmap_pst_transmit(struct ifnet *, struct mbuf *);
-int pst_bdg_freeable(struct netmap_adapter *);
+int pst_extra_noref(struct netmap_adapter *);
 void pst_get_extra_ref(struct netmap_kring *);
 void pst_put_extra_ref(struct netmap_kring *);
 u_int pst_peek_extra_ref(struct netmap_kring *);
-int pst_slot_in_extra(struct netmap_slot *, struct netmap_kring *);
-int pst_slot_in_kring(struct netmap_slot *, struct netmap_kring *);
 extern int paste_usrrcv;
 extern int paste_optim_sendpage;
-
-
 #endif /* WITH_PASTE */
+
 #ifdef WITH_NMNULL
 struct netmap_null_adapter {
 	struct netmap_adapter up;

@@ -1110,17 +1110,16 @@ nm_os_pst_mbuf_data_dtor(struct ubuf_info *uarg,
 	struct nm_ubuf_info *u = (struct nm_ubuf_info *)uarg;
 
 	cb = container_of(u, struct nmcb, ui);
-	if (!nmcb_valid(cb)) {
-		nm_prinf("invalid cb %p", cb);
+	if (unlikely(!nmcb_valid(cb))) {
+		PST_DBG("invalid cb %p", cb);
 		return;
-	} else if (nmcb_kring(cb) == NULL) {
-		nm_prinf("no kring in cb %p", cb);
+	} else if (unlikely(nmcb_kring(cb) == NULL)) {
+		PST_DBG("no kring in cb %p", cb);
 		return;
 	}
 	pst_put_extra_ref(nmcb_kring(cb));
-	//if (strncmp(nmcb_kring(cb)->na->name, "pst:0", 5))
-	//	nm_prinf("%s ref %d", nmcb_kring(cb)->na->name, pst_peek_extra_ref(nmcb_kring(cb)));
 	if (unlikely(nmcb_gone(cb))) {
+		PST_DBG("cb %p gone", cb);
 		nmcb_wstate(cb, MB_NOREF); // XXX also clear GONE
 		return;
 	}
@@ -1170,28 +1169,23 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 	struct netmap_kring *kring = NULL;
 
 	rcu_read_lock();
+	if (unlikely(pst_so(sk) == NULL))
+		panic(" ");
 	/* OOO segment(s) might have been enqueued in the same rxsync round */
 	while ((m = skb_peek(queue)) != NULL) {
 		struct nmcb *cb = NMCB(m);
 		struct netmap_slot *slot;
 		int queued = 0;
 
-//		if (unlikely(!nmcb_valid(nmcb))) {
-//			D("invalid nmcb %p (m %p len %u cpu %d)",
-//				nmcb, m, skb_headlen(m), smp_processor_id());
-//			goto ignore;
-//		}
-		if (!nmcb_valid(cb)) {
-			nm_prinf("invalid cb %p", cb);
-			panic(" ");
+		if (unlikely(!nmcb_valid(cb))) {
+			panic("invalid cb");
 		}
 		if (!kring) {
 			kring = nmcb_kring(cb);
 			/* XXX this happens when stack goes away.
 			 * We need better workaround */
 			if (unlikely(!kring)) {
-				//PST_DBG_LIM("WARNING: no kring");
-				nm_prinf("WARNING: m %p no kring", m);
+				PST_DBG("WARNING: no kring");
 				SET_MBUF_DESTRUCTOR(m, NULL);
 				nm_os_set_mbuf_data_destructor(m, &cb->ui, NULL);
 				__skb_unlink(m, queue);
@@ -1199,34 +1193,27 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 				continue;
 			}
 			mtx_lock(&kring->q_lock);
-		}
-		if (nmcb_kring(cb) != kring) {
-			nm_prinf("nmcb_kring(cb) %p kring %p", nmcb_kring(cb), kring);
-			panic(" ");
+		} else if (unlikely(nmcb_kring(cb) != kring)) {
+			panic("different krings");
 		}
 		/* append this buffer to the scratchpad */
 		slot = nmcb_slot(cb);
 		if (unlikely(slot == NULL)) {
-			nm_prinf("m %p no slot", m);
-			//PST_DBG_LIM("no slot");
+			PST_DBG("m %p no slot", m);
 			continue;
 		}
+		/* too expensive */
+#if 0
 		if (!pst_slot_in_extra(slot, kring) &&
 		    !pst_slot_in_kring(slot, kring)) {
-			nm_prinf("invalid slot");
+			PST_DBG("invalid slot");
 			continue;
 		}
+#endif /* 0 */
 		if (unlikely(m->sk == NULL || pst_so(m->sk) == NULL)) {
-			PST_ASSERT("m->sk %p soa %p",
+			PST_DBG("m->sk %p soa %p",
 					m->sk, m->sk ? pst_so(m->sk) : NULL);
 			continue;
-		}
-		if (pst_so(sk) == NULL) {
-			nm_prinf("no soa");
-			panic(" ");
-		}
-		if (pst_so(sk)->fd < 3) {
-			nm_prinf("invalid fd %d", pst_so(sk)->fd);
 		}
 		nm_pst_setfd(slot, pst_so(sk)->fd);
 		nm_pst_setuoff(slot, (uint16_t)
@@ -1240,19 +1227,8 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 		/* see comment in pst_transmit() */
 #ifdef PST_MB_RECYCLE
 		if (unlikely(nmcb_rstate(cb) == MB_QUEUED)) {
-			//PST_DBG_LIM("fd %d ring_id %u",
-			//		nm_pst_getfd(slot), kring->ring_id);
 			queued = 1;
-			if (!pst_slot_in_extra(slot, kring)) {
-				nm_prinf("queued slot %p not in extra", slot);
-			}
-	       		if ((uintptr_t)slot >= (uintptr_t)kring->ring->slot &&
-					(uintptr_t)slot < (uintptr_t)(kring->ring->slot + kring->nkr_num_slots)) {
-				nm_prinf("queued slot %p inside the ring", slot);
-			}
-		}// else {
-			//udelay(1000);
-		//}
+		}
 #endif
 
 		nmcb_wstate(cb, MB_FTREF);
@@ -1265,7 +1241,6 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 		} else
 #endif
 			__kfree_skb(m);
-		nm_prdis("ate %p state %x", m, nmcb_rstate(cb));
 	}
 	if (kring)
 		mtx_unlock(&kring->q_lock);
@@ -1368,7 +1343,6 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 		return 0; // drop and skip
 
 	pst_get_extra_ref(nmcb_kring(cb));
-	//nm_prinf("%s ref %d", nmcb_kring(cb)->na->name, pst_peek_extra_ref(nmcb_kring(cb)));
 
 	nmcb_wstate(cb, MB_STACK);
 	nm_pst_setfd(slot, 0);
@@ -1377,13 +1351,9 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 		slot->flags &= ~NS_CSUM;
 	}
 	m->protocol = eth_type_trans(m, m->dev);
-	PST_DBG("cb %p len %u slen %u off %u proto %x", cb, m->len, slot->len, nm_get_offset(kring, slot), ntohs(*(uint16_t *)(p+sizeof(*cb)+12)));
 	/* have orphan() set data_destructor */
 	SET_MBUF_DESTRUCTOR(m, nm_os_pst_mbuf_destructor);
 	netif_receive_skb_core(m);
-	//if (nmcb_rstate(cb) == MB_FTREF)
-	//	udelay(2000);
-	//udelay(1000);
 
 	/* setting data destructor is safe only after skb_orphan_frag()
 	 * in __netif_receive_skb_core().
@@ -1402,8 +1372,6 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 
 		if (likely(uarg->callback)) {
 			uarg->callback(uarg, true);
-		} else {
-			nm_prinf("no destructor in recycling m %p", m);
 		}
 		kring->tx_pool[1] = m;
 	} else {
@@ -1425,11 +1393,12 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	void *nmb;
 	int err, pageref = 0;
 	const u_int offset = nm_get_offset(kring, slot);
+	const u_int pst_offset = nm_pst_getuoff(slot);
 
 	nmb = NMB(na, slot);
 	soa = pst_soa_from_fd(na, nm_pst_getfd(slot));
 	if (unlikely(!soa)) {
-		PST_DBG_LIM("no soa of fd %d", nm_pst_getfd(slot));
+		PST_DBG("no soa of fd %d", nm_pst_getfd(slot));
 		return 0;
 	}
 	sk = soa->so;
@@ -1438,22 +1407,19 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	get_page(page); // survive __kfree_skb()
 	pageref = page_ref_count(page);
 	cb = NMCB_BUF(nmb);
-	poff = nmb - page_to_virt(page) + offset + nm_pst_getuoff(slot);
-	len = slot->len - nm_pst_getuoff(slot);
+	poff = nmb - page_to_virt(page) + offset + pst_offset;
+	len = slot->len - pst_offset;
 	nmcb_wstate(cb, MB_STACK);
 
 	if (unlikely(!sk)) {
-		PST_DBG_LIM("NULL sk");
+		PST_DBG("NULL sk");
 		nmcb_invalidate(cb);
 		return 0;
 	} else if (unlikely(!sk->sk_socket)) {
-		PST_DBG_LIM("NULL sk->sk_socket");
+		PST_DBG("NULL sk->sk_socket");
 		nmcb_invalidate(cb);
 		return 0;
 	}
-
-	PST_DBG("cb %p ulen %u uoff %u off %u fd %d",
-			cb, len, nm_pst_getuoff(slot), offset, nm_pst_getfd(slot));
 
 #ifdef NETMAP_LINUX_HAVE_KERNEL_SENDPAGE_LOCKED
 	/*
@@ -1470,15 +1436,12 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 					MSG_DONTWAIT);
 	if (unlikely(err < 0)) {
 		/* XXX check if it is enough to assume EAGAIN only */
-		PST_DBG_LIM("error %d in sendpage() slot %ld",
+		PST_DBG("error %d in sendpage() slot %ld",
 				err, slot - kring->ring->slot);
 		nmcb_invalidate(cb);
 		return -EAGAIN;
 	}
 
-	if (!nmcb_valid(cb)) {
-		panic(" ");
-	}
 	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {
 		/* The stack might have just dropped a page reference (e.g.,
 		 * linearized in skb_checksum_help() in __dev_queue_xmit().
@@ -1497,15 +1460,13 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	return 0;
 }
 
+/* Since tcp_sock_set_nodelay locks socket by itself. Since we don't
+ * need push_pending_frames, just set the flag manually.
+ */
 int
 nm_os_set_nodelay(NM_SOCK_T *so)
 {
-#ifndef NETMAP_LINUX_HAVE_TCP_SOCK_SET_NODELAY
-	char on = 1;
-	kernel_setsockopt(so->sk_socket, SOL_TCP, TCP_NODELAY, &on, sizeof(on));
-#else
-	tcp_sock_set_nodelay(so);
-#endif
+	tcp_sk(so)->nonagle |= TCP_NAGLE_OFF|TCP_NAGLE_PUSH;
 	return 0; // FreeBSD returns status
 }
 
@@ -1519,31 +1480,39 @@ nm_os_pst_kwait(void *data)
 	for (;lim > 0;) {
 		int s = 0;
 		if (sna->num_so_adapters > 0) {
-			nm_prinf("waiting for %d sockets to go",
+			if (netmap_verbose)
+				nm_prinf("waiting for %d sockets to go",
 					sna->num_so_adapters);
 			s = 1;
 		}
-		if (!pst_bdg_freeable(&sna->up.up)) {
-			nm_prinf("waiting for mbufs gone");
+		if (!pst_extra_noref(&sna->up.up)) {
+			if (netmap_verbose)
+				nm_prinf("waiting for mbufs gone");
 			s = 1;
 			lim--;
 		}
 		if (!s)
 			break;
-		usleep_range(200000, 300000); // 200-300ms
+		usleep_range(1000000, 1050000); // ~1s
 	}
-	PST_DBG("%s deleting priv", sna->up.up.name);
-	nm_prinf("%s deleting priv pool_freeable %d",
-			sna->up.up.name, pst_bdg_freeable(&sna->up.up));
+	if (netmap_verbose)
+		nm_prinf("%s deleting priv", sna->up.up.name);
 	NMG_LOCK();
 	sna->kpriv = NULL;
 	/* we don't clear sna->kwaittdp to indicate my run */
-	//sna->kwaittdp = NULL;
 	netmap_priv_delete(kpriv);
 	NMG_UNLOCK();
 	return 0;
 }
 
+int
+nm_os_kthread_add(void *f, void *arg, void *proc, struct thread **tdptr,
+		int flags, int pages, const char *fmt)
+{
+	*tdptr = (struct thread *)kthread_create(f, arg, "netmap-pst-kwait");
+	wake_up_process((struct task_struct *)*tdptr);
+	return 0;
+}
 #endif /* WITH_PASTE */
 
 /* Use ethtool to find the current NIC rings lengths, so that the netmap
