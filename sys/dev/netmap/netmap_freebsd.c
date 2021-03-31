@@ -1343,7 +1343,7 @@ int
 nm_os_kthread_add(void *f, void *arg, void *proc, struct thread **tdptr,
 		int flags, int pages, const char *fmt)
 {
-	return kthread_add(f, arg, proc, tdptr, flags, pages, fmt);
+	return kthread_add(f, arg, proc, tdptr, flags, pages, fmt, "");
 }
 #endif /* WITH_PASTE */
 

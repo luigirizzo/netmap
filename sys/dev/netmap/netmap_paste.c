@@ -274,7 +274,8 @@ pst_extra_deq(struct netmap_kring *kring, struct netmap_slot *slot)
 		return;
 	}
 	if (unlikely(kring->nr_mode != NKR_NETMAP_ON)) {
-		PST_DBG_LIM("kring not ON");
+		PST_DBG_LIM("%s kring %u not ON",
+				kring->na->name, kring->ring_id);
 		return;
 	}
 	pool = kring->extra;
@@ -284,7 +285,8 @@ pst_extra_deq(struct netmap_kring *kring, struct netmap_slot *slot)
 	if (BETWEEN(slot, ring->slot, ring->slot + kring->nkr_num_slots)) {
 		return;
 	} else if (!(likely(BETWEEN(slot, slots, slots + pool->num)))) {
-		PST_DBG("cannot dequeue slot not in the extra pool");
+		PST_DBG("%s kring %u buf_idx %u not in the extra pool",
+				kring->na->name, kring->ring_id, slot->buf_idx);
 		return;
 	}
 
@@ -650,7 +652,7 @@ pst_prestack(struct netmap_kring *kring)
 			}
 			if (unlikely(nm_get_offset(kring, slot) !=
 				     sizeof(struct nmcb))) {
-				PST_DBG("bad offset %llu",
+				PST_DBG("bad offset %lu",
 					nm_get_offset(kring, slot));
 				continue;
 			}
@@ -872,6 +874,7 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 		csum_transmit(na, m);
 		return 0;
 	}
+
 	/* Valid cb, txsync-ing packet. */
 
 	slot = nmcb_slot(cb);
@@ -945,7 +948,8 @@ pst_extra_free_kring(struct netmap_kring *kring)
 	}
 	extra = kring->extra;
 	if (extra->busy != NM_EXT_NULL) {
-		PST_DBG("extra->busy %u", extra->busy);
+		PST_DBG("%s kring %u extra->busy %u",
+				kring->na->name, kring->ring_id, extra->busy);
 	}
 	kring->extra = NULL;
 	extra->num = 0;
@@ -1318,7 +1322,7 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	}
 #endif /* linux */
 	if (pst_so(so)) {
-		PST_DBG("already registered %p", so);
+		PST_DBG("already registered %d", fd);
 		NM_SOCK_UNLOCK(so);
 		nm_os_sock_fput(so, file);
 		return EBUSY;
