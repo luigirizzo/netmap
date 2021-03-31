@@ -2054,8 +2054,6 @@ netmap_mem2_rings_delete(struct netmap_mem_d *nmd, struct netmap_adapter *na)
 {
 	enum txrx t;
 
-	if (netmap_debug & NM_DEBUG_MEM)
-		nm_prinf("start");
 	for_rx_tx(t) {
 		u_int i;
 		for (i = 0; i < netmap_all_rings(na, t); i++) {

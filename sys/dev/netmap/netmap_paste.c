@@ -165,7 +165,6 @@ struct pst_extra_pool {
 	uint32_t busy;
 	uint32_t busy_tail;
 	u_int refcount;
-	u_int dbg;
 };
 
 void
