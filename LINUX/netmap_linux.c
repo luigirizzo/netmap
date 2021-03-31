@@ -1118,11 +1118,6 @@ nm_os_pst_mbuf_data_dtor(struct ubuf_info *uarg,
 		return;
 	}
 	pst_put_extra_ref(nmcb_kring(cb));
-	if (unlikely(nmcb_gone(cb))) {
-		PST_DBG("cb %p gone", cb);
-		nmcb_wstate(cb, MB_NOREF); // XXX also clear GONE
-		return;
-	}
 	if (nmcb_rstate(cb) != MB_FTREF) {
 		pst_extra_deq(nmcb_kring(cb), nmcb_slot(cb));
 		nmcb_wstate(cb, MB_NOREF);

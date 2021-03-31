@@ -953,13 +953,8 @@ pst_extra_free_kring(struct netmap_kring *kring)
 		return;
 	}
 	extra = kring->extra;
-
-	j = extra->busy;
-	while (j != NM_EXT_NULL) {
-		struct pst_extra_slot *e = &extra->slots[j];
-		struct nmcb *cb = NMCB_SLT(na, &e->slot);
-		nmcb_set_gone(cb);
-		j = e->next;
+	if (extra->busy != NM_EXT_NULL) {
+		PST_DBG("extra->busy %u", extra->busy);
 	}
 	kring->extra = NULL;
 	extra->num = 0;
@@ -969,14 +964,6 @@ pst_extra_free_kring(struct netmap_kring *kring)
 
 	if (kring->nr_mode == NKR_NETMAP_OFF)
 		return;
-	for (j = 0; j < kring->nkr_num_slots; j++) {
-		struct nmcb *cb;
-
-		cb = NMCB_SLT(na, &ring->slot[j]);
-		if (nmcb_valid(cb)) {
-			nmcb_set_gone(cb);
-		}
-	}
 }
 
 static void

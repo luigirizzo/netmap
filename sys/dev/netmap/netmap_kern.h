@@ -1310,7 +1310,6 @@ struct nmcb {
 	struct nm_ubuf_info ui; /* ctx keeps kring and desc keeps slot */
 #define MB_MAGIC		0x12345600	/* XXX do better */
 #define MB_MAGIC_MASK	0xffffff00	/* XXX do better */
-#define SCB_GONE		0x00000010
 	uint32_t flags;
 	uint32_t next;
 	uint32_t cmd;
@@ -1332,24 +1331,6 @@ static inline int
 nmcb_valid(struct nmcb *cb)
 {
 	return ((cb->flags & MB_MAGIC_MASK) == MB_MAGIC);
-}
-
-static inline int
-nmcb_gone(struct nmcb *cb)
-{
-	return !!(cb->flags & SCB_GONE);
-}
-
-static inline void
-nmcb_set_gone(struct nmcb *cb)
-{
-	cb->flags |= SCB_GONE;
-}
-
-static inline void
-nmcb_clr_gone(struct nmcb *cb)
-{
-	cb->flags &= ~SCB_GONE;
 }
 
 static inline int

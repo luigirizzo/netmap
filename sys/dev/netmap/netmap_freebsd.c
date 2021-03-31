@@ -1127,9 +1127,6 @@ nm_os_pst_mbuf_data_dtor(struct mbuf *m)
 {
 	struct nmcb *cb = NMCB(m);
 
-	if (unlikely(nmcb_gone(cb))) {
-		return;
-	}
 	nmcb_wstate(cb, MB_NOREF);
 	pst_put_extra_ref(nmcb_kring(cb));
 	pst_extra_deq(nmcb_kring(cb), nmcb_slot(cb));
