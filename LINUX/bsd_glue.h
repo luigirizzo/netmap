@@ -569,17 +569,7 @@ void netmap_bns_unregister(void);
 #define mp_maxid       (num_online_cpus() - 1) // XXX num_possible_cpus()?
 
 /* used for paste */
-#define NM_LIST_INIT(_head)	INIT_HLIST_HEAD(_head)
-#define NM_LIST_ENTRY(_type)	struct hlist_node
-#define NM_LIST_ADD(_head, _n, _pos) 	hlist_add_head_rcu(&((_n)->_pos), _head)
-#define NM_LIST_DEL(_n, _pos)	hlist_del_init_rcu(&((_n)->_pos))
-#define NM_LIST_FOREACH(_n, _head, _pos)		hlist_for_each_entry_rcu(_n, _head, _pos)
-#define NM_LIST_FOREACH_SAFE(_n, _head, _pos, _tvar)	hlist_for_each_entry_rcu(_n, _head, _pos)
-#define NM_LIST_HEAD	struct hlist_head
-
 #define NM_SOCK_T	struct sock
-//#define NM_SOCK_LOCK(_s)	bh_lock_sock_nested(_s)
-//#define NM_SOCK_UNLOCK(_s)	bh_unlock_sock(_s)
 #define NM_SOCK_LOCK(_s)	lock_sock(_s)
 #define NM_SOCK_UNLOCK(_s)	release_sock(_s)
 #define	SOCKBUF_LOCK(sb)
