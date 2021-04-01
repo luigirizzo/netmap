@@ -262,7 +262,6 @@ pst_extra_noref(struct netmap_adapter *na)
 void
 pst_extra_deq(struct netmap_kring *kring, struct netmap_slot *slot)
 {
-	struct netmap_ring *ring;
 	struct pst_extra_pool *pool;
 	struct pst_extra_slot *slots, *xtra;
 	u_int pos;
@@ -272,18 +271,20 @@ pst_extra_deq(struct netmap_kring *kring, struct netmap_slot *slot)
 		PST_DBG("no kring");
 		return;
 	}
-	if (unlikely(kring->nr_mode != NKR_NETMAP_ON)) {
-		PST_DBG_LIM("%s kring %u not ON",
-				kring->na->name, kring->ring_id);
-		return;
-	}
 	pool = kring->extra;
 	slots = pool->slots;
-	ring = kring->ring;
 	/* nothing to do if I am on the ring */
-	if (BETWEEN(slot, ring->slot, ring->slot + kring->nkr_num_slots)) {
-		return;
-	} else if (!(likely(BETWEEN(slot, slots, slots + pool->num)))) {
+	if (likely(kring->nr_mode == NKR_NETMAP_ON)) {
+		struct netmap_ring *r = kring->ring;
+
+		if (BETWEEN(slot, r->slot, r->slot + kring->nkr_num_slots)) {
+			return;
+		}
+	} else {
+		PST_DBG_LIM("%s kring %u not ON",
+				kring->na->name, kring->ring_id);
+	}
+	if (unlikely(!(BETWEEN(slot, slots, slots + pool->num)))) {
 		PST_DBG("%s kring %u buf_idx %u not in the extra pool",
 				kring->na->name, kring->ring_id, slot->buf_idx);
 		return;
@@ -332,8 +333,9 @@ pst_extra_enq(struct netmap_kring *kring, struct netmap_slot *slot)
 
 	cb = NMCB_SLT(na, slot);
 	nm_swap_reset(slot, &xtra->slot);
-	if (nmcb_kring(cb) != kring)
+	if (unlikely(nmcb_kring(cb) != kring)) {
 		panic(" ");
+	}
 	nmcbw(cb, nmcb_kring(cb), &xtra->slot);
 
 	return 0;
