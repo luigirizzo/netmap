@@ -62,7 +62,6 @@
 #include <linux/file.h> // sockfd_put()/fput()
 #include <net/ip.h>	// struct ipcm_cookie
 #include <uapi/linux/udp.h>	// struct udphdr
-#include <net/route.h>	// RTO_ONLINK
 #include <net/udp.h>	// udp_push_pending_frames
 #include <net/tcp.h>	// TCP_NAGLE_PUSH
 
