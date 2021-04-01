@@ -585,6 +585,7 @@ void netmap_bns_unregister(void);
 #define NM_SOCK_UNLOCK(_s)	release_sock(_s)
 #define	SOCKBUF_LOCK(sb)
 #define	SOCKBUF_UNLOCK(sb)
+#define pause(_s, _v)		usleep_range((_v) * 1000, (_v) * 1000 + 5000)
 
 /* NMCB() is only valid for mbuf populated by nm_os_build_mbuf() */
 #define NMCB(_m)		((struct nmcb *)(_m)->head)

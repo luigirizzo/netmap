@@ -930,6 +930,8 @@ pst_extra_free_kring(struct netmap_kring *kring)
 	 * (e.g., for allocating some netmap object)
 	 */
 	if (!kring->extra) {
+		PST_DBG("%s kring %u no extra",
+				kring->na->name, kring->ring_id);
 		return;
 	}
 	extra = kring->extra;
@@ -942,19 +944,15 @@ pst_extra_free_kring(struct netmap_kring *kring)
 	if (extra->slots)
 		nm_os_free(extra->slots);
 	nm_os_free(extra);
-
-	if (kring->nr_mode == NKR_NETMAP_OFF)
-		return;
 }
 
 static void
 pst_extra_free(struct netmap_adapter *na)
 {
 	enum txrx t;
+	int i;
 
 	for_rx_tx(t) {
-		int i;
-
 		for (i = 0; i < netmap_real_rings(na, t); i++) {
 			pst_extra_free_kring(NMR(na, t)[i]);
 		}
@@ -981,8 +979,7 @@ pst_extra_alloc_kring(struct netmap_kring *kring)
 	}
 	kring->extra->num = n;
 	if (n) {
-		extra_slots = nm_os_malloc(sizeof(*extra_slots)
-				* n);
+		extra_slots = nm_os_malloc(sizeof(*extra_slots) * n);
 		if (!extra_slots)
 			return ENOMEM;
 	}
@@ -1012,11 +1009,9 @@ static int
 pst_extra_alloc(struct netmap_adapter *na)
 {
 	enum txrx t;
-	int error = 0;
+	int error = 0, i;
 
 	for_rx_tx(t) {
-		int i;
-
 		if (error)
 			break;
 		/* XXX probably we don't need extra on host rings */
