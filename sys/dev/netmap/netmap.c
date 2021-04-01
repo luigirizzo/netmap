@@ -1379,7 +1379,7 @@ netmap_rxsync_from_host(struct netmap_kring *kring, int flags)
 			int len = MBUF_LEN(m);
 			struct netmap_slot *slot = &ring->slot[nm_i];
 
-			m_copydata(m, 0, len, (char *)NMB(na, slot) + na->virt_hdr_len);
+			m_copydata(m, 0, len, NMB(na, slot));
 			nm_prdis("nm %d len %d", nm_i, len);
 			if (netmap_debug & NM_DEBUG_HOST)
 				nm_prinf("%s", nm_dump_buf(NMB(na, slot),len, 128, NULL));
