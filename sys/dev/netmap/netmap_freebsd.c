@@ -1320,36 +1320,6 @@ nm_os_set_nodelay(NM_SOCK_T *so)
 	return sosetopt(so, &sopt);
 }
 
-void
-nm_os_pst_kwait(void *data)
-{
-	struct netmap_pst_adapter *sna = (struct netmap_pst_adapter *)data;
-	struct netmap_priv_d *kpriv = sna->kpriv;
-
-	for (;;) {
-		int s = 0;
-		if (sna->num_so_adapters > 0) {
-			nm_prinf("waiting for %d sockets to go",
-					sna->num_so_adapters);
-			s = 1;
-		}
-		if (!pst_extra_noref(&sna->up.up)) {
-			nm_prinf("waiting for mbufs gone");
-			s = 1;
-		}
-		if (!s)
-			break;
-		pause("netmap-pst-kwait-pause", 200);
-	}
-	PST_DBG("%s deleting priv", sna->up.up.name);
-	NMG_LOCK();
-	sna->kpriv = NULL;
-	sna->kwaittdp = NULL;
-	netmap_priv_delete(kpriv);
-	NMG_UNLOCK();
-	kthread_exit();
-}
-
 int
 nm_os_kthread_add(void *f, void *arg, void *proc, struct thread **tdptr,
 		int flags, int pages, const char *fmt)

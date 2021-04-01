@@ -1348,11 +1348,9 @@ void nm_os_pst_upcall(NM_SOCK_T *);
 netdev_tx_t linux_pst_start_xmit(struct mbuf *, struct ifnet *);
 void nm_os_pst_mbuf_data_dtor(struct ubuf_info *, bool);
 void nm_os_set_mbuf_data_destructor(struct mbuf *, struct nm_ubuf_info *, void *);
-int nm_os_pst_kwait(void *);
 #else /* linux */
 int nm_os_pst_upcall(NM_SOCK_T *, void *, int);
 void nm_os_pst_mbuf_data_dtor(struct mbuf *);
-void nm_os_pst_kwait(void *);
 #include <sys/socketvar.h> /* struct socket */
 #define NMCB(_m) ((struct nmcb *)M_START(_m))
 #define NMCB_BUF(_buf) ((struct nmcb *)(_buf))

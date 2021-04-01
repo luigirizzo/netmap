@@ -1088,6 +1088,48 @@ pst_mbufpool_free(struct netmap_adapter *na)
 	}
 }
 
+static int
+pst_kwait(void *data)
+{
+	struct netmap_pst_adapter *sna = (struct netmap_pst_adapter *)data;
+	struct netmap_priv_d *kpriv = sna->kpriv;
+	int lim = 20;
+
+	for (; lim > 0;) {
+		int s = 0;
+		if (sna->num_so_adapters > 0) {
+			if (netmap_verbose)
+				nm_prinf("waiting for %d sockets to go",
+					sna->num_so_adapters);
+			s = 1;
+		}
+		if (!pst_extra_noref(&sna->up.up)) {
+			if (netmap_verbose)
+				nm_prinf("waiting for mbufs gone");
+			s = 1;
+			lim--;
+		}
+		if (!s)
+			break;
+#ifdef linux
+		usleep_range(1000000, 1050000); // ~1s
+#else
+		pause("netmap-pst-kwait-pause", 200);
+#endif /* linux */
+	}
+	if (netmap_verbose)
+		nm_prinf("%s deleting priv", sna->up.up.name);
+	NMG_LOCK();
+	sna->kpriv = NULL;
+	/* we don't clear sna->kwaittdp to indicate my run */
+	netmap_priv_delete(kpriv);
+	NMG_UNLOCK();
+#ifdef __FreeBSD__
+	kthread_exit();
+#endif /* __FreeBSD__ */
+	return 0;
+}
+
 static void
 pst_write_offset(struct netmap_adapter *na, bool noring)
 {
@@ -1456,16 +1498,8 @@ del_kpriv:
 
 			if (netmap_verbose)
 				nm_prinf("spawning kwait");
-//#ifdef __FreeBSD__
-			nm_os_kthread_add(nm_os_pst_kwait, (void *)sna, NULL,
+			nm_os_kthread_add(pst_kwait, (void *)sna, NULL,
 				    &sna->kwaittdp, 0, 0, "netmap-pst-kwait");
-//#else
-//			nm_os_kthread_add(nm_os_pst_kwait, (void *)sna, NULL,
-//				    &sna->kwaittdp, 0, 0, "netmap-pst-kwait");
-			//sna->kwaittdp = kthread_create(nm_os_pst_kwait,
-			//		(void *)sna, "netmap-pst-kwait");
-			//wake_up_process(sna->kwaittdp);
-//#endif
 			return EBUSY; // XXX the caller doesn't care
 		}
 
