@@ -1097,7 +1097,7 @@ linux_pst_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	return (NETDEV_TX_OK);
 }
 
-/* We have no way to track subsequent fragments, but such fragments 
+/* We have no way to track subsequent fragments, but such fragments
  * are always sent after queueing.
  * XXX !zerocopy_success might need to be handled explicitly
  * zerocopy_success is false when MB_TXREF and the slot is not on-ring.
@@ -1953,8 +1953,7 @@ netmap_bns_put(struct net *net_ns)
 void
 netmap_bns_getbridges(struct nm_bridge **b, u_int *n)
 {
-	struct nsproxy *nsproxy = current->nsproxy;
-	struct net *net_ns = nsproxy->net_ns;
+	struct net *net_ns = current->nsproxy->net_ns;
 	struct netmap_bns *ns = net_generic(net_ns, netmap_bns_id);
 
 	*b = ns->bridges;
@@ -2877,8 +2876,6 @@ module_exit(linux_netmap_fini);
 /* export certain symbols to other modules */
 EXPORT_SYMBOL(netmap_attach);		/* driver attach routines */
 EXPORT_SYMBOL(netmap_attach_ext);
-EXPORT_SYMBOL(netmap_bdg_attach);
-EXPORT_SYMBOL(netmap_bdg_detach);
 #ifdef NM_DEBUG_PUTGET
 EXPORT_SYMBOL(__netmap_adapter_get);
 EXPORT_SYMBOL(__netmap_adapter_put);
