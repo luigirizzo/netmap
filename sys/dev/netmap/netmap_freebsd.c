@@ -1096,7 +1096,6 @@ nm_os_sock_fget(int fd, void **f)
 void
 nm_os_sock_fput(NM_SOCK_T *so, void *f)
 {
-	//fp = container_of((void *)&so, struct file, f_data); // XXX do better...
 	fdrop((struct file *)f, curthread);
 }
 
@@ -1114,7 +1113,6 @@ nm_os_pst_sbdrain(struct netmap_adapter *na, NM_SOCK_T *so)
 		return error;
 	}
 	m = so->so_rcv.sb_mb;
-	//nm_prinf("m %p m_ext.ext_buf %p", m, m->m_ext.ext_buf);
 	cb = NMCB_EXT(m, 0, NETMAP_BUF_SIZE(na));
 	if (!nmcb_valid(cb)) {
 		PST_DBG("invalid cb");
@@ -1236,7 +1234,6 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 		if (soa != NULL && nmcb_rstate(cb) == MB_NOREF) {
 			nm_pst_setfd(slot, soa->fd);
 			nm_prdis("soa %p soa->fd %d", soa, soa->fd);
-			//slot->len = VHLEN(na);
 			nm_pst_setuoff(slot, 0);
 			pst_fdtable_add(cb, kring);
 		}
@@ -1244,7 +1241,6 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 
 	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {
 		nmcb_wstate(cb, MB_QUEUED);
-		//pst_get_extra_ref(kring);
 		if (pst_extra_enq(kring, slot)) {
 			ret = -EBUSY;
 		}
