@@ -1111,11 +1111,7 @@ pst_kwait(void *data)
 		}
 		if (!s)
 			break;
-#ifdef linux
-		usleep_range(1000000, 1050000); // ~1s
-#else
-		pause("netmap-pst-kwait-pause", 200);
-#endif /* linux */
+		pause("netmap-pst-kwait-pause", 1000);
 	}
 	if (netmap_verbose)
 		nm_prinf("%s deleting priv", sna->up.up.name);
