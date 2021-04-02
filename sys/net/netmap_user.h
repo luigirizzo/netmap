@@ -274,14 +274,7 @@ struct nm_desc {
 	struct netmap_if * const nifp;
 	uint16_t first_tx_ring, last_tx_ring, cur_tx_ring;
 	uint16_t first_rx_ring, last_rx_ring, cur_rx_ring;
-	union {
-		struct nmreq req;	/* also contains the nr_name = ifname */
-		struct {
-			struct nmreq_header hdr;
-			struct nmreq_register reg;
-			struct nmreq_opt_extmem ext;
-		} nr;
-	};
+	struct nmreq req;	/* also contains the nr_name = ifname */
 	struct nm_pkthdr hdr;
 
 	/*
@@ -372,10 +365,7 @@ enum {
 	NM_OPEN_ARG2 =		0x200000,
 	NM_OPEN_ARG3 =		0x400000,
 	NM_OPEN_RING_CFG =	0x800000, /* tx|rx rings|slots */
-	NM_OPEN_NO_DECODE =	0x010000, /* prevent nmreq_open() from parse */
 };
-#define NM_OPEN_MEMID	NM_OPEN_ARG2
-#define NM_OPEN_EXTRA	NM_OPEN_ARG3
 
 
 /*
