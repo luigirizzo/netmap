@@ -1089,20 +1089,21 @@ pst_kwait(void *data)
 	struct netmap_pst_adapter *sna = (struct netmap_pst_adapter *)data;
 	struct netmap_priv_d *kpriv = sna->kpriv;
 	int lim = 20;
+	bool s = false;
 
-	for (; lim > 0;) {
-		int s = 0;
+	for (; lim > 0; s = 0) {
 		if (sna->num_so_adapters > 0) {
 			if (netmap_verbose)
 				nm_prinf("waiting for %d sockets to go",
 					sna->num_so_adapters);
-			s = 1;
+			s = true;
 		}
 		if (!pst_extra_noref(&sna->up.up)) {
 			if (netmap_verbose)
 				nm_prinf("waiting for mbufs gone");
-			s = 1;
-			lim--;
+			if (s == false)
+				lim--;
+			s = true;
 		}
 		if (!s)
 			break;
