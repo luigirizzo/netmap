@@ -991,11 +991,13 @@ ptn_memdev_shutdown(device_t dev)
 int
 nm_os_pst_upcall(NM_SOCK_T *so, void *x, int y)
 {
-	struct mbuf *m, *n, *tmp;
-	struct mbuf *m0 = NULL;
+	struct mbuf *m, *n;
 	struct sockbuf *sb = &so->so_rcv;
 	struct nmcb *cb;
 	struct netmap_kring *kring = NULL;
+#ifdef TCP_RCVD
+	int flags = MSG_DONTWAIT | MSG_EOR;
+#endif /* TCP_RCVD */
 
 	if (unlikely(!sbavail(sb))) {
 		struct pst_so_adapter *soa = pst_so(so);
@@ -1008,39 +1010,30 @@ nm_os_pst_upcall(NM_SOCK_T *so, void *x, int y)
 		}
 		return 0;
 	}
-	m = sb->sb_mb;
-	cb = NMCB(m);
-	if (!nmcb_valid(cb))
-		return 0;
-	kring = nmcb_kring(cb);
-#ifdef TCP_RCVD
-	int flags = MSG_DONTWAIT | MSG_EOR;
-#endif /* TCP_RCVD */
-	m0 = m;
-	for (; m != NULL ; m = m->m_next) {
-		sbfree(sb, m);
-		n = m;
-	}
-	n->m_next = NULL;
-	sb->sb_mb = m;
-	sb->sb_lastrecord = sb->sb_mb;
-	if (sb->sb_mb == NULL) {
-		SB_EMPTY_FIXUP(sb);
-	}
-
-	for (m = m0; m; m = tmp) {
-		struct nmcb *cb = NMCB(m);
+	for (m = sb->sb_mb; m != NULL; m = n) {
 		struct netmap_slot *slot;
 		uint16_t nm_offset;
 #ifdef PST_MB_RECYCLE
 		int queued = 0;
 #endif
-		tmp = m->m_next;
+
+		sbfree(sb, m);
+		n = m->m_next;
+
+		cb = NMCB(m);
+		if (unlikely(!nmcb_valid(cb))) {
+			PST_DBG("invalid cb %p", cb);
+			goto skip_mfree;
+		}
+		kring = nmcb_kring(cb);
+		if (unlikely(kring == NULL)) {
+			PST_DBG("no kring cb %p", cb);
+			goto skip_mfree;
+		}
 		slot = nmcb_slot(cb);
 		if (unlikely(slot == NULL)) {
 			PST_DBG("no slot");
-			m_free(m);
-			continue;
+			goto skip_mfree;
 		}
 		nm_pst_setfd(slot, pst_so(so)->fd);
 		/* m_data points payload */
@@ -1059,15 +1052,21 @@ nm_os_pst_upcall(NM_SOCK_T *so, void *x, int y)
 		if (likely(!queued)) {
 			nm_os_pst_mbuf_data_dtor(m);
 			kring->tx_pool[1] = m;
-		} else
+			continue;
+		}
 #endif /* PST_MB_RECYCLE */
+skip_mfree:
 		m_free(m);
 	}
+	sb->sb_mb = NULL;
+	sb->sb_lastrecord = NULL;
+	SB_EMPTY_FIXUP(sb);
 #ifdef TCP_RCVD
 	/* taken from soreceive_stream() */
 	if (paste_usrrcv && (so->so_proto->pr_flags & PR_WANTRCVD) &&
 		((flags & MSG_WAITALL) || !(flags & MSG_SOCALLBCK))) {
-		PST_DBG("WAITALL %d SOCALLBCK %d", flags & MSG_WAITALL, flags & MSG_SOCALLBCK);
+		PST_DBG("WAITALL %d SOCALLBCK %d",
+				flags & MSG_WAITALL, flags & MSG_SOCALLBCK);
 		SOCKBUF_UNLOCK(sb);
 		(*so->so_proto->pr_usrreqs->pru_rcvd)(so, flags);
 		SOCKBUF_LOCK(sb);
