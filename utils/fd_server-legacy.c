@@ -239,7 +239,7 @@ handle_request(int accept_socket, int listen_socket)
 
 	ret = send_fd(accept_socket, fd, &res, sizeof(struct fd_response));
 	if (ret == -1) {
-		printf("error while sending the reponse\n");
+		printf("error while sending the response\n");
 	}
 	return ret;
 }

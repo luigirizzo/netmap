@@ -235,7 +235,7 @@ if __name__ == '__main__':
         job = multiprocessing.Process(name = 'worker-' + str(i),
                                         target = handler[args.function],
                                         args = (ring_id, ifname, args, parser, queue))
-        job.deamon = True   # ensure work termination
+        job.daemon = True   # ensure work termination
         jobs.append(job)
 
     # start all the workers

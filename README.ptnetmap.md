@@ -146,7 +146,7 @@ support the virtio-net header.
 Netmap is a framework for high performance network I/O. It exposes an
 hardware-independent API which allows userspace application to directly interact
 with NIC hardware rings, in order to receive and transmit Ethernet frames.
-Rings are always accessed in the context of system calls and NIC interrups
+Rings are always accessed in the context of system calls and NIC interrupts
 are used to notify applications about NIC processing completion.
 The performance boost of netmap w.r.t. traditional socket API primarily comes
 from: (i) batching, since it is possible to send/receive hundreds of packets
@@ -227,5 +227,5 @@ A number of device registers are used for configuration (number of rings and
 slots, device MAC address, supported features, ...) while "kick" registers
 are used for guest-to-host notifications.
 The ptnetmap kthread infrastructure, moreover, has been already extended to
-suppor an arbitrary number of rings, where currently each ring is served
+support an arbitrary number of rings, where currently each ring is served
 by a different kernel thread.

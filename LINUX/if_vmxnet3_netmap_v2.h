@@ -469,7 +469,7 @@ vmxnet3_netmap_tq_config_tx_buf(struct vmxnet3_tx_queue *tq,
 		PNMB(na, slot + si, &paddr);
 
 		tbi->map_type = VMXNET3_MAP_NONE;
-		/*	the buffer length will get overriden by the actual
+		/*	the buffer length will get overridden by the actual
 		   packet length on transmit */
 		tbi->len      = NETMAP_BUF_SIZE(na);
 		tbi->dma_addr = (dma_addr_t)paddr;

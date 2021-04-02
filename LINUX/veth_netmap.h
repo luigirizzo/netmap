@@ -238,7 +238,7 @@ veth_netmap_attach(struct ifnet *ifp)
 	na.nm_dtor = veth_netmap_dtor;
 	na.num_tx_rings = na.num_rx_rings = 1;
 	netmap_attach_ext(&na, sizeof(struct netmap_veth_adapter),
-			0 /* do not ovveride reg */);
+			0 /* do not override reg */);
 }
 
 /* end of file */

@@ -180,7 +180,7 @@ Netmap is able to send packets at very high rates, and for simple
 packet transmission and reception, speed generally not limited by
 the CPU but by other factors (link speed, bus or NIC hw limitations).
 
-For a physical link, the maximum numer of packets per second can
+For a physical link, the maximum number of packets per second can
 be computed with the formula:
 
 	pps = line_rate / (672 + 8 * pkt_size)

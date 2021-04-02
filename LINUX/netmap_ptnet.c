@@ -776,7 +776,7 @@ ptnet_irqs_init(struct ptnet_info *pi)
 	pi->msix_entries = kzalloc(sizeof(*pi->msix_entries) * pi->num_rings,
 				   GFP_KERNEL);
 	if (!pi->msix_entries) {
-		pr_err("%s: Failed to allocate msix entires\n", __func__);
+		pr_err("%s: Failed to allocate msix entries\n", __func__);
 		return -ENOMEM;
 	}
 

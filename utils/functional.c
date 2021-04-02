@@ -659,7 +659,7 @@ rx(struct Global *g, unsigned packets_num)
 				goto again;
 			}
 
-			/* As soon as we find a packet wich doesn't match our
+			/* As soon as we find a packet which doesn't match our
 			 * packet model we exit with status EXIT_FAILURE.
 			 */
 			if (rx_check(g)) {
@@ -792,7 +792,7 @@ usage(FILE *stream)
 	        "    [-F MAX_FRAGMENT_SIZE (=inf)]\n"
 	        "    [-T TIMEOUT_SECS (=1)]\n"
 	        "    [-w WAIT_FOR_LINK_SECS (=0)]\n"
-	        "    [-t LEN[:FILLCHAR[:NUM]] (trasmit NUM packets with size "
+	        "    [-t LEN[:FILLCHAR[:NUM]] (transmit NUM packets with size "
 	        "LEN bytes)]\n"
 	        "    [-r LEN[:FILLCHAR[:NUM]] (expect to receive NUM packets "
 	        "with size LEN bytes)]\n"
@@ -1008,7 +1008,7 @@ stop_fd_server(struct Global *g)
 	socket_fd = connect_to_fd_server(g);
 	if (socket_fd == -1) {
 		verbose_print(g->verbosity_level, LV_DEBUG_SEND_RECV,
-		              "fd_server alredy down\n");
+		              "fd_server already down\n");
 		return;
 	}
 	verbose_print(g->verbosity_level, LV_DEBUG_SEND_RECV,
@@ -1023,7 +1023,7 @@ stop_fd_server(struct Global *g)
 	/* By calling recv() we synchronize with the fd_server closing the
 	 * socket.
 	 * This way we're sure that during the next call to ./functional
-	 * the fd_server has alredy closed its end and we avoid a possible race
+	 * the fd_server has already closed its end and we avoid a possible race
 	 * condition. Otherwise the call to functional might connect to the
 	 * previous fd_server backlog.
 	 */
@@ -1127,7 +1127,7 @@ swap_in_extra_buffers(struct Global *g)
 
 /* We only re-build the extra buffers list, as requested from netmap. We don't
  * undo the swapping that we did at the start of the program to swap in the
- * extra buffer. This probably leaves the netmap adapter in an incosistent
+ * extra buffer. This probably leaves the netmap adapter in an inconsistent
  * state, that's why we only support this option for interfaces requested
  * directly.
  */

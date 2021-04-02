@@ -842,7 +842,7 @@ pipe_slave(struct TestContext *ctx)
 }
 
 /* Test PORT_INFO_GET and POOLS_INFO_GET on a pipe. This is useful to test the
- * registration request used internall by netmap. */
+ * registration request used internally by netmap. */
 static int
 pipe_port_info_get(struct TestContext *ctx)
 {
@@ -1761,7 +1761,7 @@ static struct nmreq_parse_test nmreq_parse_tests[] = {
 	 *       err > 0 => nmreq_header_parse should fail with the given error
 	 *       err < 0 => nrmeq_header_parse should succeed, but nmreq_register_decode should
 	 *       		   fail with error |err|
-	 *       err = 0 => should succeeed
+	 *       err = 0 => should succeed
 	 * - mode, ringid flags: what should go into the corresponding nr_* fields in the
 	 *   	nmreq_register struct in case of success
 	 */
@@ -1898,7 +1898,7 @@ nmreq_reg_parsing(struct TestContext *ctx,
 			}
 			return 0;
 		}
-		printf ("!!! parse failed but it should have succeded\n");
+		printf ("!!! parse failed but it should have succeeded\n");
 		return -1;
 	}
 	if (t->exp_error < 0) {
@@ -1950,7 +1950,7 @@ nmreq_parsing(struct TestContext *ctx)
 
 	nmctx = nmctx_get();
 	if (nmctx == NULL) {
-		printf("Failed to aquire nmctx: %s", strerror(errno));
+		printf("Failed to acquire nmctx: %s", strerror(errno));
 		return -1;
 	}
 	test_nmctx = *nmctx;

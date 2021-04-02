@@ -201,7 +201,7 @@ dedup_fresh_packet(struct dedup *d, const struct netmap_slot *s)
 			rfi -= d->fifo_size;
 
 		fs = d->fifo_slot + rfi;
-		ND("checking %lu %lu: lenghts %u %u buf %d", fi, rfi, fs->len, s->len,
+		ND("checking %lu %lu: lengths %u %u buf %d", fi, rfi, fs->len, s->len,
 				fs->buf_idx);
 
 		if (fs->len != s->len)
@@ -302,7 +302,7 @@ dedup_push_in(struct dedup *d, const struct timeval *now)
 		if (out_space == 0)
 			break;
 
-		/* if the FIFO is full, remove and possibily send
+		/* if the FIFO is full, remove and possibly send
 		 * the oldest packet
 		 */
 		if (dedup_fifo_full(d)) {

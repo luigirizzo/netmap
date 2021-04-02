@@ -429,7 +429,7 @@ virtio_netmap_txsync(struct netmap_kring *kring, int flags)
 		virtqueue_kick(vq);
 
 		/* Update hwcur depending on where we stopped. */
-		kring->nr_hwcur = nm_i; /* note we migth break early */
+		kring->nr_hwcur = nm_i; /* note we might break early */
 	}
 out:
 	/* Ask the hypervisor for notifications, possibly only when it has
