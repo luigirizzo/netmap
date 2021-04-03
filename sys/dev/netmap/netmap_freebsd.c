@@ -1012,7 +1012,6 @@ nm_os_pst_upcall(NM_SOCK_T *so, void *x, int y)
 	}
 	for (m = sb->sb_mb; m != NULL; m = n) {
 		struct netmap_slot *slot;
-		uint16_t nm_offset;
 #ifdef PST_MB_RECYCLE
 		int queued = 0;
 #endif
@@ -1036,10 +1035,8 @@ nm_os_pst_upcall(NM_SOCK_T *so, void *x, int y)
 			goto skip_mfree;
 		}
 		nm_pst_setfd(slot, pst_so(so)->fd);
-		/* m_data points payload */
-		nm_offset = nm_get_offset(kring, slot);
-		nm_pst_setuoff(slot, m->m_data - M_START(m) - nm_offset);
-		/* XXX just leave the original ? */
+		nm_pst_setuoff(slot,
+			m->m_data - M_START(m) - nm_get_offset(kring, slot));
 		pst_fdtable_add(cb, kring);
 #ifdef PST_MB_RECYCLE
 		if (unlikely(nmcb_rstate(cb) == MB_QUEUED)) {
