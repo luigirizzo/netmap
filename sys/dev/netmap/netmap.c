@@ -2420,7 +2420,7 @@ netmap_compute_buf_len(struct netmap_priv_d *priv)
 			maxframe = mtu + ETH_HLEN +
 				ETH_FCS_LEN + VLAN_HLEN;
 			if (maxframe < target) {
-				target = maxframe;
+				target = kring->offset_gap;
 			}
 		}
 
