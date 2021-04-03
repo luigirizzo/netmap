@@ -1040,7 +1040,6 @@ nm_os_pst_upcall(NM_SOCK_T *so, void *x, int y)
 		nm_offset = nm_get_offset(kring, slot);
 		nm_pst_setuoff(slot, m->m_data - M_START(m) - nm_offset);
 		/* XXX just leave the original ? */
-		slot->len = m->m_len + nm_pst_getuoff(slot) + nm_offset;
 		pst_fdtable_add(cb, kring);
 #ifdef PST_MB_RECYCLE
 		if (unlikely(nmcb_rstate(cb) == MB_QUEUED)) {
@@ -1182,7 +1181,6 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	sna->eventso[curcpu] = NULL;
 #endif /* __FreeBSD__ */
 
-	slot->len += nm_get_offset(kring, slot); // Ugly to do here...
 	m = maybe_new_mbuf(kring);
 	if (unlikely(m == NULL)) {
 		return 0; // drop and skip
