@@ -168,10 +168,6 @@ copy_to_nm(struct netmap_ring *ring, const char *data,
 		/* off0 contains some payload */
 		int l = min(MAX_PAYLOAD - (off0 - off), len - copied);
 
-		if (NETMAP_ROFFSET(ring, slot) == 0) {
-			D("sending with 0 offset! %u %lu %lu", cur, slot->ptr, ring->offset_mask);
-		}
-
 		if (data) {
 			nm_pkt_copy(data + copied, p, l);
 		}
@@ -226,7 +222,7 @@ generate_http(int content_length, char *buf, char *content)
 	return hlen + content_length;
 }
 
-int
+static int
 generate_http_nm(int content_length, struct netmap_ring *ring,
 		int off, int fd, char *header, int hlen, char *content)
 {
