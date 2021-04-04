@@ -1758,6 +1758,11 @@ netmap_pst_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	struct netmap_adapter *hostna = NULL;
 	int error;
 
+	if (!(hwna->ifp->features & NETIF_F_CSUM_MASK)) {
+		nm_prinf("Paste needs checksum offload enabled");
+		return ENOTSUP;
+	}
+
 	bna = nm_os_malloc(sizeof(*bna));
 	if (bna == NULL) {
 		return ENOMEM;
