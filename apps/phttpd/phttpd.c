@@ -90,12 +90,11 @@ user_clock_gettime(struct timespec *ts)
 #define MAX_HTTPLEN	65535
 
 #define DF_FDSYNC	0x1
-#define DF_READMMAP	0x2
-#define DF_PASTE	0x4
-#define DF_BPLUS	0x8
-#define DF_KVS		0x10
-#define DF_MMAP		0x20
-#define DF_PMEM		0x40
+#define DF_PASTE	0x2
+#define DF_BPLUS	0x4
+#define DF_KVS		0x8
+#define DF_MMAP		0x10
+#define DF_PMEM		0x20
 
 #define CLSIZ	64 /* XXX */
 
@@ -288,7 +287,6 @@ usage(void)
 	    "\t[-C config] virtual port configuration in vale-ctl(8) syntax\n"
 	    "\t[-m] mmap(2) database given by -d. For PM, always specify\n"
 	    "\t[-D] use fdatasync(2) instead of fsync\n"
-	    "\t[-N] directly read(2) data to database (only for WAL)\n"
 	    "\t[-c] static HTTP header (don't use with KVS)\n"
 	    "\t[-B] use B+tree (need phttpd-b)\n"
 	    "\t[-k] run as KVS (need phttpd-b)\n"
@@ -532,8 +530,7 @@ copy_and_log(char *paddr, size_t *pos, size_t dbsiz, char *buf, size_t len,
 	p = paddr + cur;
 	p += mlen; // leave a log entry space
 
-	if (buf)
-		memcpy(p, buf, len);
+	memcpy(p, buf, len);
 	if (pm) {
 		for (; i < len; i += CLSIZ) {
 			_mm_clflush(p + i);
@@ -617,7 +614,6 @@ phttpd_req(char *rxbuf, int fd, int len, struct nm_targ *targ, int *no_ok,
 {
 	struct dbctx *db = (struct dbctx *)targ->opaque;
 	int *fde = &targ->fdtable[fd];
-	int readmmap = !!(db->flags & DF_READMMAP);
 
 	const int flags = db->flags;
 	const size_t dbsiz = db->size;
@@ -671,8 +667,6 @@ phttpd_req(char *rxbuf, int fd, int len, struct nm_targ *targ, int *no_ok,
 				embed(extra, rxbuf);
 			}
 		} else if (db->paddr) {
-			if (readmmap)
-				rxbuf = NULL;
 			copy_and_log(db->paddr, &db->cur, dbsiz, rxbuf,
 			    thisclen, db->pgsiz, is_pm(db) ? 0 : db->pgsiz,
 			    is_pm(db), db->vp, key);
@@ -791,35 +785,22 @@ phttpd_data(struct nm_msg *m)
 int phttpd_read(int fd, struct nm_targ *targ)
 {
 	char buf[MAXQUERYLEN];
-	char *rxbuf;
 	ssize_t len = 0, written;
 	struct nm_garg *g = targ->g;
 	struct phttpd_global *tg = (struct phttpd_global *)g->garg_private;
 	struct dbctx *db = (struct dbctx *)targ->opaque;
-	int readmmap = !!(db->flags & DF_READMMAP);
 	char *content = NULL;
 	int no_ok = 0;
 	ssize_t msglen = tg->msglen;
 	int error;
 
-	if (readmmap) {
-		len = db->size - db->cur - sizeof(uint64_t);
-		if (unlikely(len < db->pgsiz)) {
-			db->cur = 0;
-			len = db->size - sizeof(uint64_t);
-		}
-		rxbuf = db->paddr + db->cur + sizeof(uint64_t);// metadata space
-	} else {
-		rxbuf = buf;
-		len = sizeof(buf);
-	}
-	len = read(fd, rxbuf, len);
+	len = read(fd, buf, sizeof(buf));
 	if (len <= 0) {
 		close(fd);
 		return len == 0 ? 0 : -1;
 	}
 
-	error = phttpd_req(rxbuf, fd, len, targ, &no_ok, &msglen, &content, 0,
+	error = phttpd_req(buf, fd, len, targ, &no_ok, &msglen, &content, 0,
 		       	NULL, NULL, NULL);
 	if (error)
 		return error;
@@ -973,7 +954,7 @@ main(int argc, char **argv)
 	pg.msglen = 64;
 
 	while ((ch = getopt(argc, argv,
-			    "P:l:b:md:DNi:PcC:a:p:x:L:BkFe:h")) != -1) {
+			    "P:l:b:md:Di:PcC:a:p:x:L:BkFe:h")) != -1) {
 		switch (ch) {
 		default:
 			D("bad option %c %s", ch, optarg);
@@ -1010,9 +991,6 @@ main(int argc, char **argv)
 			break;
 		case 'D':
 			pg.dba.flags |= DF_FDSYNC;
-			break;
-		case 'N':
-			pg.dba.flags |= DF_READMMAP;
 			break;
 		case 'i':
 			nmg.dev_type = DEV_NETMAP;
@@ -1081,8 +1059,6 @@ main(int argc, char **argv)
 	else if (pg.dba.type != DT_NONE && pg.dba.size == 0)
 		usage();
 	else if (pg.dba.type != DT_DUMB && pg.dba.flags)
-		usage();
-	else if (pg.dba.flags & DF_READMMAP && !(pg.dba.flags & DF_MMAP))
 		usage();
 #ifdef WITH_BPLUS
 	else if (pg.dba.flags & DF_BPLUS && !(pg.dba.flags & DF_MMAP))
