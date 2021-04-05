@@ -148,6 +148,12 @@ static u_int stat_minnfds;
 static uint64_t stat_vnfds;
 #endif /* 0 */
 
+/*
+ * General routine to write data to netmap buffer(s).
+ * Data is written after `off` except for the first chunk, which
+ * is written after `off0` bytes. This is useful when the caller writes
+ * an app-level header beforehand
+ */
 static int
 copy_to_nm(struct netmap_ring *ring, const char *data,
 		int len, int off0, int off, int fd)
@@ -240,6 +246,7 @@ generate_http_nm(int content_length, struct netmap_ring *ring,
 }
 
 #define SKIP_POST	48
+#if 0
 static int
 parse_post(char *post, int *coff, uint64_t *key)
 {
@@ -262,6 +269,30 @@ parse_post(char *post, int *coff, uint64_t *key)
 	*key = *(uint64_t *)pp;
 	*coff = pp - post;
 	return clen;
+}
+#endif
+
+static int
+parse_post(const char *post, const size_t len,
+		size_t *coff, size_t *clen, size_t *thisclen)
+{
+	char *pp, *p = strstr(post + SKIP_POST, "Content-Length: ");
+	char *end;
+
+	*coff = 0;
+	if (unlikely(!p))
+		return -1;
+	pp = p + 16; // strlen("Content-Length: ")
+	*clen = strtol(pp, &end, 10);
+	if (unlikely(end == pp))
+		return -1;
+	pp = strstr(pp, "\r\n\r\n");
+	if (unlikely(!pp))
+		return -1;
+	pp += 4;
+	*coff = pp - post;
+	*thisclen = len - *coff;
+	return 0;
 }
 
 static void
@@ -501,7 +532,7 @@ nmidx_wal(char *paddr, size_t *pos, size_t dbsiz, struct netmap_slot *slot,
 
 static inline void
 copy_and_log(char *paddr, size_t *pos, size_t dbsiz, char *buf, size_t len,
-		u_int nowrap, size_t align, int pm, void *vp, uint64_t key)
+		size_t align, int pm, void *vp, uint64_t key)
 {
 	char *p;
 	int mlen = vp ? 0 : sizeof(uint64_t);
@@ -509,7 +540,7 @@ copy_and_log(char *paddr, size_t *pos, size_t dbsiz, char *buf, size_t len,
 	u_int i = 0;
 	size_t aligned = len;
 
-	ND("paddr %p pos %lu dbsiz %lu buf %p len %lu nowrap %u align %lu pm %d vp %p key %lu", paddr, *pos, dbsiz, buf, len, nowrap, align, pm, vp, key);
+	ND("paddr %p pos %lu dbsiz %lu buf %p len %lu align %lu pm %d vp %p key %lu", paddr, *pos, dbsiz, buf, len, align, pm, vp, key);
 #ifdef WITH_BPLUS
 	if (!align && vp) { // B+tree maintains data by index
 		align = NETMAP_BUF_SIZE;
@@ -520,7 +551,7 @@ copy_and_log(char *paddr, size_t *pos, size_t dbsiz, char *buf, size_t len,
 	}
 
 	/* Do we have a space? */
-	if (unlikely(cur + max(aligned, nowrap) + mlen > dbsiz)) {
+	if (unlikely(cur + aligned + mlen > dbsiz)) {
 		cur = 0;
 	}
 	p = paddr + cur;
@@ -573,7 +604,7 @@ httpreq(const char *p)
 }
 
 static inline void
-leftover(int *fde, const ssize_t len, int *is_leftover, int *thisclen)
+leftover(int *fde, const ssize_t len, int *is_leftover, size_t *thisclen)
 {
 	if (unlikely(*fde <= 0)) {
 		/* XXX OOB message? Just suppress response */
@@ -591,6 +622,7 @@ leftover(int *fde, const ssize_t len, int *is_leftover, int *thisclen)
 	*thisclen = len;
 }
 
+#if 0
 static inline void
 leftover_post(int *fde, const ssize_t len, const ssize_t clen,
 		const int coff, int *thisclen, int *is_leftover)
@@ -601,6 +633,7 @@ leftover_post(int *fde, const ssize_t len, const ssize_t clen,
 		*is_leftover = 1;
 	}
 }
+#endif /* 0 */
 
 static int
 phttpd_req(char *rxbuf, int fd, int len, struct nm_targ *targ, int *no_ok,
@@ -618,17 +651,21 @@ phttpd_req(char *rxbuf, int fd, int len, struct nm_targ *targ, int *no_ok,
 
 	switch (httpreq(rxbuf)) {
 	uint64_t key;
-	int coff, clen, thisclen;
+	size_t coff, clen, thisclen;
 
 	case NONE:
 		leftover(fde, len, no_ok, &thisclen);
 		break;
 	case POST:
-		clen = parse_post(rxbuf, &coff, &key);
-		if (unlikely(clen < 0))
+		if (parse_post(rxbuf, len, &coff, &clen, &thisclen)) {
 			return 0;
+		}
+		if (clen > thisclen) {
+			*fde += clen - thisclen;
+			*no_ok = 1;
+		}
 		rxbuf += coff;
-		leftover_post(fde, len, clen, coff, &thisclen, no_ok);
+		key = *(uint64_t *)(rxbuf+coff);
 
 		if (flags & DF_PASTE) {
 			u_int i = 0;
@@ -664,7 +701,7 @@ phttpd_req(char *rxbuf, int fd, int len, struct nm_targ *targ, int *no_ok,
 			}
 		} else if (db->paddr) {
 			copy_and_log(db->paddr, &db->cur, dbsiz, rxbuf,
-			    thisclen, db->pgsiz, is_pm(db) ? 0 : db->pgsiz,
+			    thisclen, is_pm(db) ? 0 : db->pgsiz,
 			    is_pm(db), db->vp, key);
 		} else if (db->fd > 0) {
 			if (writesync(rxbuf, len, dbsiz, db->fd,
@@ -763,7 +800,7 @@ phttpd_data(struct nm_msg *m)
 
 	error = phttpd_req(rxbuf, nm_pst_getfd(rxs), len, targ, &no_ok,&msglen,
 			&content, off, txr, rxr, rxs);
-	if (error) {
+	if (unlikely(error)) {
 		return error;
 	}
 	if (!no_ok) {
@@ -784,7 +821,6 @@ int phttpd_read(int fd, struct nm_targ *targ)
 	ssize_t len = 0, written;
 	struct nm_garg *g = targ->g;
 	struct phttpd_global *tg = (struct phttpd_global *)g->garg_private;
-	struct dbctx *db = (struct dbctx *)targ->opaque;
 	char *content = NULL;
 	int no_ok = 0;
 	ssize_t msglen = tg->msglen;
