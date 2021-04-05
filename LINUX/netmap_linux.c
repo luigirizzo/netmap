@@ -1480,6 +1480,12 @@ nm_os_kthread_add(void *f, void *arg, void *proc, struct thread **tdptr,
 	wake_up_process((struct task_struct *)*tdptr);
 	return 0;
 }
+
+int
+nm_os_hwcsum_on(struct netmap_adapter *na)
+{
+	return na->ifp->features & NETIF_F_CSUM_MASK;
+}
 #endif /* WITH_PASTE */
 
 /* Use ethtool to find the current NIC rings lengths, so that the netmap

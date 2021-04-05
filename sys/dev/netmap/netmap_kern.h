@@ -1383,6 +1383,7 @@ int nm_os_pst_rx(struct netmap_kring *, struct netmap_slot *);
 int nm_os_pst_tx(struct netmap_kring *, struct netmap_slot *);
 int nm_os_set_nodelay(NM_SOCK_T *);
 int nm_os_kthread_add(void *, void *, void *, struct thread **, int, int, const char *);
+int nm_os_hwcsum_on(struct netmap_adapter *);
 struct pst_so_adapter * pst_soa_from_fd(struct netmap_adapter *, int);
 int pst_extra_enq(struct netmap_kring *, struct netmap_slot *);
 void pst_extra_deq(struct netmap_kring *, struct netmap_slot *);

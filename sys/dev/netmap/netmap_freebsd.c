@@ -1316,6 +1316,12 @@ nm_os_kthread_add(void *f, void *arg, void *proc, struct thread **tdptr,
 {
 	return kthread_add(f, arg, proc, tdptr, flags, pages, fmt, "");
 }
+
+int
+nm_os_hwcsum_on(struct netmap_adapter *na)
+{
+	return 1;
+}
 #endif /* WITH_PASTE */
 
 /*
