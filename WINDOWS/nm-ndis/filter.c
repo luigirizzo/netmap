@@ -478,7 +478,7 @@ Routine Description:
 
 Arguments:
 
-    FilterModuleContext - pointer to the filter context stucture
+    FilterModuleContext - pointer to the filter context structure
     PauseParameters     - additional information about the pause
 
 Return Value:
@@ -545,7 +545,7 @@ Routine Description:
 
 Arguments:
 
-    FilterModuleContext - pointer to the filter context stucture.
+    FilterModuleContext - pointer to the filter context structure.
     RestartParameters   - additional information about the restart operation.
 
 Return Value:
@@ -1838,7 +1838,7 @@ Routine Description:
     calls the NdisFCancelSendNetBufferLists to propagate the cancel operation.
 
     If your driver does not queue any send NBLs, you may omit this routine.  
-    NDIS will propagate the cancelation on your behalf more efficiently.
+    NDIS will propagate the cancellation on your behalf more efficiently.
 
 Arguments:
 

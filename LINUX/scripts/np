@@ -93,7 +93,7 @@ function need {
 	[ -n "$v" -a -d "$v${2:+/$2}" ] || error "Variable $1 not set or not valid"
 }
 
-## The following enviroment variables must be set:
+## The following environment variables must be set:
 ##
 ##  GITDIR: the absolute path of the netmap linux
 ## 	git repository, containing all the required netmap-*
@@ -223,8 +223,8 @@ function get-src()
 
 ##
 ##  extend <patch> <version>
-##	checks wether the range of applicability of the 
-##	given <patch> can be extented to include <version>.
+##	checks whether the range of applicability of the
+##	given <patch> can be extended to include <version>.
 ##	It returns 0 on success and 1 on failure.
 function extend()
 {
@@ -280,7 +280,7 @@ function minimize()
 	# the original patches (in tmp-patches) are ordered by version number.
 	# We consider one patch in turn (the 'pivot') and try
 	# to extend its range to cover the range of the next
-	# patch. If this succedes, the merged patch is the new
+	# patch. If this succeeds, the merged patch is the new
 	# pivot, otherwise the current pivot is output and the
 	# next patch becomes the new pivot. The process
 	# is repeated until there are no more patches to consider.
@@ -306,7 +306,7 @@ function minimize()
 		# the patch in its final location
 		out=$(scripts/vers vanilla $drv $ple -c $pre -c -S4)
 		cp $pivot final-patches/$out
-		# the new pivot becames the next patch (if any)
+		# the new pivot becomes the next patch (if any)
 		pivot=$1
 		pre=$nre
 		ple=$nle
@@ -428,7 +428,7 @@ function check-patch()
 	local v1=$(scripts/vers $_patch -s -p -C)
 	# extract the right version
 	local v2=$(scripts/vers $_patch -s -C)
-	# extract the uncoverted right version (might be 99999)
+	# extract the unconverted right version (might be 99999)
 	local end=$(scripts/vers $_patch -s)
 	# extract the driver name
 	local driver=$(scripts/vers $_patch -s -p -p)

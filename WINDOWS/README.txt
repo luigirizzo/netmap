@@ -15,7 +15,7 @@ which also build the standard netmap test program, pkt-gen.
 	ports.  Performance is similar to that on FreeBSD and Linux:
 	20Mpps on switch ports, over 100 Mpps on pipes.
 
- 	To load the module, do the following (as adminstrator)
+	To load the module, do the following (as administrator)
 
 	    (cd Output-Win8.1Release/netmap-pkg; ./nm-loader l)
 
@@ -42,7 +42,7 @@ which also build the standard netmap test program, pkt-gen.
 		netmap:ethXX
 
 	as the port name. XX is the Windows "interface index" that
-	can be shown with the followin command (or many other ways):
+	can be shown with the following command (or many other ways):
 
 		netsh int ipv4 show interfaces
 
@@ -82,7 +82,7 @@ a) Build with command line tools and MsBuild.exe
 
 	make clean	# will clean output directories
 
-   The output will be found in the directory ./Output-<choosen build type>
+   The output will be found in the directory ./Output-<chosen build type>
 
    Please look at the makefile to select different configurations
 
@@ -161,7 +161,7 @@ native netmap mode available on FreeBSD and Linux).
 	pkt-gen-b -i vale0:a{1 -f rx
 
     NETMAP to HOST ring	about 2.3 Mpps if dropped, 1.8Mpps to windump
-       (replace the '5' with the inteface index from
+       (replace the '5' with the interface index from
 		netsh int ipv4 show interfaces
 
 	pkt-gen-b -i netmap:eth5^ -f tx	# on one vm

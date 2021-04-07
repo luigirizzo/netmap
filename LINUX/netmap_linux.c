@@ -383,7 +383,7 @@ nm_os_csum_ipv4(struct nm_iphdr *iph)
 }
 
 /* Compute and insert a TCP/UDP checksum over IPv4: 'iph' points to the IPv4
- * header, 'data' points to the TCP/UDP header, 'datalen' is the lenght of
+ * header, 'data' points to the TCP/UDP header, 'datalen' is the length of
  * TCP/UDP header + payload.
  */
 void
@@ -396,7 +396,7 @@ nm_os_csum_tcpudp_ipv4(struct nm_iphdr *iph, void *data,
 }
 
 /* Compute and insert a TCP/UDP checksum over IPv6: 'ip6h' points to the IPv6
- * header, 'data' points to the TCP/UDP header, 'datalen' is the lenght of
+ * header, 'data' points to the TCP/UDP header, 'datalen' is the length of
  * TCP/UDP header + payload.
  */
 void

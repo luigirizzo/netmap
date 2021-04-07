@@ -50,7 +50,7 @@ build() {
     echo "SRCPKGDEST=$SRCPKGDEST"
     echo "PKGDEST=$PKGDEST"
     echo "BUILDDIR=$BUILDDIR"
-    # We force some makepkg variables, trying to ovverride yaourt default behaviour,
+    # We force some makepkg variables, trying to override yaourt default behaviour,
     # which is to download sources in $srcdir/../linux instead of the place where
     # makepkg is invoked
     SRCDEST=$NESTEDDIR SRCPKGDEST=$NESTEDDIR PKGDEST=$NESTEDDIR BUILDDIR=$NESTEDDIR \

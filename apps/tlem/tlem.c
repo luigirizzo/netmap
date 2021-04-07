@@ -64,7 +64,7 @@ In order to get good and predictable performance, it is important
 that threads are pinned to a single core, and it is preferable that
 prod() and cons() for each direction share the cache as much as possible.
 Putting them on two hyperthreads of the same core seems to give
-good results but that shoud be investigated further.
+good results but that should be investigated further.
 
 It also seems useful to use a scheduler (SCHED_FIFO or SCHED_RR)
 that gives more predictable cycles to the CPU, as well as try
@@ -100,7 +100,7 @@ prod()
 
     q-c_reorder (set with the -R command line option) decides
         whether the packet should be temporary hold to emulate
-	packet reordering. To hold a packet, it shuld set
+	packet reordering. To hold a packet, it should set
 	q->cur_hold_delay to a non-zero value. The packet will
 	reenter the stream once the cur_hold_delay has expired.
 
@@ -546,7 +546,7 @@ ec_next(int i)
 
 /* if fname is NULL tlem will run standalone, i.e., in server mode
  * with no possibility for clients to change the configuration.
- * Otherwise, the first tlem instance that successully locks the
+ * Otherwise, the first tlem instance that successfully locks the
  * first four bytes of the configuration file becomes the server.
  * Clients write-lock the rest of the file, to guarantee mutual
  * exclusive configuration updates among them.
@@ -663,7 +663,7 @@ ec_allowclients()
     return 0;
 }
 
-static void ec_activate(struct _qs *q); // foward
+static void ec_activate(struct _qs *q); // forward
 static int
 ec_init(struct _qs *q, struct _ecs *ec, int server)
 {
@@ -863,7 +863,7 @@ struct arp_cmd_q {
 	uint64_t	tail ALIGN_CACHE; /* private to the producer */
 };
 
-/* consumer: extract a new command.  The command slot is not immediatly
+/* consumer: extract a new command.  The command slot is not immediately
  * released, so that at most ARP_CMD_QSIZE messages are read for each
  * cons() loop.
  */
@@ -1193,7 +1193,7 @@ setaffinity(int i)
     }
     maxprio = sched_get_priority_max(SCHED_RR);
     if (maxprio < 0) {
-        ED("Unable to retrive max RR priority, using 10");
+        ED("Unable to retrieve max RR priority, using 10");
         maxprio = 10;
     }
     bzero(&p, sizeof(p));
@@ -1774,7 +1774,7 @@ cons_update_macs(struct pipe_args *pa, void *pkt)
             injected = 1;
         }
     }
-    /* copy negated dst into eh (either brodcast or unicast) */
+    /* copy negated dst into eh (either broadcast or unicast) */
     *(uint32_t *)eh = ~e->eth1;
     *(uint16_t *)((char *)eh + 4) = ~e->eth2;
     /* copy local MAC address into source */
@@ -2238,7 +2238,7 @@ set_max(const char *arg, struct _qs *q)
     return 0;
 }
 
-/* otions that can be specified for each direction */
+/* options that can be specified for each direction */
 struct dir_opt {
     char opt;
     int  flags;
@@ -2434,7 +2434,7 @@ main(int argc, char **argv)
     argc -= optind;
     argv += optind;
 
-    /* map the session area and auto-detect wether we are server or client */
+    /* map the session area and auto-detect whether we are server or client */
     ecf = ec_map(sfname, &server);
     if (ecf == NULL)
         exit(1);

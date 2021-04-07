@@ -87,7 +87,7 @@ i40e@prepare := $(if $(filter $(i40e@v),2.12.6 2.14.13),@SRCDIR@/intel-fix.sh i4
 # some additional, driver-specific configuration
 stmmac@conf := CONFIG_STMMAC_ETH
 
-# set all the default versions (can be overrided by --select-version=)
+# set all the default versions (can be overridden by --select-version=)
 $(eval $(call default,ixgbe,5.3.8))
 $(eval $(call default,ixgbevf,4.3.2))
 $(eval $(call default,e1000e,3.4.0.2))

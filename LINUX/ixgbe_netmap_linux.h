@@ -239,7 +239,7 @@ ixgbe_netmap_reg(struct netmap_adapter *na, int onoff)
 	} else {
 		nm_clear_native_flags(na);
 	}
-	/* XXX SRIOV migth need another 2sec wait */
+	/* XXX SRIOV might need another 2sec wait */
 	if (netif_running(adapter->netdev))
 		NM_IXGBE_UP(adapter);	/* also enables intr */
 	clear_bit(NM_IXGBE_RESETTING, &adapter->state);

@@ -260,7 +260,7 @@ On the receiver, you should see about 14.88 Mpps
   use the kernel network stack on the other endpoint. This is not a missing
   feature, as the native veth datapath is implemented using netmap pipes, and
   it does not make sense (in terms of performance) for pipes to support
-  conversion betweeen netmap buffers and skbuffs.
+  conversion between netmap buffers and skbuffs.
 
 * pkt-gen traffic does not flow across a Linux bridge.
   Check that source MAC is not 00:00:00:00:00:00 (pkt-gen default), nor
