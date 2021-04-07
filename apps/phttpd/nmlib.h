@@ -109,6 +109,7 @@ struct nm_msg {
 	struct netmap_ring *txring;
 	struct netmap_slot *slot;
 	struct nm_targ *targ;
+	int fd;
 };
 
 struct nm_garg {
@@ -145,7 +146,7 @@ struct nm_garg {
 	struct nm_ifreq ifreq;
 	int (*data)(struct nm_msg *);
 	void (*connection)(struct nm_msg *);
-	int (*read)(int, struct nm_targ *);
+	int (*read)(struct nm_msg *);
 	int (*thread)(struct nm_targ *);
 	int *fds;
 	int fdnum;
@@ -840,15 +841,8 @@ do_nm_ring(struct nm_targ *t, int ring_nr)
 
 	for (; rxcur != rxtail; rxcur = nm_ring_next(rxr, rxcur)) {
 		struct netmap_slot *rxs = &rxr->slot[rxcur];
-		struct nm_msg m = {.rxring = rxr, .txring = txr, .slot = rxs, .targ = t} ;
+		struct nm_msg m = {.rxring = rxr, .txring = txr, .slot = rxs, .targ = t, .fd = nm_pst_getfd(rxs)} ;
 
-		/*
-		bzero(&m, sizeof(m));
-		m.rxring = rxr;
-		m.txring = txr;
-		m.slot = rxs;
-		m.targ = t;
-		*/
 		t->g->data(&m);
 		nm_update_ctr(t, 1, rxs->len - nm_pst_getuoff(rxs));
 	}
@@ -1030,11 +1024,12 @@ netmap_worker(void *data)
 	}
 
 	while (!t->cancel) {
+		struct nm_msg msg;
+
 		if (g->dev_type == DEV_NETMAP) {
 			u_int first_ring = nmd->first_rx_ring;
 			u_int last_ring = nmd->last_rx_ring;
 			u_int i;
-			struct nm_msg msg;
 			struct netmap_slot slot;
 			int n;
 
@@ -1146,7 +1141,9 @@ close_pfds:
 				}
 				if (j != t->g->fdnum)
 					continue;
-				g->read(fd, t);
+				msg.fd = fd;
+				msg.targ = t;
+				g->read(&msg);
 			}
 		}
 	}
@@ -1190,7 +1187,7 @@ do_mmap(int fd, size_t len)
 
 struct netmap_events {
 	int (*data)(struct nm_msg *);
-	int (*read)(int, struct nm_targ *);
+	int (*read)(struct nm_msg *);
 	void (*connection)(struct nm_msg *);
 	int (*thread)(struct nm_targ *targ);
 };
@@ -1280,5 +1277,71 @@ netmap_eventloop(const char *name, char *ifname, void **ret, int *error, int *fd
 	}
 	g->garg_private = garg_private;
 	*error = nm_start(g);
+}
+
+/*
+ * General routine to write data to netmap buffer(s).
+ * Data is written after `off` except for the first chunk, which
+ * is written after `off0` bytes. This is useful when the caller writes
+ * an app-level header beforehand
+ */
+#ifndef min
+#define min(a, b) (((a) < (b)) ? (a) : (b)) 
+#endif
+#define DEFAULT_MTU	1420 // maximum option space
+static int
+copy_to_nm(struct netmap_ring *ring, const char *data,
+		int len, int off0, int off, int fd)
+{
+	u_int const tail = ring->tail;
+	u_int cur = ring->cur;
+	u_int copied = 0;
+	const int space = nm_ring_space(ring);
+	u_int space_bytes;
+
+	space_bytes = DEFAULT_MTU - off0 + (DEFAULT_MTU - off) * (space - 1);
+	if (unlikely(!space || space_bytes < len)) {
+		RD(1, "no space (%d slots)", space);
+		return -1;
+	}
+
+	while (likely(cur != tail) && copied < len) {
+		struct netmap_slot *slot = &ring->slot[cur];
+		char *p = NETMAP_BUF_OFFSET(ring, slot) + off0;
+		/* off0 contains some payload */
+		int l = min(DEFAULT_MTU - (off0 - off), len - copied);
+
+		if (data) {
+			nm_pkt_copy(data + copied, p, l);
+		}
+		slot->len = off0 + l;
+		nm_pst_setuoff(slot, off);
+		nm_pst_setfd(slot, fd);
+		copied += l;
+		off0 = off;
+		cur = nm_ring_next(ring, cur);
+	}
+	ring->cur = ring->head = cur;
+	return len;
+}
+
+static inline struct netmap_slot *
+swap_to_nm(struct netmap_ring *txr, struct netmap_slot *slot)
+{
+	struct netmap_slot tmp, *txs = NULL;
+
+	if (unlikely(nm_ring_space(txr) == 0)) {
+		return NULL;
+	}
+	txs = &txr->slot[txr->cur];
+	if (likely(slot != txs)) {
+		tmp = *txs;
+		*txs = *slot;
+		txs->flags |= NS_BUF_CHANGED;
+		*slot = tmp;
+		slot->flags |= NS_BUF_CHANGED; // might be on-ring
+	}
+	txr->cur = txr->head = nm_ring_next(txr, txr->cur);
+	return txs;
 }
 #endif /* _NMLIB_H_ */

@@ -77,12 +77,8 @@ user_clock_gettime(struct timespec *ts)
 
 #define IPV4TCP_HDRLEN	66
 #define NETMAP_BUF_SIZE	2048
-#define GET_LEN		4
+#define GET_LEN		4 // the request look like GET /3
 #define POST_LEN	5
-
-#define MAX_PAYLOAD	1400
-#define min(a, b) (((a) < (b)) ? (a) : (b)) 
-#define max(a, b) (((a) > (b)) ? (a) : (b)) 
 
 #define EPOLLEVENTS	2048
 #define MAXQUERYLEN	32767
@@ -148,46 +144,6 @@ static u_int stat_minnfds;
 static uint64_t stat_vnfds;
 #endif /* 0 */
 
-/*
- * General routine to write data to netmap buffer(s).
- * Data is written after `off` except for the first chunk, which
- * is written after `off0` bytes. This is useful when the caller writes
- * an app-level header beforehand
- */
-static int
-copy_to_nm(struct netmap_ring *ring, const char *data,
-		int len, int off0, int off, int fd)
-{
-	u_int const tail = ring->tail;
-	u_int cur = ring->cur;
-	u_int copied = 0;
-	const int space = nm_ring_space(ring);
-
-	if (unlikely(space * MAX_PAYLOAD < len)) {
-		RD(1, "no space (%d slots)", space);
-		return -1;
-	}
-
-	while (likely(cur != tail) && copied < len) {
-		struct netmap_slot *slot = &ring->slot[cur];
-		char *p = NETMAP_BUF_OFFSET(ring, slot) + off0;
-		/* off0 contains some payload */
-		int l = min(MAX_PAYLOAD - (off0 - off), len - copied);
-
-		if (data) {
-			nm_pkt_copy(data + copied, p, l);
-		}
-		slot->len = off0 + l;
-		nm_pst_setuoff(slot, off);
-		nm_pst_setfd(slot, fd);
-		copied += l;
-		off0 = off;
-		cur = nm_ring_next(ring, cur);
-	}
-	ring->cur = ring->head = cur;
-	return len;
-}
-
 static char *HTTPHDR = "HTTP/1.1 200 OK\r\n"
 		 "Connection: keep-alive\r\n"
 		 "Server: Apache/2.2.800\r\n"
@@ -218,60 +174,7 @@ generate_httphdr(size_t content_length, char *buf)
 	return c - buf;
 }
 
-static int
-generate_http(int content_length, char *buf, char *content)
-{
-	int hlen = generate_httphdr(content_length, buf);
-
-	if (content)
-		memcpy(buf + hlen, content, content_length);
-	return hlen + content_length;
-}
-
-static int
-generate_http_nm(int content_length, struct netmap_ring *ring,
-		int off, int fd, char *header, int hlen, char *content)
-{
-	int len, cur = ring->cur;
-	struct netmap_slot *slot = &ring->slot[cur];
-	char *p = NETMAP_BUF_OFFSET(ring, slot) + off;
-
-	if (header)
-		memcpy(p, header, hlen);
-	else
-		hlen = generate_httphdr(content_length, p);
-	len = copy_to_nm(ring, content, content_length,
-			off + hlen, off, fd);
-	return len < content_length ? -1 : hlen + len;
-}
-
 #define SKIP_POST	48
-#if 0
-static int
-parse_post(char *post, int *coff, uint64_t *key)
-{
-	int clen;
-	char *pp, *p = strstr(post + SKIP_POST, "Content-Length: ");
-	char *end;
-
-	*key = 0;
-	*coff = 0;
-	if (unlikely(!p))
-		return -1;
-	pp = p + 16; // strlen("Content-Length: ")
-	clen = strtol(pp, &end, 10);
-	if (unlikely(end == pp))
-		return -1;
-	pp = strstr(pp, "\r\n\r\n");
-	if (unlikely(!pp))
-		return -1;
-	pp += 4;
-	*key = *(uint64_t *)pp;
-	*coff = pp - post;
-	return clen;
-}
-#endif
-
 static int
 parse_post(const char *post, const size_t len,
 		size_t *coff, size_t *clen, size_t *thisclen)
@@ -414,104 +317,31 @@ unpack(uint64_t p, uint32_t *idx, uint16_t *off, uint16_t *len)
 	*len = p & 0x000000000000ffff;
 }
 
-static struct netmap_slot *
-set_to_nm(struct netmap_ring *txr, struct netmap_slot *any_slot)
-{
-	struct netmap_slot tmp, *txs = NULL;
-
-	if (unlikely(nm_ring_space(txr) == 0)) {
-		return NULL;
-	}
-	do {
-		txs = &txr->slot[txr->cur];
-		if (unlikely(any_slot == txs)) {
-			break;
-		}
-		tmp = *txs;
-		*txs = *any_slot;
-		txs->flags |= NS_BUF_CHANGED;
-		*any_slot = tmp;
-		any_slot->flags |= NS_BUF_CHANGED; // this might sit on the ring
-	} while (0);
-	txr->cur = txr->head = nm_ring_next(txr, txr->cur);
-	return txs;
-}
-
-enum slot {SLOT_UNKNOWN=0, SLOT_EXTRA, SLOT_USER, SLOT_KERNEL};
-
-static inline int
-between(u_int x, u_int a, u_int b)
-{
-	return x >= a && x < b;
-}
-
-/* no handle on x > a && x > b */
-static inline int
-between_wrap(u_int x, u_int a, u_int b)
-{
-	return a <= b ? between(x, a, b) : !between(x, b, a);
-}
-
-static inline int
-between_slot(struct netmap_slot *s, struct netmap_slot *l, struct netmap_slot *h)
-{
-	return between((uintptr_t)s, (uintptr_t)l, (uintptr_t)h);
-}
-
-#define U(x)	((uintptr_t)(x))
-static inline int
-whose_slot(struct netmap_slot *slot, struct netmap_ring *ring,
-		struct netmap_slot *extra, u_int extra_num)
-{
-	if (between_slot(slot, ring->slot, ring->slot + ring->num_slots)) {
-		if (between_wrap(slot - ring->slot, ring->head, ring->tail))
-			return SLOT_USER;
-		else
-			return SLOT_KERNEL;
-	} else if (between_slot(slot, extra, extra + extra_num)) {
-		return SLOT_EXTRA;
-	}
-	return SLOT_UNKNOWN; // not on ring or extra, maybe kernel's extra
-}
-#undef U
-
 /* For KVS we embed a pointer to a slot in the known position in the buffer */
 
 //POST http://www.micchie.net/ HTTP/1.1\r\nHost: 192.168.11.3:60000\r\nContent-Length: 1280\r\n\r\n2
 //HTTP/1.1 200 OK\r\nConnection: keep-alive\r\nServer: //Apache/2.2.800\r\nContent-Length: 1280\r\n\r\n
-static inline struct netmap_slot*
-unembed(char *nmb, u_int coff)
-{
-	return *(struct netmap_slot **)(nmb + coff + KVS_SLOT_OFF);
-}
 #endif /* WITH_BPLUS */
-
-static inline void
-embed(struct netmap_slot *slot, char *buf)
-{
-	*(struct netmap_slot **)(buf + KVS_SLOT_OFF) = slot;
-}
 
 #ifdef WITH_BPLUS
 static inline void
-nmidx_bplus(gfile_t *vp, btree_key key, struct netmap_slot *slot, size_t off, size_t len)
+nmidx_bplus(gfile_t *vp, btree_key key, uint32_t bufidx, size_t off, size_t len)
 {
 	uint64_t packed;
 	//uint64_t datam;
 	static int unique = 0;
 	int rc;
 
-	packed = pack(slot->buf_idx, off, len);
+	packed = pack(bufidx, off, len);
 	rc = btree_insert(vp, key, packed);
 	if (rc == 0)
 		unique++;
-	ND("key %lu val %lu idx %u off %lu len %lu",
-			key, packed, slot->buf_idx, off, len);
+	ND("k %lu v %lu idx %u off %lu len %lu", key, packed, bufidx, off, len);
 }
 #endif /* WITH_BPLUS */
 
 static inline void
-nmidx_wal(char *paddr, size_t *pos, size_t dbsiz, struct netmap_slot *slot,
+nmidx_wal(char *paddr, size_t *pos, size_t dbsiz, uint32_t bufidx,
 		size_t off, size_t len)
 {
 	uint64_t packed;
@@ -520,7 +350,7 @@ nmidx_wal(char *paddr, size_t *pos, size_t dbsiz, struct netmap_slot *slot,
 	char *p = paddr;
 
 	/* make log */
-	packed = pack(slot->buf_idx, off, len);
+	packed = pack(bufidx, off, len);
 	/* position log */
 	if (unlikely(plen > dbsiz - cur))
 		cur = 0;
@@ -554,9 +384,7 @@ copy_and_log(char *paddr, size_t *pos, size_t dbsiz, char *buf, size_t len,
 	if (unlikely(cur + aligned + mlen > dbsiz)) {
 		cur = 0;
 	}
-	p = paddr + cur;
-	p += mlen; // leave a log entry space
-
+	p = paddr + cur + mlen; // leave a log entry space
 	memcpy(p, buf, len);
 	if (pm) {
 		for (; i < len; i += CLSIZ) {
@@ -565,8 +393,7 @@ copy_and_log(char *paddr, size_t *pos, size_t dbsiz, char *buf, size_t len,
 	}
 	p -= mlen;
 	if (!pm) {
-		int error = msync(p, len + mlen, MS_SYNC);
-		if (error)
+		if (msync(p, len + mlen, MS_SYNC))
 			perror("msync");
 	}
 #ifdef WITH_BPLUS
@@ -603,46 +430,13 @@ httpreq(const char *p)
 	return req;
 }
 
-static inline void
-leftover(int *fde, const ssize_t len, int *is_leftover, size_t *thisclen)
-{
-	if (unlikely(*fde <= 0)) {
-		/* XXX OOB message? Just suppress response */
-		*is_leftover = 1;
-		return;
-	}
-	*fde -= len;
-	if (unlikely(*fde < 0)) {
-		D("bad leftover %d (len %ld)", *fde, len);
-		*fde = 0;
-	} else if (*fde > 0) {
-		D("still have leftover %d", *fde);
-		*is_leftover = 1;
-	}
-	*thisclen = len;
-}
-
-#if 0
-static inline void
-leftover_post(int *fde, const ssize_t len, const ssize_t clen,
-		const int coff, int *thisclen, int *is_leftover)
-{
-	*thisclen = len - coff;
-	if (clen > *thisclen) {
-		*fde = clen - *thisclen;
-		*is_leftover = 1;
-	}
-}
-#endif /* 0 */
-
 static int
-phttpd_req(char *rxbuf, int fd, int len, struct nm_targ *targ, int *no_ok,
-		ssize_t *msglen, char **content, u_int off,
-		struct netmap_ring *txr, struct netmap_ring *rxr,
-		struct netmap_slot *rxs)
+phttpd_req(char *rxbuf, int len, struct nm_msg *m, int *no_ok,
+		ssize_t *msglen, char **content)
 {
-	struct dbctx *db = (struct dbctx *)targ->opaque;
-	int *fde = &targ->fdtable[fd];
+	struct dbctx *db = (struct dbctx *)m->targ->opaque;
+	int *fde = &m->targ->fdtable[m->fd];
+	char *datap;
 
 	const int flags = db->flags;
 	const size_t dbsiz = db->size;
@@ -654,7 +448,18 @@ phttpd_req(char *rxbuf, int fd, int len, struct nm_targ *targ, int *no_ok,
 	size_t coff, clen, thisclen;
 
 	case NONE:
-		leftover(fde, len, no_ok, &thisclen);
+		if (unlikely(*fde <= 0)) {
+			*no_ok = 1;
+			*fde = 0;
+			break;
+		}
+		*fde -= len;
+		if (unlikely(*fde < 0)) {
+			D("bad leftover %d (len %d)", *fde, len);
+			*fde = 0;
+		} else if (*fde > 0) {
+			*no_ok = 1;
+		}
 		break;
 	case POST:
 		if (parse_post(rxbuf, len, &coff, &clen, &thisclen)) {
@@ -664,47 +469,44 @@ phttpd_req(char *rxbuf, int fd, int len, struct nm_targ *targ, int *no_ok,
 			*fde += clen - thisclen;
 			*no_ok = 1;
 		}
-		rxbuf += coff;
-		key = *(uint64_t *)(rxbuf+coff);
+		datap = rxbuf + coff;
+		key = *(uint64_t *)datap;
 
 		if (flags & DF_PASTE) {
 			u_int i = 0;
 			struct netmap_slot tmp, *extra;
-			uint32_t extra_i = netmap_extra_next(targ, &db->cur, 1);
-
+			uint32_t extra_i = netmap_extra_next(m->targ,
+						&db->cur, 1);
+			const u_int off = NETMAP_ROFFSET(m->rxring, m->slot) +
+			       	nm_pst_getuoff(m->slot);
 			/* flush data buffer */
 			for (; i < thisclen; i += CLSIZ) {
-				_mm_clflush(rxbuf + i);
+				_mm_clflush(datap + i);
 			}
 #ifdef WITH_BPLUS
 			if (db->vp) {
-				nmidx_bplus(db->vp, key, rxs,
-					off + coff, thisclen);
+				nmidx_bplus(db->vp, key, m->slot->buf_idx,
+				    off + coff, thisclen);
 			} else
 #endif
 			if (db->paddr) {
 				nmidx_wal(db->paddr, &db->cur, dbsiz,
-				    rxs, off + coff, thisclen);
+				    m->slot->buf_idx, off + coff, thisclen);
 			}
 
 			/* swap out buffer */
-			extra = &targ->extra[extra_i];
-			tmp = *rxs;
-			rxs->buf_idx = extra->buf_idx;
-			rxs->flags |= NS_BUF_CHANGED;
+			extra = &m->targ->extra[extra_i];
+			tmp = *m->slot;
+			m->slot->buf_idx = extra->buf_idx;
+			m->slot->flags |= NS_BUF_CHANGED;
 			*extra = tmp;
 			extra->flags &= ~NS_BUF_CHANGED;
-
-			/* record current slot */
-			if (db->flags & DF_KVS) {
-				embed(extra, rxbuf);
-			}
 		} else if (db->paddr) {
-			copy_and_log(db->paddr, &db->cur, dbsiz, rxbuf,
+			copy_and_log(db->paddr, &db->cur, dbsiz, datap,
 			    thisclen, is_pm(db) ? 0 : db->pgsiz,
 			    is_pm(db), db->vp, key);
 		} else if (db->fd > 0) {
-			if (writesync(rxbuf, len, dbsiz, db->fd,
+			if (writesync(datap, len, dbsiz, db->fd,
 			    &db->cur, flags & DF_FDSYNC)) {
 				return -1;
 			}
@@ -730,37 +532,11 @@ phttpd_req(char *rxbuf, int fd, int len, struct nm_targ *targ, int *no_ok,
 		ND("found key %lu val %lu idx %u off %lu len %lu",
 			key, datum, _idx, _off, _len);
 
+		*msglen = _len;
 		if (flags & DF_PASTE) {
-			enum slot t;
-			struct netmap_slot *s;
-			char *_buf;
-
-			_buf = NETMAP_BUF(rxr, _idx);
-			s = unembed(_buf, _off);
-			t = whose_slot(s, txr, targ->extra, targ->extra_num);
-			if (t == SLOT_UNKNOWN) {
-				*msglen = _len;
-			} else if (t == SLOT_KERNEL ||
-				   s->flags & NS_BUF_CHANGED) {
-				*msglen = _len;
-				*content = _buf + _off;
-			} else { // zero copy
-				struct netmap_slot *txs;
-				u_int hlen;
-
-				txs = set_to_nm(txr, s);
-				nm_pst_setfd(txs, nm_pst_getfd(rxs));
-				txs->len = _off + _len - IPV4TCP_HDRLEN; // XXX
-				embed(txs, _buf + _off);
-				hlen = generate_httphdr(_len, _buf + off);
-				if (unlikely(hlen != _off - off)) {
-					RD(1, "mismatch");
-				}
-				*no_ok = 1;
-			}
+			*content = NETMAP_BUF(m->rxring, _idx) + _off;
 		} else {
 			*content = db->paddr + NETMAP_BUF_SIZE * _idx;
-			*msglen = _len;
 		}
 	}
 #endif /* WITH_BPLUS */
@@ -771,41 +547,47 @@ phttpd_req(char *rxbuf, int fd, int len, struct nm_targ *targ, int *no_ok,
 	return 0;
 }
 
-int
+static int
 phttpd_data(struct nm_msg *m)
 {
-	struct nm_targ *targ = m->targ;
-	struct nm_garg *g = targ->g;
-	struct phttpd_global *pg = (struct phttpd_global *)g->garg_private;
-
-	struct netmap_ring *rxr = m->rxring;
-	struct netmap_ring *txr = m->txring;
-	struct netmap_slot *rxs = m->slot;
-	ssize_t msglen = pg->msglen;
-
-	int len, no_ok = 0;
-	char *rxbuf, *content = NULL;
-	int error;
-	const u_int off = nm_pst_getuoff(rxs);
+	struct phttpd_global *pg = (struct phttpd_global *)
+		m->targ->g->garg_private;
+	ssize_t msglen = pg->msglen, len = 0;
+	int error, no_ok = 0;
+	char *content = NULL;
+	u_int uoff = nm_pst_getuoff(m->slot);
 #ifdef MYHZ
 	struct timespec ts1, ts2, ts3;
 	user_clock_gettime(&ts1);
 #endif
-	rxbuf = NETMAP_BUF_OFFSET(rxr, rxs) + off;
-	len = rxs->len - off;
+
+	len = m->slot->len - uoff;
 	if (unlikely(len == 0)) {
-		close(nm_pst_getfd(rxs));
+		close(m->fd);
 		return 0;
 	}
 
-	error = phttpd_req(rxbuf, nm_pst_getfd(rxs), len, targ, &no_ok,&msglen,
-			&content, off, txr, rxr, rxs);
+	error = phttpd_req(NETMAP_BUF_OFFSET(m->rxring, m->slot) + uoff,
+			len, m, &no_ok, &msglen, &content);
 	if (unlikely(error)) {
 		return error;
 	}
 	if (!no_ok) {
-		generate_http_nm(msglen, txr, IPV4TCP_HDRLEN, nm_pst_getfd(rxs),
-				 pg->http, pg->httplen, content);
+		int httplen = pg->httplen;
+		struct netmap_ring *txr = m->txring;
+		char *p = NETMAP_BUF_OFFSET(txr, &txr->slot[txr->cur])
+			+ IPV4TCP_HDRLEN;
+
+		if (pg->http) {
+			memcpy(p, pg->http, httplen);
+		} else {
+			httplen = generate_httphdr(msglen, p);
+		}
+		len = copy_to_nm(txr, content, msglen, IPV4TCP_HDRLEN + httplen,
+				 IPV4TCP_HDRLEN, m->fd);
+		if (unlikely(len < msglen)) {
+			D("no space");
+		}
 	}
 #ifdef MYHZ
 	user_clock_gettime(&ts2);
@@ -815,46 +597,48 @@ phttpd_data(struct nm_msg *m)
 }
 
 /* We assume GET/POST appears in the beginning of netmap buffer */
-int phttpd_read(int fd, struct nm_targ *targ)
+static int
+phttpd_read(struct nm_msg *m)
 {
-	char buf[MAXQUERYLEN];
-	ssize_t len = 0, written;
-	struct nm_garg *g = targ->g;
-	struct phttpd_global *tg = (struct phttpd_global *)g->garg_private;
+	struct phttpd_global *pg = (struct phttpd_global *)
+		m->targ->g->garg_private;
+	ssize_t msglen = pg->msglen, len = 0;
+	int error, no_ok = 0;
 	char *content = NULL;
-	int no_ok = 0;
-	ssize_t msglen = tg->msglen;
-	int error;
+	char buf[MAXQUERYLEN];
 
-	len = read(fd, buf, sizeof(buf));
+	len = read(m->fd, buf, sizeof(buf));
 	if (len <= 0) {
-		close(fd);
+		close(m->fd);
 		return len == 0 ? 0 : -1;
 	}
 
-	error = phttpd_req(buf, fd, len, targ, &no_ok, &msglen, &content, 0,
-		       	NULL, NULL, NULL);
-	if (error)
+	error = phttpd_req(buf, len, m, &no_ok, &msglen, &content);
+	if (unlikely(error))
 		return error;
-	if (no_ok)
-		return 0;
-	if (tg->httplen && content == NULL) {
-		memcpy(buf, tg->http, tg->httplen);
-		len = tg->httplen + msglen;
-	} else {
-		len = generate_http(msglen, buf, content);
-	}
+	if (!no_ok) {
+		int httplen = pg->httplen;
+
+		if (pg->http) {
+			memcpy(buf, pg->http, httplen);
+		} else {
+			httplen = generate_httphdr(msglen, buf);
+		}
+		if (content) {
+			memcpy(buf + httplen, content, msglen);
+		}
 #ifdef WITH_CLFLUSHOPT
-	_mm_mfence();
-	if (g->emu_delay) {
-		wait_ns(g->emu_delay);
-	}
+		_mm_mfence();
+		if (g->emu_delay) {
+			wait_ns(g->emu_delay);
+		}
 #endif
-	written = write(fd, buf, len);
-	if (unlikely(written < 0)) {
-		perror("write");
-	} else if (unlikely(written < len)) {
-		RD(1, "written %ld len %ld", written, len);
+		len = write(m->fd, buf, httplen + msglen);
+		if (unlikely(len < 0)) {
+			perror("write");
+		} else if (unlikely(len < httplen + msglen)) {
+			RD(1, "written %ld len %ld", len, httplen + msglen);
+		}
 	}
 	return 0;
 }
@@ -1162,11 +946,6 @@ main(int argc, char **argv)
 		}
 		close(fd);
 		nmg.extmem = strdup(path);
-
-		//if (pg.dba.size == 0) {
-		//	/* up to 16 byte metadata per buffer */
-		//	pg.dba.size = nmg.extra_bufs * 8 * 2;
-		//}
 
 		/* checks space for metadata */
 		snprintf(path, sizeof(path), "%s/%s", pg.dba.dir, DATAFILE);
