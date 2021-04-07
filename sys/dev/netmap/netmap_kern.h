@@ -2021,7 +2021,6 @@ PNMB_O(struct netmap_kring *kring, struct netmap_slot *slot, uint64_t *pp)
 	return addr;
 }
 
-
 /*
  * Structure associated to each netmap file descriptor.
  * It is created on open and left unbound (np_nifp == NULL).
