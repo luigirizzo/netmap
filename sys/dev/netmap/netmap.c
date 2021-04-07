@@ -2868,6 +2868,8 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 						&nifp->ni_bufs_head, req->nr_extra_bufs);
 					if (netmap_verbose)
 						nm_prinf("got %d extra buffers", req->nr_extra_bufs);
+				} else {
+					nifp->ni_bufs_head = 0;
 				}
 				req->nr_offset = netmap_mem_if_offset(na->nm_mem, nifp);
 
