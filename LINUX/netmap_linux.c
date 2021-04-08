@@ -1482,7 +1482,7 @@ nm_os_kthread_add(void *f, void *arg, void *proc, struct thread **tdptr,
 }
 
 int
-nm_os_hwcsum_on(struct netmap_adapter *na)
+nm_os_hwcsum_ok(struct netmap_adapter *na)
 {
 	return na->ifp->features & NETIF_F_CSUM_MASK;
 }

@@ -1318,9 +1318,9 @@ nm_os_kthread_add(void *f, void *arg, void *proc, struct thread **tdptr,
 }
 
 int
-nm_os_hwcsum_on(struct netmap_adapter *na)
+nm_os_hwcsum_ok(struct netmap_adapter *na)
 {
-	return 1;
+	return !(if_getcapenable(na->ifp) & IFCAP_HWCSUM);
 }
 #endif /* WITH_PASTE */
 
