@@ -1275,10 +1275,10 @@ pst_unregister_socket(struct pst_so_adapter *soa)
 static void
 pst_sodtor(NM_SOCK_T *so)
 {
-	NM_SOCK_LOCK(so);
+	so_lock(so);
 	if (pst_so(so))
 		pst_unregister_socket(pst_so(so));
-	NM_SOCK_UNLOCK(so);
+	so_unlock(so);
 	if (so->so_dtor) {
 		if (so->so_dtor == pst_sodtor) {
 			panic("recursive so_dtor");
@@ -1331,19 +1331,19 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	if (!so)
 		return EINVAL;
 
-	NM_SOCK_LOCK(so); // sosetopt() internally locks socket
+	so_lock(so); // sosetopt() internally locks socket
 	//udelay(10000);
 #ifdef linux
 	if (sock_flag(so, SOCK_DEAD)) {
 		PST_DBG("so %p SOCK_DEAD", so);
-		NM_SOCK_UNLOCK(so);
+		so_unlock(so);
 		nm_os_sock_fput(so, file);
 		return EINVAL;
 	}
 #endif /* linux */
 	if (pst_so(so)) {
 		PST_DBG("already registered %d", fd);
-		NM_SOCK_UNLOCK(so);
+		so_unlock(so);
 		nm_os_sock_fput(so, file);
 		return EBUSY;
 	}
@@ -1395,7 +1395,7 @@ unlock_return:
 		error = nm_os_pst_sbdrain(na, so);
 	}
 	mtx_unlock(&sna->so_adapters_lock);
-	NM_SOCK_UNLOCK(so);
+	so_unlock(so);
 	nm_os_sock_fput(so, file);
 	return error;
 }

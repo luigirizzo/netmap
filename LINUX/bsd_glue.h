@@ -563,8 +563,8 @@ void netmap_bns_unregister(void);
 
 /* used for paste */
 #define NM_SOCK_T	struct sock
-#define NM_SOCK_LOCK(_s)	lock_sock(_s)
-#define NM_SOCK_UNLOCK(_s)	release_sock(_s)
+#define so_lock(_s)	lock_sock(_s)
+#define so_unlock(_s)	release_sock(_s)
 #define	SOCKBUF_LOCK(sb)
 #define	SOCKBUF_UNLOCK(sb)
 #define pause(_s, _v)		usleep_range((_v) * 1000, (_v) * 1000 + 5000)

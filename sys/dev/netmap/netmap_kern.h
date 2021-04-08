@@ -156,8 +156,6 @@ struct hrtimer {
 #define NM_BNS_PUT(b)
 
 #ifdef WITH_PASTE
-#define NM_SOCK_LOCK(_s)	so_lock(_s)
-#define NM_SOCK_UNLOCK(_s)	so_unlock(_s)
 #define MBUF_NETWORK_OFFSET(m)	(m)->m_pkthdr.l2hlen
 #define MBUF_TRANSPORT_OFFSET(m)	(MBUF_NETWORK_OFFSET(m) + (m)->m_pkthdr.l3hlen)
 #define MBUF_NETWORK_HEADER(m)	mtodo((m), MBUF_NETWORK_OFFSET(m))
