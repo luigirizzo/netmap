@@ -561,9 +561,7 @@ void netmap_bns_unregister(void);
 #define BIT_ULL(nr)	(1ULL << (nr))
 #endif /* !BIT_ULL */
 
-#define strdup(s, type)		  kstrdup(s, GFP_ATOMIC)
 #define curcpu         smp_processor_id()
-#define mp_maxid       (num_online_cpus() - 1) // XXX num_possible_cpus()?
 
 /* used for paste */
 #define NM_SOCK_T	struct sock
