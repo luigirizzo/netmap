@@ -691,15 +691,16 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 
 		while (nm_i != head) {
 			struct netmap_slot *slot = &ring->slot[nm_i];
+			uint64_t offset = nm_get_offset(kring, slot);
+			void *addr = NMB_O(kring, slot);
 			u_int len = slot->len;
-			void *addr = NMB(na, slot);
 			/* device-specific */
 			struct mbuf *m;
 			int tx_ret;
 
-			NM_CHECK_ADDR_LEN(na, addr, len);
+			NM_CHECK_ADDR_LEN_OFF(na, len, offset);
 
-			/* Tale a mbuf from the tx pool (replenishing the pool
+			/* Take a mbuf from the tx pool (replenishing the pool
 			 * entry if necessary) and copy in the user packet. */
 			m = kring->tx_pool[nm_i];
 			if (unlikely(m == NULL)) {
@@ -779,7 +780,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			nm_os_generic_xmit_frame(&a);
 		}
 		/* Update hwcur to the next slot to transmit. Here nm_i
-		 * is not necessarily head, we could break early. */
+		 * is not necessarily head, as we could break early. */
 		kring->nr_hwcur = nm_i;
 
 #ifdef __FreeBSD__
@@ -977,8 +978,7 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 	nm_i = kring->nr_hwtail;
 
 	for (;;) {
-		void *nmaddr;
-		int ofs = 0;
+		int mbuf_ofs = 0;
 		int morefrag;
 
 		m = mbq_dequeue(&tmpq);
@@ -987,8 +987,10 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 		}
 
 		do {
-			nmaddr = NMB(na, &ring->slot[nm_i]);
-			/* We only check the address here on generic rx rings. */
+			struct netmap_slot *slot = ring->slot + nm_i;
+			uint64_t nm_offset = nm_get_offset(kring, slot);
+			void *nmaddr = NMB(na, slot);
+
 			if (nmaddr == NETMAP_BUF_BASE(na)) { /* Bad buffer */
 				m_freem(m);
 				mbq_purge(&tmpq);
@@ -996,10 +998,10 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 				return netmap_ring_reinit(kring);
 			}
 
-			copy = ring->slot[nm_i].len;
-			m_copydata(m, ofs, copy, nmaddr);
-			ofs += copy;
-			morefrag = ring->slot[nm_i].flags & NS_MOREFRAG;
+			copy = slot->len;
+			m_copydata(m, mbuf_ofs, copy, nmaddr + nm_offset);
+			mbuf_ofs += copy;
+			morefrag = slot->flags & NS_MOREFRAG;
 			nm_i = nm_next(nm_i, lim);
 		} while (morefrag);
 
@@ -1111,7 +1113,7 @@ generic_netmap_attach(struct ifnet *ifp)
 	/* when using generic, NAF_NETMAP_ON is set so we force
 	 * NAF_SKIP_INTR to use the regular interrupt handler
 	 */
-	na->na_flags = NAF_SKIP_INTR | NAF_HOST_RINGS;
+	na->na_flags = NAF_SKIP_INTR | NAF_HOST_RINGS | NAF_OFFSETS;
 
 	nm_prdis("[GNA] num_tx_queues(%d), real_num_tx_queues(%d), len(%lu)",
 			ifp->num_tx_queues, ifp->real_num_tx_queues,
