@@ -43,7 +43,9 @@
 #include <linux/sched/mm.h>
 #endif /* NETMAP_LINUX_HAVE_SCHED_MM */
 #ifdef WITH_PASTE
+#include <linux/file.h> // sockfd_put()/fput()
 #include <linux/tcp.h>
+#include <net/tcp.h>
 #include <net/sock.h> // sock_owned_by_user
 #include <net/netmap_paste.h>
 #endif /* WITH_PASTE */

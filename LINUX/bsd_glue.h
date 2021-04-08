@@ -59,8 +59,6 @@
 #include <linux/io.h>	// virt_to_phys
 #include <linux/hrtimer.h>
 #include <linux/highmem.h> // kmap
-#include <linux/file.h> // sockfd_put()/fput()
-#include <net/tcp.h>	// TCP_NAGLE_PUSH
 
 #define KASSERT(a, b)		BUG_ON(!(a))
 
