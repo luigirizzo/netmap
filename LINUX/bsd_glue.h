@@ -60,9 +60,6 @@
 #include <linux/hrtimer.h>
 #include <linux/highmem.h> // kmap
 #include <linux/file.h> // sockfd_put()/fput()
-#include <net/ip.h>	// struct ipcm_cookie
-#include <uapi/linux/udp.h>	// struct udphdr
-#include <net/udp.h>	// udp_push_pending_frames
 #include <net/tcp.h>	// TCP_NAGLE_PUSH
 
 #define KASSERT(a, b)		BUG_ON(!(a))
