@@ -1100,7 +1100,7 @@ pst_kwait(void *data)
 		}
 		if (!pst_extra_noref(&sna->up.up)) {
 			if (netmap_verbose)
-				nm_prinf("waiting for mbufs gone");
+				nm_prinf("waiting for mbufs to go");
 			if (s == false)
 				lim--;
 			s = true;

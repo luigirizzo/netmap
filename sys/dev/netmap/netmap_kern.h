@@ -1261,7 +1261,6 @@ struct pst_so_adapter {
 
 struct netmap_pst_adapter {
 	struct netmap_vp_adapter up;
-	//NM_LIST_HEAD so_adapters;
 	int (*save_reg)(struct netmap_adapter *na, int onoff);
 #ifdef linux
 	struct net_device_ops stack_ndo;
