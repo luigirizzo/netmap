@@ -1332,7 +1332,6 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 		return EINVAL;
 
 	so_lock(so); // sosetopt() internally locks socket
-	//udelay(10000);
 #ifdef linux
 	if (sock_flag(so, SOCK_DEAD)) {
 		PST_DBG("so %p SOCK_DEAD", so);
