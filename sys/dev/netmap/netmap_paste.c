@@ -756,6 +756,9 @@ enum i40e_tx_desc_length_fields {
 	I40E_TX_DESC_LENGTH_L4_FC_LEN_SHIFT	= 14 /* 4 BITS */
 };
 
+#ifndef ETH_HDR_LEN
+#define ETH_HDR_LEN	ETH_HLEN
+#endif
 static inline int
 csum_ctx(uint32_t *cmd, uint32_t *off,
 		struct nm_iphdr *iph, struct nm_tcphdr *th)
@@ -1562,7 +1565,7 @@ netmap_pst_rxsync(struct netmap_kring *kring, int flags)
 	struct netmap_pst_adapter *sna = tosna(kring->na);
 	struct nm_bridge *b = sna->up.na_bdg;
 	int i, err;
-	register_t intr;
+	u_int intr;
 
 	if (unlikely(!pst_bdg_valid(kring->na))) {
 		return 0;

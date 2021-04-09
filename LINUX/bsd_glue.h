@@ -587,8 +587,7 @@ struct nm_ubuf_info {
 	(cb)->ui.ubuf.desc = (uintptr_t)(slot);\
 } while (0)
 
-typedef u_int	register_t;
-static inline register_t
+static inline u_int
 intr_disable(void)
 {
 	local_bh_disable();
@@ -596,7 +595,7 @@ intr_disable(void)
 }
 
 static inline void
-intr_restore(register_t intr)
+intr_restore(u_int intr)
 {
 	local_bh_enable();
 }
@@ -614,8 +613,6 @@ pst_wso(struct pst_so_adapter *soa, NM_SOCK_T *sk)
 {
 	sk->sk_user_data = soa;
 }
-
-#define ETH_HDR_LEN	ETH_HLEN
 
 /* Since FreeBSD doesn't have generic callback for a receive-data-ready event,
  * we so far use a bit high level macro, also for destructor..

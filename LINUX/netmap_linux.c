@@ -1270,7 +1270,6 @@ nm_os_pst_sbdrain(struct netmap_adapter *na, NM_SOCK_T *sk)
 		return 0;
 	}
 	else if (!nmcb_valid(NMCB(m))) {
-		nm_prinf("invalid m to drain");
 		return 0;
 	}
 	/* No need for BDG_RLOCK() - we don't move packets to pst na */
