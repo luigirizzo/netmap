@@ -143,7 +143,7 @@ struct nm_garg {
 	int options;
 	int targ_opaque_len; // passed down to targ
 
-	struct nm_ifreq ifreq;
+	struct nmreq_header nm_hdr; // cache decoded
 	int (*data)(struct nm_msg *);
 	void (*connection)(struct nm_msg *);
 	int (*read)(struct nm_msg *);
@@ -180,7 +180,6 @@ struct nm_targ {
 	uint32_t extra_num;
 	int *fdtable;
 	int fdtable_siz;
-	struct nm_ifreq ifreq;
 #ifdef linux
 	struct epoll_event evts[EPOLLEVENTS];
 #else
@@ -931,6 +930,7 @@ netmap_worker(void *data)
 	struct nm_garg *g = t->g;
 	struct nmport_d *nmd = t->nmd;
 	struct pollfd pfd[2] = {{ .fd = t->fd }}; // XXX make variable size
+	struct nmreq_header hdr = g->nm_hdr;
 #if DEBUG_SOCKET
 	int acceptfds[DEFAULT_NFDS];
 
@@ -984,7 +984,6 @@ netmap_worker(void *data)
 		}
 		t->extra_num = i;
 		D("imported %u extra buffers", i);
-		t->ifreq = g->ifreq;
 	} else if (g->dev_type == DEV_SOCKET) {
 #ifdef linux
 		struct epoll_event ev;
@@ -1051,10 +1050,10 @@ netmap_worker(void *data)
 			for (i = 1; i <= t->g->fdnum; i++) {
 				struct sockaddr_storage tmp;
 				struct sockaddr *sa = (struct sockaddr *)&tmp;
-				struct nm_ifreq *ifreq = &g->ifreq;
 				int newfd;
 				socklen_t len = sizeof(tmp);
 				int e;
+				struct nmreq_pst_fd_reg fdr;
 
 				if (!(pfd[i].revents & POLLIN))
 					continue;
@@ -1064,9 +1063,11 @@ netmap_worker(void *data)
 					/* ignore this socket */
 					continue;
 				}
-				memcpy(ifreq->data, &newfd, sizeof(newfd));
+
+				fdr.fd = newfd;
+				hdr.nr_body = (uintptr_t)&fdr;
+				e = ioctl(t->fd, NIOCCTRL, &hdr);
 				//D("registering fd %d", newfd);
-				e = ioctl(t->fd, NIOCCONFIG, ifreq);
 				//D("done fd %d", newfd);
 				//if (ioctl(t->fd, NIOCCONFIG, ifreq)) {
 				if (e) {
@@ -1268,12 +1269,15 @@ netmap_eventloop(const char *name, char *ifname, void **ret, int *error, int *fd
 	strncpy(g->ifname, name, sizeof(g->ifname) - 1);
 	D("name %s g->ifname %s ifname %s", name, g->ifname, ifname);
 	if (ifname && strlen(ifname)) {
-		struct nm_ifreq *r = &g->ifreq;
+		struct nmreq_header *h = &g->nm_hdr;
 
 		strncpy(g->ifname2, ifname, sizeof(g->ifname2));
 		/* pre-initialize ifreq for accept() */
-		bzero(r, sizeof(*r));
-		memcpy(r->nifr_name, hdr.nr_name, sizeof(r->nifr_name));
+		bzero(h, sizeof(*h));
+		memcpy(h->nr_name, hdr.nr_name, sizeof(h->nr_name));
+		h->nr_version = NETMAP_API;
+		h->nr_reqtype = NETMAP_REQ_PST_FD_REG;
+		// nr_body is per thread
 	}
 	g->garg_private = garg_private;
 	*error = nm_start(g);
