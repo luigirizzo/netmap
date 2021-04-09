@@ -1302,7 +1302,7 @@ netmap_pst_bdg_dtor(const struct netmap_vp_adapter *vpna)
 }
 
 /* not NMG_LOCK held */
-static int
+int
 pst_register_fd(struct netmap_adapter *na, int fd)
 {
 	NM_SOCK_T *so;
@@ -1310,7 +1310,7 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	struct pst_so_adapter *soa;
 	struct netmap_pst_adapter *sna = tosna(na);
 	int error = 0;
-       
+
 	if (unlikely(fd > NM_PST_FD_MAX)) {
 		PST_DBG("fd %d too high", fd);
 		return ENOMEM;
@@ -1388,30 +1388,6 @@ unlock_return:
 	mtx_unlock(&sna->so_adapters_lock);
 	so_unlock(so);
 	nm_os_sock_fput(so, file);
-	return error;
-}
-
-/* under BDG_LCOK */
-static int
-netmap_pst_bdg_config(struct nm_ifreq *ifr)
-{
-	struct netmap_adapter *na;
-	int fd = *(int *)ifr->data;
-	struct nmreq_header hdr;
-	int error;
-
-	strncpy(hdr.nr_name, ifr->nifr_name, sizeof(hdr.nr_name));
-	NMG_LOCK();
-	error = netmap_get_pst_na(&hdr, &na, NULL, 0);
-	NMG_UNLOCK();
-	if (!error && na != NULL) {
-		error = pst_register_fd(na, fd);
-	}
-	if (na) {
-		//NMG_LOCK();
-		netmap_adapter_put(na);
-		//NMG_UNLOCK();
-	}
 	return error;
 }
 
@@ -1587,10 +1563,9 @@ netmap_pst_rxsync(struct netmap_kring *kring, int flags)
 			bk = NMR(na, NR_TX)[j];
 			hk = NMR(hwna, NR_RX)[last + (j % hostnr)];
 			/*
-			 * poststack has been deferred because we do not want
-			 * it to run in bdg_config context with bridge lock
-			 * held. Thus, if we have some packets originated by
-			 * this NIC ring, just drain it without NIC's rxsync.
+			 * We do not run pst_poststack() in the drain context.
+			 * nm_os_pst_drain() may have drained the buffers
+			 * arrived at socket and linked to the fdtable.
 			 */
 			if (pst_fdt(bk)->npkts > 0) {
 				pst_poststack(bk);
@@ -1791,7 +1766,6 @@ netmap_pst_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 
 struct netmap_bdg_ops pst_bdg_ops = {
 	.lookup = NULL,
-	.config = netmap_pst_bdg_config,
 	.dtor = netmap_pst_bdg_dtor,
 	.vp_create = netmap_pst_vp_create,
 	.bwrap_attach = netmap_pst_bwrap_attach,

@@ -3120,6 +3120,20 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			error = netmap_bdg_detach(hdr, NULL /* userspace request */);
 			break;
 		}
+		case NETMAP_REQ_PST_FD_REG: {
+			struct nmreq_pst_fd_reg *fdr =
+				(struct nmreq_pst_fd_reg *)hdr->nr_body;
+			NMG_LOCK();
+			error = netmap_get_pst_na(hdr, &na, NULL, 0);
+			NMG_UNLOCK();
+			if (!error && na) {
+				error = pst_register_fd(na, fdr->fd);
+			}
+			if (na) {
+				netmap_adapter_put(na);
+			}
+			break;
+		}
 #endif /* WITH_PASTE */
 
 		default: {
@@ -3245,6 +3259,8 @@ nmreq_size_by_type(uint16_t nr_reqtype)
 		return sizeof(struct nmreq_vale_attach);
 	case NETMAP_REQ_PST_DETACH:
 		return sizeof(struct nmreq_vale_detach);
+	case NETMAP_REQ_PST_FD_REG:
+		return sizeof(struct nmreq_pst_fd_reg);
 	}
 	return 0;
 }

@@ -560,6 +560,9 @@ enum {
 	NETMAP_REQ_PST_ATTACH,
 	/* Detach a netmap port from a PASTE port. */
 	NETMAP_REQ_PST_DETACH,
+	/* Register a fd to a PASTE port. */
+	/* Detach a netmap port from a PASTE port. */
+	NETMAP_REQ_PST_FD_REG,
 };
 
 enum {
@@ -793,6 +796,11 @@ struct nmreq_sync_kloop_start {
 	 * when there is no work to do, before doing another kloop iteration.
 	 */
 	uint32_t	sleep_us;
+	uint32_t	pad1;
+};
+
+struct nmreq_pst_fd_reg {
+	uint32_t	fd;
 	uint32_t	pad1;
 };
 
