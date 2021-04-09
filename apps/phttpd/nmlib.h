@@ -1067,9 +1067,6 @@ netmap_worker(void *data)
 				fdr.fd = newfd;
 				hdr.nr_body = (uintptr_t)&fdr;
 				e = ioctl(t->fd, NIOCCTRL, &hdr);
-				//D("registering fd %d", newfd);
-				//D("done fd %d", newfd);
-				//if (ioctl(t->fd, NIOCCONFIG, ifreq)) {
 				if (e) {
 					perror("ioctl");
 					if (errno == ENOTCONN) {
