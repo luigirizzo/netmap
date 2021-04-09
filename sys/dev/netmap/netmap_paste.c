@@ -215,29 +215,26 @@ pst_extra_noref(struct netmap_adapter *na)
 {
 	struct netmap_adapter *port;
 	struct nm_bridge *b = ((struct netmap_vp_adapter *)na)->na_bdg;
-	enum txrx t;
 	int i, j;
 
 	for_bdg_ports(i, b) {
 		port = &b->bdg_ports[i]->up;
-		for_rx_tx(t) {
-			for (j = 0; j < netmap_real_rings(port, t); j++) {
-				struct netmap_kring *kr = NMR(port, t)[j];
+		for (j = 0; j < netmap_real_rings(port, NR_TX); j++) {
+			struct netmap_kring *kr = NMR(port, NR_TX)[j];
 
-				if (pst_peek_extra_ref(kr) > 0) {
-					struct pst_extra_pool *p;
-					u_int k, n = 0;
+			if (pst_peek_extra_ref(kr) > 0) {
+				struct pst_extra_pool *p;
+				u_int k, n = 0;
 
-					p = kr->extra;
-					for (k = p->busy; k != p->busy_tail;) {
-						k = p->slots[k].next;
-						n++;
-					}
-					PST_DBG("%s ref %d busy slots %d",
-					  kr->name, pst_peek_extra_ref(kr), n);
-
-					return 0;
+				p = kr->extra;
+				for (k = p->busy; k != p->busy_tail;) {
+					k = p->slots[k].next;
+					n++;
 				}
+				PST_DBG("%s ref %d busy slots %d",
+				  kr->name, pst_peek_extra_ref(kr), n);
+
+				return 0;
 			}
 		}
 	}
@@ -952,13 +949,10 @@ pst_extra_free_kring(struct netmap_kring *kring)
 static void
 pst_extra_free(struct netmap_adapter *na)
 {
-	enum txrx t;
 	int i;
 
-	for_rx_tx(t) {
-		for (i = 0; i < netmap_real_rings(na, t); i++) {
-			pst_extra_free_kring(NMR(na, t)[i]);
-		}
+	for (i = 0; i < netmap_real_rings(na, NR_TX); i++) {
+		pst_extra_free_kring(NMR(na, NR_TX)[i]);
 	}
 }
 
@@ -1011,18 +1005,13 @@ pst_extra_alloc_kring(struct netmap_kring *kring)
 static int
 pst_extra_alloc(struct netmap_adapter *na)
 {
-	enum txrx t;
 	int error = 0, i;
 
-	for_rx_tx(t) {
-		if (error)
-			break;
 		/* XXX probably we don't need extra on host rings */
-		for (i = 0; i < netmap_real_rings(na, t); i++) {
-			if (pst_extra_alloc_kring(NMR(na, t)[i])) {
-				error = ENOMEM;
-				break;
-			}
+	for (i = 0; i < netmap_real_rings(na, NR_TX); i++) {
+		if (pst_extra_alloc_kring(NMR(na, NR_TX)[i])) {
+			error = ENOMEM;
+			break;
 		}
 	}
 	if (error)
