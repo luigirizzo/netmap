@@ -293,7 +293,6 @@ nm_start_threads(struct nm_garg *g)
 				strlcpy(mempcpy(name, t->nmd->hdr.nr_name, nl),
 						suff, sizeof(name) - nl);
 				free(suff);
-				strlcat(name, "/V", sizeof(name));
 				if (nmport_parse(t->nmd, name)) {
 					D("failed in nmport_parse %s", name);
 					continue;
@@ -505,13 +504,6 @@ nm_start(struct nm_garg *g)
 			return -EINVAL;
 		}
 		strlcat(g->ifname, "-0", sizeof(g->ifname));
-	}
-
-	if (strlen(g->ifname) + 2 < sizeof(g->ifname) - 1) {
-		strlcat(g->ifname, "/V", sizeof(g->ifname));
-	} else {
-		D("no space in g->ifname");
-		return -EINVAL;
 	}
 
 	if (g->nthreads > 1) {
