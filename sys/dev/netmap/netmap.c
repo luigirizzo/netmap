@@ -1032,7 +1032,9 @@ netmap_do_unregif(struct netmap_priv_d *priv)
 #endif
 
 	if (na->active_fds <= 0 || nm_kring_pending(priv)) {
+		netmap_set_all_rings(na, NR_KR_LOCKED);
 		na->nm_register(na, 0);
+		netmap_set_all_rings(na, 0);
 	}
 
 	/* delete rings and buffers that are no longer needed */
@@ -2633,7 +2635,9 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 	if (nm_kring_pending(priv)) {
 		/* Some kring is switching mode, tell the adapter to
 		 * react on this. */
+		netmap_set_all_rings(na, NM_KR_LOCKED);
 		error = na->nm_register(na, 1);
+		netmap_set_all_rings(na, 0);
 		if (error)
 			goto err_del_if;
 	}
