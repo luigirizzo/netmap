@@ -425,19 +425,9 @@ igb_netmap_configure_tx_ring(struct SOFTC_T *adapter, int ring_nr)
 static int
 igb_netmap_bufcfg(struct netmap_kring *kring, uint64_t target)
 {
-	struct SOFTC_T *adapter = netdev_priv(kring->na->ifp);
-	struct igb_ring* rxr = adapter->rx_ring[kring->ring_id];
-	uint32_t rctl;
-
 	if (kring->tx == NR_TX) {
 		kring->hwbuf_len = target;
 		return 0;
-	}
-
-	rctl = READ_RCTL(adapter, rxr);
-	if (!(rctl & (E1000_RCTL_LPE|E1000_RCTL_SBP))) {
-		if (adapter->max_frame_size < target)
-			target = kring->offset_gap;
 	}
 
 	target >>= 10;

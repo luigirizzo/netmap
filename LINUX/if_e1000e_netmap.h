@@ -144,21 +144,12 @@ e1000e_netmap_get_rctl(uint32_t bufsize)
 static int
 e1000e_netmap_bufcfg(struct netmap_kring *kring, uint64_t target)
 {
-	struct SOFTC_T *adapter = netdev_priv(kring->na->ifp);
-	struct e1000_hw *hw = &adapter->hw;
 	uint64_t bufsz;
 	struct e1000e_netmap_szdesc *sz;
-	uint32_t rctl;
 
 	if (kring->tx == NR_TX) {
 		kring->hwbuf_len = target;
 		return 0;
-	}
-
-	rctl = er32(RCTL);
-	if (!(rctl & (E1000_RCTL_LPE|E1000_RCTL_SBP))) {
-		if (adapter->max_frame_size < target)
-			target = kring->offset_gap;
 	}
 
 	bufsz = 0;
