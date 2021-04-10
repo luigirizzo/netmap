@@ -79,7 +79,7 @@ nm_swap_reset(struct netmap_slot *s, struct netmap_slot *d)
 {
 	nm_swap(s, d);
 	s->len = 0;
-	nm_pst_reset_fduoff(s);
+	nm_pst_reset_fddoff(s);
 }
 
 static inline u_int
@@ -813,7 +813,7 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 	char *nmb;
 	int mismatch;
 	const u_int bufsize = NETMAP_BUF_SIZE(na);
-	u_int doff, uoff;
+	u_int poff, doff;
 
 #ifdef __FreeBSD__
 	struct mbuf *md = m;
@@ -869,16 +869,16 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 		panic("nmb %p cb %p", nmb, cb);
 	}
 	/* bring protocol headers in */
-	doff = nm_get_offset(kring, slot);
-	uoff = nm_pst_getuoff(slot);
-	mismatch = MBUF_HEADLEN(m) - (int)uoff;
+	poff = nm_get_offset(kring, slot);
+	doff = nm_pst_getdoff(slot);
+	mismatch = MBUF_HEADLEN(m) - (int)doff;
 	if (!mismatch) {
 		/* Length has already been validated */
-		memcpy(nmb + doff, MBUF_DATA(m), uoff);
+		memcpy(nmb + poff, MBUF_DATA(m), doff);
 		PST_DBG_LIM("zerocopy done (hlen %u)", MBUF_HEADLEN(m));
 	} else {
-		m_copydata(m, 0, MBUF_LEN(m), nmb + doff);
-		PST_DBG_LIM("copy (hlen %u uoff %u)", MBUF_HEADLEN(m), uoff);
+		m_copydata(m, 0, MBUF_LEN(m), nmb + poff);
+		PST_DBG_LIM("copy (hlen %u doff %u)", MBUF_HEADLEN(m), doff);
 		slot->len += mismatch;
 	}
 
@@ -886,7 +886,7 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 		struct nm_iphdr *iph;
 		struct nm_tcphdr *tcph;
 		uint16_t *check;
-		int len, v = doff;
+		int len, v = poff;
 
 		mbuf_proto_headers(m);
 		iph = (struct nm_iphdr *)(nmb + v + MBUF_NETWORK_OFFSET(m));

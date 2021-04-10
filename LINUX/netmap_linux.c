@@ -1213,9 +1213,9 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 			continue;
 		}
 		nm_pst_setfd(slot, pst_so(sk)->fd);
-		nm_pst_setuoff(slot, (uint16_t)
+		nm_pst_setdoff(slot, (uint16_t)
 			       skb_headroom(m) - nm_get_offset(kring, slot));
-		slot->len = skb_headlen(m) + nm_pst_getuoff(slot);
+		slot->len = skb_headlen(m) + nm_pst_getdoff(slot);
 		/*
 		 * We might have leftover for the previous connection with
 		 * the same fd value. Overwrite it if this is new connection.
@@ -1389,7 +1389,7 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	void *nmb;
 	int err, pageref = 0;
 	const u_int offset = nm_get_offset(kring, slot);
-	const u_int pst_offset = nm_pst_getuoff(slot);
+	const u_int pst_offset = nm_pst_getdoff(slot);
 
 	if (unlikely(slot->len <  pst_offset)) {
 		return -EINVAL;

@@ -480,7 +480,7 @@ phttpd_req(char *rxbuf, int len, struct nm_msg *m, int *no_ok,
 			uint32_t extra_i = netmap_extra_next(m->targ,
 						&db->cur, 1);
 			const u_int off = NETMAP_ROFFSET(m->rxring, m->slot) +
-			       	nm_pst_getuoff(m->slot);
+			       	nm_pst_getdoff(m->slot);
 			/* flush data buffer */
 			for (; i < thisclen; i += CLSIZ) {
 				_mm_clflush(datap + i);
@@ -557,19 +557,19 @@ phttpd_data(struct nm_msg *m)
 	ssize_t msglen = pg->msglen, len = 0;
 	int error, no_ok = 0;
 	char *content = NULL;
-	u_int uoff = nm_pst_getuoff(m->slot);
+	u_int doff = nm_pst_getdoff(m->slot);
 #ifdef MYHZ
 	struct timespec ts1, ts2, ts3;
 	user_clock_gettime(&ts1);
 #endif
 
-	len = m->slot->len - uoff;
+	len = m->slot->len - doff;
 	if (unlikely(len == 0)) {
 		close(m->fd);
 		return 0;
 	}
 
-	error = phttpd_req(NETMAP_BUF_OFFSET(m->rxring, m->slot) + uoff,
+	error = phttpd_req(NETMAP_BUF_OFFSET(m->rxring, m->slot) + doff,
 			len, m, &no_ok, &msglen, &content);
 	if (unlikely(error)) {
 		return error;

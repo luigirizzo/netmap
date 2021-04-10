@@ -1035,7 +1035,7 @@ nm_os_pst_upcall(NM_SOCK_T *so, void *x, int y)
 			goto skip_mfree;
 		}
 		nm_pst_setfd(slot, pst_so(so)->fd);
-		nm_pst_setuoff(slot,
+		nm_pst_setdoff(slot,
 			m->m_data - M_START(m) - nm_get_offset(kring, slot));
 		pst_fdtable_add(cb, kring);
 #ifdef PST_MB_RECYCLE
@@ -1228,7 +1228,7 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 		if (soa != NULL && nmcb_rstate(cb) == MB_NOREF) {
 			nm_pst_setfd(slot, soa->fd);
 			nm_prdis("soa %p soa->fd %d", soa, soa->fd);
-			nm_pst_setuoff(slot, 0);
+			nm_pst_setdoff(slot, 0);
 			pst_fdtable_add(cb, kring);
 		}
 	}
@@ -1253,7 +1253,7 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	struct nmcb *cb = NMCB_BUF(nmb);
 	int flags = MSG_DONTWAIT | MSG_DONTROUTE;
 	const u_int offset = nm_get_offset(kring, slot);
-	const u_int pst_offset = nm_pst_getuoff(slot);
+	const u_int pst_offset = nm_pst_getdoff(slot);
 
 	if (unlikely(slot->len <  pst_offset)) {
 		return -EINVAL;

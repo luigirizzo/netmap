@@ -20,21 +20,21 @@ nm_pst_setfd(struct netmap_slot *slot, int32_t fd)
 }
 
 static inline uint16_t
-nm_pst_getuoff(struct netmap_slot *slot)
+nm_pst_getdoff(struct netmap_slot *slot)
 {
 	return (uint16_t)
 	       ((slot->ptr & NS_PST_OFST_MASK) >> NS_PST_OFST_SHIFT);
 }
 
 static inline void
-nm_pst_setuoff(struct netmap_slot *slot, uint16_t ofst)
+nm_pst_setdoff(struct netmap_slot *slot, uint16_t ofst)
 {
 	slot->ptr = (slot->ptr & ~NS_PST_OFST_MASK) |
 		    (( (uint64_t)ofst << NS_PST_OFST_SHIFT) & NS_PST_OFST_MASK);
 }
 
 static inline void
-nm_pst_reset_fduoff(struct netmap_slot *slot)
+nm_pst_reset_fddoff(struct netmap_slot *slot)
 {
 	slot->ptr = (slot->ptr & ~(NS_PST_FD_MASK | NS_PST_OFST_MASK));
 }

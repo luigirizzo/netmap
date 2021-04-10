@@ -704,7 +704,7 @@ netmap_sendmsg (struct nm_msg *msgp, void *data, size_t len)
 	memcpy (p, data, len);
 	slot->len = IPV4TCP_HDRLEN + len;
 	nm_pst_setfd(slot, nm_pst_getfd(msgp->slot));
-	nm_pst_setuoff(slot, IPV4TCP_HDRLEN);
+	nm_pst_setdoff(slot, IPV4TCP_HDRLEN);
 	ND("slot->buf_idx %u slot->len %u slot->fd %u", slot->buf_idx, slot->len, nm_pst_getfd(slot));
 	ring->cur = ring->head = nm_ring_next(ring, cur);
 	return len;
@@ -740,7 +740,7 @@ netmap_copy_out(struct nm_msg *nmsg)
 	char *p, *ep;
 	uint32_t i = slot->buf_idx;
 	uint32_t extra_i = netmap_extra_next(t, (size_t *)&t->extra_cur, 0);
-	u_int off = nm_pst_getuoff(slot);
+	u_int off = nm_pst_getdoff(slot);
 	u_int len = slot->len;
 	struct netmap_slot tmp = {.buf_idx = extra_i};
 
@@ -835,7 +835,7 @@ do_nm_ring(struct nm_targ *t, int ring_nr)
 		struct nm_msg m = {.rxring = rxr, .txring = txr, .slot = rxs, .targ = t, .fd = nm_pst_getfd(rxs)} ;
 
 		t->g->data(&m);
-		nm_update_ctr(t, 1, rxs->len - nm_pst_getuoff(rxs));
+		nm_update_ctr(t, 1, rxs->len - nm_pst_getdoff(rxs));
 	}
 	rxr->head = rxr->cur = rxcur;
 #ifdef WITH_CLFLUSHOPT
@@ -1308,7 +1308,7 @@ copy_to_nm(struct netmap_ring *ring, const char *data,
 			nm_pkt_copy(data + copied, p, l);
 		}
 		slot->len = off0 + l;
-		nm_pst_setuoff(slot, off);
+		nm_pst_setdoff(slot, off);
 		nm_pst_setfd(slot, fd);
 		copied += l;
 		off0 = off;
