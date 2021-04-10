@@ -280,7 +280,6 @@ i40e_netmap_attach(struct i40e_vsi *vsi)
 	na.ifp = vsi->netdev;
 	na.pdev = &vsi->back->pdev->dev;
 	na.na_flags = NAF_MOREFRAG | NAF_OFFSETS;
-	na.na_flags |= NAF_CSUM;
 	na.num_tx_desc = NM_I40E_TX_RING(vsi, 0)->count;
 	na.num_rx_desc = NM_I40E_RX_RING(vsi, 0)->count;
 	na.num_tx_rings = na.num_rx_rings = vsi->num_queue_pairs;
@@ -428,16 +427,6 @@ i40e_netmap_txsync(struct netmap_kring *kring, int flags)
 			/* Fill the slot in the NIC ring.
 			 * (we should investigate if using legacy descriptors
 			 * is faster). */
-#ifdef WITH_PASTE
-			if (slot->flags & NS_CSUM) {
-				u32 cmd = NMCB_BUF(NMB(na, slot))->cmd;
-				u32 off = NMCB_BUF(NMB(na, slot))->off;
-				hw_flags |=
-				    ((u64)cmd << I40E_TXD_QW1_CMD_SHIFT) |
-				    ((u64)off << I40E_TXD_QW1_OFFSET_SHIFT);
-				slot->flags &= ~NS_CSUM;
-			}
-#endif /* WITH_PASTE */
 			curr->buffer_addr = htole64(paddr + offset);
 			curr->cmd_type_offset_bsz = htole64(
 			    ((u64)len << I40E_TXD_QW1_TX_BUF_SZ_SHIFT) |
@@ -485,49 +474,6 @@ i40e_netmap_txsync(struct netmap_kring *kring, int flags)
 	return 0;
 }
 
-static inline int
-i40e_netmap_rx_checksum(uint64_t qword, uint32_t rx_status)
-{
-	bool ipv4, ipv6;
-	struct i40e_rx_ptype_decoded decoded;
-	u8 ptype = (qword & I40E_RXD_QW1_PTYPE_MASK)
-			>> I40E_RXD_QW1_PTYPE_SHIFT;
-	u32 rx_error = (qword & I40E_RXD_QW1_ERROR_MASK)
-			>> I40E_RXD_QW1_ERROR_SHIFT;
-
-	if (!(rx_status & BIT(I40E_RX_DESC_STATUS_L3L4P_SHIFT)))
-		return 0;
-	decoded = decode_rx_desc_ptype(ptype);
-	if (!(decoded.known && decoded.outer_ip))
-		return 0;
-	ipv4 = (decoded.outer_ip == I40E_RX_PTYPE_OUTER_IP) &&
-	       (decoded.outer_ip_ver == I40E_RX_PTYPE_OUTER_IPV4);
-	ipv6 = (decoded.outer_ip == I40E_RX_PTYPE_OUTER_IP) &&
-	       (decoded.outer_ip_ver == I40E_RX_PTYPE_OUTER_IPV6);
-	if (ipv4 &&
-	    (rx_error & (BIT(I40E_RX_DESC_ERROR_IPE_SHIFT) |
-		         BIT(I40E_RX_DESC_ERROR_EIPE_SHIFT))))
-		return -1;
-	if (ipv6 &&
-	    rx_status & BIT(I40E_RX_DESC_STATUS_IPV6EXADD_SHIFT))
-		return 0;
-	if (rx_error & BIT(I40E_RX_DESC_ERROR_L4E_SHIFT))
-		return -1;
-	if (rx_error & BIT(I40E_RX_DESC_ERROR_PPRS_SHIFT))
-		return 0;
-	if (decoded.tunnel_type >= I40E_RX_PTYPE_TUNNEL_IP_GRENAT)
-		return 0; // skb->csum_level = 1
-	switch (decoded.inner_prot) {
-	case I40E_RX_PTYPE_INNER_PROT_TCP:
-	case I40E_RX_PTYPE_INNER_PROT_UDP:
-	case I40E_RX_PTYPE_INNER_PROT_SCTP:
-		return 1; /* CHECKSUM_UNNECESSARY */
-		/* fall though */
-	default:
-		break;
-	}
-	return 0;
-}
 
 /*
  * Reconcile kernel and user view of the receive ring.
@@ -633,9 +579,6 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev,
 					&paddr, slot->len, NR_RX);
 
-			if ((ifp->features & NETIF_F_RXCSUM) &&
-			    (i40e_netmap_rx_checksum(qword, staterr) == 1))
-				slot->flags |= NS_CSUM;
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
