@@ -146,7 +146,7 @@ static u_int stat_minnfds;
 static uint64_t stat_vnfds;
 #endif /* 0 */
 
-static char *HTTPHDR = "HTTP/1.1 200 OK\r\n"
+static char *HTTPHDR = (char *)"HTTP/1.1 200 OK\r\n"
 		 "Connection: keep-alive\r\n"
 		 "Server: Apache/2.2.800\r\n"
 		 "Content-Length: ";
@@ -178,10 +178,10 @@ generate_httphdr(size_t content_length, char *buf)
 
 #define SKIP_POST	48
 static int
-parse_post(const char *post, const size_t len,
+parse_post(char *post, const size_t len,
 		size_t *coff, size_t *clen, size_t *thisclen)
 {
-	char *pp, *p = strstr(post + SKIP_POST, "Content-Length: ");
+	char *pp, *p = strstr(post + SKIP_POST, (char *)"Content-Length: ");
 	char *end;
 
 	*coff = 0;
@@ -348,7 +348,7 @@ nmidx_wal(char *paddr, size_t *pos, size_t dbsiz, uint32_t bufidx,
 {
 	uint64_t packed;
 	size_t cur = *pos;
-	int plen = sizeof(packed);
+	size_t plen = sizeof(packed);
 	char *p = paddr;
 
 	/* make log */
@@ -402,7 +402,7 @@ copy_and_log(char *paddr, size_t *pos, size_t dbsiz, char *buf, size_t len,
 	if (vp) {
 		static int unique = 0;
 		uint64_t packed = pack(cur/NETMAP_BUF_SIZE, 0, len);
-		int rc = btree_insert(vp, key, packed);
+		int rc = btree_insert((gfile_t *)vp, key, packed);
 		if (rc == 0)
 			unique++;
 	} else
@@ -434,7 +434,7 @@ httpreq(const char *p)
 
 static int
 phttpd_req(char *rxbuf, int len, struct nm_msg *m, int *no_ok,
-		ssize_t *msglen, char **content)
+		size_t *msglen, char **content)
 {
 	struct dbctx *db = (struct dbctx *)m->targ->opaque;
 	int *fde = &m->targ->fdtable[m->fd];
@@ -487,8 +487,8 @@ phttpd_req(char *rxbuf, int len, struct nm_msg *m, int *no_ok,
 			}
 #ifdef WITH_BPLUS
 			if (db->vp) {
-				nmidx_bplus(db->vp, key, m->slot->buf_idx,
-				    off + coff, thisclen);
+				nmidx_bplus((gfile_t *)db->vp, key,
+				    m->slot->buf_idx, off + coff, thisclen);
 			} else
 #endif
 			if (db->paddr) {
@@ -527,7 +527,7 @@ phttpd_req(char *rxbuf, int len, struct nm_msg *m, int *no_ok,
 		if (flags & DF_KVS || !db->vp)
 			break;
 		key = parse_get_key(rxbuf);
-		rc = btree_lookup(db->vp, key, &datam);
+		rc = btree_lookup((gfile_t *)db->vp, key, &datam);
 		if (rc == ENOENT)
 			break;
 		unpack(datam, &_idx, &_off, &_len);
@@ -554,7 +554,7 @@ phttpd_data(struct nm_msg *m)
 {
 	struct phttpd_global *pg = (struct phttpd_global *)
 		m->targ->g->garg_private;
-	ssize_t msglen = pg->msglen, len = 0;
+	size_t msglen = pg->msglen, len = 0;
 	int error, no_ok = 0;
 	char *content = NULL;
 	u_int doff = nm_pst_getdoff(m->slot);
@@ -604,7 +604,7 @@ phttpd_read(struct nm_msg *m)
 {
 	struct phttpd_global *pg = (struct phttpd_global *)
 		m->targ->g->garg_private;
-	ssize_t msglen = pg->msglen, len = 0;
+	size_t msglen = pg->msglen, len = 0;
 	int error, no_ok = 0;
 	char *content = NULL;
 	char buf[MAXQUERYLEN];
@@ -686,7 +686,7 @@ init_db(struct dbctx *db, int i, const char *dir, int type, int flags, size_t si
 			close(fd);
 			return -1;
 		}
-		db->paddr = do_mmap(fd, db->size);
+		db->paddr = (char *)do_mmap(fd, db->size);
 		if (db->paddr == NULL) {
 			close(fd);
 			return -1;
@@ -901,7 +901,7 @@ main(int argc, char **argv)
 
 	/* Preallocate HTTP header */
 	if (pg.httplen) {
-		pg.http = calloc(1, MAX_HTTPLEN);
+		pg.http = (char *)calloc(1, MAX_HTTPLEN);
 		if (!pg.http) {
 			perror("calloc");
 			usage();

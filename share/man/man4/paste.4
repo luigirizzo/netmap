@@ -64,7 +64,7 @@ is used to associate a NIC port with the same data path.
 Unlike regular port types, a
 .Nm
 port transmits and receives application-level data.
-Every slot thus contains a file descriptor and offset at which
+Every slot thus contains a file descriptor and data offset at which
 the transport protocol header terminates; this offset is additional to
 the generic offset obtained by NETMAP_ROFFSET().
 On RX the kernel sets these slot attributes whereas the application does so for
@@ -73,30 +73,25 @@ descriptors.
 
 On RX, the applications see an in-order TCP stream across the multiple
 slots indicated by the same file descriptor; the kernel never sets the buffers
-with out-of-order segments in the RX ring.
+of out-of-order segments in an RX ring of the
+.Nm
+port.
 
-A typical application would use 66 byte offset for ethernet and IPv4 headers, and TCP
+To read or write the file descriptor and data offset in a slot, use the utility
+functions described later.
+
+A typical application would use 66 byte data offset for ethernet and IPv4
+headers, and TCP
 header with the 12 byte timestamp option that is usually attached to every TCP
 segment.
 If the headroom does not match the length of the actual protocol
 headers, the kernel shifts the application data in the buffer at the expense of
 data copy overhead.
 
-.Pa TXSYNC
-pushes the buffers that contain user data to the stack, which attach the
-protocol headers. The kernel then moves these buffers to the associated NIC port
-and issues the TX request.
-.Pp
-.Pa RXSYNC
-first runs
-.Pa rxsync
-at the attached NIC port, then pushes these packet buffers into
-the stack.  When a packet goes to a socket that has been registered to a
 .Nm
-port, the corresponding buffer is set to an RX ring of the
-.Nm
-port, with the data offset and file descriptor set to the slot.
-.
+port is gone after the process lifetime and the associated NIC port is also
+released, unless one or more registered sockets are alive.
+.\"
 .Ss CONTROL
 .Nm
 introduces two
@@ -121,6 +116,16 @@ struct nmreq_vale_attach {
 	uint32_t pad1;
 };
 .Ed
+.Pp
+.Pa nr_mem_id
+in
+.Pa reg
+must be identical to that of
+.Nm
+port, which can be found in the
+.Pa struct nmport_d
+structure filled by
+.Pa nmport_open_desc() .
 .
 .It Dv NETMAP_REQ_PST_FD_REG
 associates a file descriptor to a
@@ -136,7 +141,8 @@ struct nmreq_pst_fd_reg {
 };
 .Ed
 .Pp
-Only accepted TCP sockets should be registered;
+.Pa fd
+is an accepted TCP socket.
 .Xr listen 2
 socket should not be registered.
 Although currently only TCP is supported, UDP support will be coming soon.
@@ -150,7 +156,7 @@ for the general
 format.
 .\"
 .Ss UTILITY FUNCTIONS
-Four macros are used to read or set the file descriptor or additional offset in the slot.
+Four macros are available to read or set the file descriptor or data offset in the slot.
 .\"
 .Bl -ohang
 .It Ft int Fn nm_pst_getfd slot
@@ -171,7 +177,16 @@ in
 .Fa slot .
 .El
 .\"
-.Ss EXAMPLES
+.Sh EXAMPLES
+.Ss TEST PROGRAM
+.Pa phttpd
+is an HTTP server that supports
+.Nm .
+General HTTP benchmark tools, such as
+.Nm wrk ,
+can be used as the client.
+.\"
+.Ss BASIC USAGE
 Typical TCP server code look like following.
 .Pp
 .Bd -literal -compact
@@ -224,7 +239,6 @@ void tcp_server(void)
     reg.reg.nr_mem_id = nmd->reg.nr_mem_id;
     reg.reg.nr_mode = NR_REG_NIC_SW;
     ioctl(nmd->fd, NIOCCTRL, &hdr);
-    
 
     fds.[0].fd = nmd->fd;
     fds.[0].events = POLLIN;
@@ -272,7 +286,7 @@ at this point checksum and segmentation offloading features
 must be disabled in FreeBSD. However, in Linux, checksum offload must be enabled
 via ethtool, although it does not actually effect unless the patch described in
 netmap_paste.c is applied.
-
+.\"
 .Sh SEE ALSO
 .Xr vale 4 ,
 .Xr netmap 4
@@ -282,7 +296,7 @@ Douglas Santry,
 PASTE: A Network Programming Interface for Non-Volatile
 Main Memory, USENIX NSDI 2018, Renton
 .Pp
-
+.\"
 .Sh AUTHOR
 .An -nosplit
 .An Michio Honda .

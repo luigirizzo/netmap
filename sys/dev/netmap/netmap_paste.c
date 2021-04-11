@@ -892,12 +892,6 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 		iph = (struct nm_iphdr *)(nmb + v + MBUF_NETWORK_OFFSET(m));
 		tcph = (struct nm_tcphdr *)(nmb + v + MBUF_TRANSPORT_OFFSET(m));
 #ifdef linux
-		if (na->na_flags & NAF_CSUM) {
-			if (likely(!csum_ctx(&cb->cmd, &cb->off, iph, tcph))) {
-				slot->flags |= NS_CSUM;
-				goto csum_done;
-			}
-		}
 		m->ip_summed = CHECKSUM_COMPLETE;
 #endif
 		check = &tcph->check;
@@ -1153,15 +1147,15 @@ netmap_pst_bwrap_reg(struct netmap_adapter *na, int onoff)
 	if (onoff) {
 		int i, error;
 
+		if (na->nm_mem != pst_na(na)->nm_mem) {
+			PST_DBG("mem mismatch %s nm_mem %p %s nm_mem %p",
+				na->name, na->nm_mem,
+				pst_na(na)->name, pst_na(na)->nm_mem);
+			return EINVAL;
+		}
 		if (bna->up.na_bdg->bdg_active_ports > 3) {
 			PST_DBG("%s: only one NIC is supported", na->name);
 			return ENOTSUP;
-		}
-		if (hwna->na_flags & NAF_CSUM) {
-			struct netmap_adapter *mna = pst_na(na);
-			if (!mna)
-				panic("x");
-			mna->na_flags |= NAF_CSUM;
 		}
 		/* netmap_do_regif just created rings. As we cannot rely on
 		 * netmap_offsets_init, we set offsets here.

@@ -292,7 +292,7 @@ btree_lookup_work(vbn_t bno, btree_lookup_args *cookie)
 
 				fbn = b_hdr->bm_prev;
 				if (!keep_bp_ref) brelse(bp);
-				if (fbn == NODE_ANCHOR) {
+				if ((u_int)fbn == NODE_ANCHOR) {
 
 					cookie->bt_rangep = 0;
 					return rc;
@@ -398,7 +398,7 @@ btree_insert_modify(btree_lookup_args *cookie,
 
 	if (OVERFLOW_PRED(b_hdr)) {
 
-		if (b_hdr->bm_prev != NODE_ANCHOR) {
+		if ((u_int)b_hdr->bm_prev != NODE_ANCHOR) {
 
 			left_bp = bread(cookie->bt_vp, b_hdr->bm_prev); 
 			INIT_BTREE_NODE(left_bp, fixup_hdr, fixup_table);
@@ -411,7 +411,7 @@ btree_insert_modify(btree_lookup_args *cookie,
 			} else brelse(left_bp);
 		} 
 
-		if (b_hdr->bm_next != NODE_ANCHOR) {
+		if ((u_int)b_hdr->bm_next != NODE_ANCHOR) {
 
 			right_bp = bread(cookie->bt_vp, b_hdr->bm_next);
 			INIT_BTREE_NODE(right_bp, fixup_hdr, fixup_table);
@@ -465,7 +465,7 @@ btree_split_node(gbuf_t *original_bp,
 	VERIFY(sibling_bp);
 	INIT_BTREE_NODE(sibling_bp, sibling_hdr, sibling_table);
 
-	if (original_hdr->bm_next != NODE_ANCHOR) {
+	if ((u_int)original_hdr->bm_next != NODE_ANCHOR) {
 
 		right_bp = bread(vp, original_hdr->bm_next);
 
@@ -576,7 +576,7 @@ btree_increase_height(gbuf_t *root,
 
 	b_hdr->bm_nkeys = 1;
 	b_hdr->bm_next = NODE_ANCHOR;
-	ASSERT(b_hdr->bm_prev == NODE_ANCHOR);
+	ASSERT((u_int)b_hdr->bm_prev == NODE_ANCHOR);
 
 	b_hdr->bm_keys[0] = key;
 	b_table.bu_children[0] = will_be_lesser_bp->b_blkno;
