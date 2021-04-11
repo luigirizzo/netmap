@@ -1,11 +1,5 @@
 # Netmap: a framework for fast packet I/O
 
-
-## Note on PASTE
-
-Please refer to latest information below.
-https://github.io/micchie/paste
-
 ## Introduction
 
 Netmap is a an framework for very fast packet I/O from userspace.
