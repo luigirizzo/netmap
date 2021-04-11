@@ -50,8 +50,6 @@
 #include <vm/vm_page.h>
 #include <vm/vm_pager.h>
 #include <vm/uma.h>
-//#include <vm/vm_kern.h> /* kernel_map */
-//#include <vm/vm_map.h>	/* vm_map_lookup */
 
 
 #include <sys/malloc.h>
