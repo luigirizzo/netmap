@@ -85,7 +85,6 @@
 #endif
 
 #if defined(__FreeBSD__)
-#define CONFIG_NETMAP_DEBUG
 #include <sys/selinfo.h>
 #include <netinet/tcp.h>       /* TCP_NODELAY */
 
