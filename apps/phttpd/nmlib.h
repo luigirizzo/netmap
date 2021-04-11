@@ -21,7 +21,13 @@
 #include <bsd/string.h>
 #endif /* __linux__ */
 
+#ifdef __cplusplus
+extern "C" {
 #include <libnetmap.h>
+}
+#else
+#include <libnetmap.h>
+#endif /* __cplusplus */
 
 #ifndef D
 #define D(fmt, ...) \
@@ -76,14 +82,14 @@ tx_output(struct my_ctrs *cur, double delta, const char *msg)
 {
 	double bw, raw_bw, pps, abs;
 	char b1[40], b2[80], b3[80];
-	int size;
+	u_int size;
 
 	if (cur->pkts == 0) {
 		printf("%s nothing.\n", msg);
 		return;
 	}
 
-	size = (int)(cur->bytes / cur->pkts);
+	size = (cur->bytes / cur->pkts);
 
 	printf("%s %llu packets %llu bytes %llu events %d bytes each in %.2f seconds.\n",
 		msg,
@@ -149,7 +155,7 @@ struct nm_garg {
 	int (*read)(struct nm_msg *);
 	int (*thread)(struct nm_targ *);
 	int *fds;
-	int fdnum;
+	u_int fdnum;
 	int emu_delay;
 	void *garg_private;
 	char ifname2[NETMAP_REQ_IFNAMSIZ];
@@ -259,7 +265,7 @@ nm_start_threads(struct nm_garg *g)
 	int i;
 	struct nm_targ *t;
 
-	targs = calloc(g->nthreads, sizeof(*targs));
+	targs = (struct nm_targ *)calloc(g->nthreads, sizeof(*targs));
 	if (!targs) {
 		return -ENOMEM;
 	}
@@ -290,7 +296,7 @@ nm_start_threads(struct nm_garg *g)
 					continue;
 				}
 				/* let nmport_parse() handle errors */
-				strlcpy(mempcpy(name, t->nmd->hdr.nr_name, nl),
+				strlcpy((char *)mempcpy(name, t->nmd->hdr.nr_name, nl),
 						suff, sizeof(name) - nl);
 				free(suff);
 				if (nmport_parse(t->nmd, name)) {
@@ -517,8 +523,9 @@ nm_start(struct nm_garg *g)
 		size_t need_rings, need_rings_space, need_ifs, need_ifs_space,
 		       buf_space, need_rings_bufs, buf_avail;
 		char extm[128], kv[32];
-		char *prms[4] = {",if-num=%u", ",ring-num=%u", ",ring-size=%u",
-			",buf-num=%u"};
+		char *prms[4] = {(char *)",if-num=%u",
+			(char *)",ring-num=%u", (char *)",ring-size=%u",
+			(char *)",buf-num=%u"};
 		u_int32_t prmvals[4];
 	       
 		//= {IF_OBJTOTAL, RING_OBJTOTAL,
@@ -788,7 +795,7 @@ static int fdtable_expand(struct nm_targ *t)
 	int *newfds, fdsiz = sizeof(*t->fdtable);
 	int nfds = t->fdtable_siz;
 
-	newfds = calloc(fdsiz, nfds * 2);
+	newfds = (int *)calloc(fdsiz, nfds * 2);
 	if (!newfds) {
 		perror("calloc");
 		return ENOMEM;
@@ -849,7 +856,9 @@ do_nm_ring(struct nm_targ *t, int ring_nr)
 static int inline
 soopton(int fd, int level, int type)
 {
-	if (setsockopt(fd, level, type, &(int){1}, sizeof(int)) < 0) {
+	const int on = 1;
+
+	if (setsockopt(fd, level, type, &on, sizeof(int)) < 0) {
 		perror("setsockopt");
 		return 1;
 	}
@@ -859,6 +868,7 @@ soopton(int fd, int level, int type)
 static int inline
 do_setsockopt(int fd)
 {
+	const int on = 1;
 	struct linger sl = {.l_onoff = 1, .l_linger = 0};
 
 	if (setsockopt(fd, SOL_SOCKET, SO_LINGER, &sl, sizeof(sl)))
@@ -870,7 +880,7 @@ do_setsockopt(int fd)
 #endif /* __FreeBSD__ */
 	    soopton(fd, SOL_TCP, TCP_NODELAY))
 		return -EFAULT;
-	if (ioctl(fd, FIONBIO, &(int){1}) < 0) {
+	if (ioctl(fd, FIONBIO, &on) < 0) {
 		perror("ioctl");
 		return -EFAULT;
 	}
@@ -938,7 +948,7 @@ netmap_worker(void *data)
 	}
 
 	/* allocate fd table */
-	t->fdtable = calloc(sizeof(*t->fdtable), DEFAULT_NFDS);
+	t->fdtable = (int *)calloc(sizeof(*t->fdtable), DEFAULT_NFDS);
 	if (!t->fdtable) {
 		perror("calloc");
 		goto quit;
@@ -956,7 +966,11 @@ netmap_worker(void *data)
 		uint32_t i;
 
 		D("have %u extra buffers from %u ring %p", n, next, any_ring);
-		t->extra = calloc(sizeof(*t->extra), n);
+#ifdef NMLIB_EXTRA_SLOT
+		t->extra = (struct netmap_slot *)calloc(sizeof(*t->extra), n);
+#else
+		t->extra = (uint32_t *)calloc(sizeof(*t->extra), n);
+#endif
 		if (!t->extra) {
 			perror("calloc");
 			goto quit;
@@ -1115,7 +1129,7 @@ close_pfds:
 			nfd = kevent(epfd, NULL, 0, evts, nevts, g->polltimeo_ts);
 #endif
 			for (i = 0; i < nfd; i++) {
-				int j;
+				u_int j;
 #ifdef linux	
 				int fd = evts[i].data.fd;
 #else
@@ -1153,10 +1167,10 @@ quit:
 }
 
 // XXX inline just to scilence compiler
-static inline char *
+static inline void *
 do_mmap(int fd, size_t len)
 {
-	char *p;
+	void *p;
 
 	if (lseek(fd, len -1, SEEK_SET) < 0) {
 		perror("lseek");
@@ -1196,7 +1210,7 @@ static void
 netmap_eventloop(const char *name, char *ifname, void **ret, int *error, int *fds, int fdnum,
 	struct netmap_events *e, struct nm_garg *args, void *garg_private)
 {
-	struct nm_garg *g = calloc(1, sizeof(*g));
+	struct nm_garg *g = (struct nm_garg *)calloc(1, sizeof(*g));
 	int i;
 	struct nmreq_header hdr;
 	struct nmctx ctx;
@@ -1281,16 +1295,16 @@ netmap_eventloop(const char *name, char *ifname, void **ret, int *error, int *fd
 #ifndef min
 #define min(a, b) (((a) < (b)) ? (a) : (b)) 
 #endif
-#define DEFAULT_MTU	1420 // maximum option space
+const u_int DEFAULT_MTU = 1420; // maximum option space
 static int
 copy_to_nm(struct netmap_ring *ring, const char *data,
-		int len, int off0, int off, int fd)
+		size_t len, int off0, int off, int fd)
 {
 	u_int const tail = ring->tail;
 	u_int cur = ring->cur;
-	u_int copied = 0;
-	const int space = nm_ring_space(ring);
-	u_int space_bytes;
+	size_t copied = 0;
+	const u_int space = nm_ring_space(ring);
+	size_t space_bytes;
 
 	space_bytes = DEFAULT_MTU - off0 + (DEFAULT_MTU - off) * (space - 1);
 	if (unlikely(!space || space_bytes < len)) {
