@@ -157,7 +157,7 @@ gbuf_t *
 bread (gfile_t *vp, vbn_t blkno)
 {
 	gbuf_t *bp;
-	off_t off;
+	size_t off;
 
 	bp = &buffer_table[vp->v_bufIDX & (MAX_BUFFERS - 1)];
 	assert ((bp->b_flags & B_INUSE) == 0);
