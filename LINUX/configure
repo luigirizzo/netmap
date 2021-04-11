@@ -1658,16 +1658,6 @@ EOF
 	}
 EOF
 
-  # check for kernel_setsockopt
-  add_test 'have TCP_SOCK_SET_NODELAY' <<EOF
-	#include <net/sock.h>
-	#include <linux/tcp.h>
-
-	void
-	dummy(struct sock *sk) {
-		return tcp_sock_set_nodelay(sk);
-	}
-EOF
 # check for fault arguments
   add_test 'have FAULT_VMA_ARG' <<EOF
         #include <linux/mm.h>
