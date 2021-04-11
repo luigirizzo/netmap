@@ -612,7 +612,7 @@ static const struct netmap_mem_d nm_blueprint = {
 			.objminsize = 64,
 			.objmaxsize = 65536,
 			.nummin     = 4,
-			.nummax	    = 1000000000, /* one billion! */
+			.nummax	    = 1000000, /* one million! */
 		},
 	},
 
@@ -1148,7 +1148,7 @@ netmap_extra_alloc(struct netmap_adapter *na, uint32_t *head, uint32_t n)
 		uint32_t cur = *head;	/* save current head */
 		uint32_t *p = netmap_buf_malloc(nmd, &pos, head);
 		if (p == NULL) {
-			nm_prerr("no more buffers after %u of %u", i, n);
+			nm_prerr("no more buffers after %d of %d", i, n);
 			*head = cur; /* restore */
 			break;
 		}
@@ -1487,7 +1487,7 @@ netmap_finalize_obj_allocator(struct netmap_obj_pool *p)
 	}
 	p->memtotal = (size_t)p->numclusters * (size_t)p->_clustsize;
 	if (netmap_verbose)
-		nm_prinf("Pre-allocated %d clusters (%u/%zuKB) for '%s'",
+		nm_prinf("Pre-allocated %d clusters (%d/%zuKB) for '%s'",
 		    p->numclusters, p->_clustsize >> 10,
 		    p->memtotal >> 10, p->name);
 
