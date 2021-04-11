@@ -1153,6 +1153,12 @@ netmap_pst_bwrap_reg(struct netmap_adapter *na, int onoff)
 	if (onoff) {
 		int i, error;
 
+		if (na->nm_mem != pst_na(na)->nm_mem) {
+			PST_DBG("mem mismatch %s nm_mem %p %s nm_mem %p",
+				na->name, na->nm_mem,
+				pst_na(na)->name, pst_na(na)->nm_mem);
+			return EINVAL;
+		}
 		if (bna->up.na_bdg->bdg_active_ports > 3) {
 			PST_DBG("%s: only one NIC is supported", na->name);
 			return ENOTSUP;
