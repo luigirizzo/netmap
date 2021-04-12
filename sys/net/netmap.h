@@ -218,6 +218,7 @@ struct netmap_slot {
 	 * Set on all but the last slot of a multi-segment packet.
 	 * The 'len' field refers to the individual fragment.
 	 */
+#define NS_CSUM		0x0040
 
 #define NS_TXMON	0x0040
 	/* (monitor ports only) the packet comes from the TX
@@ -555,6 +556,13 @@ enum {
 	NETMAP_REQ_SYNC_KLOOP_STOP,
 	/* Enable CSB mode on a registered netmap control device. */
 	NETMAP_REQ_CSB_ENABLE,
+	/* Attach a netmap port to a PASTE port. */
+	NETMAP_REQ_PST_ATTACH,
+	/* Detach a netmap port from a PASTE port. */
+	NETMAP_REQ_PST_DETACH,
+	/* Register a fd to a PASTE port. */
+	/* Detach a netmap port from a PASTE port. */
+	NETMAP_REQ_PST_FD_REG,
 };
 
 enum {
@@ -678,7 +686,8 @@ struct nmreq_port_info_get {
 	uint16_t	pad[3];
 };
 
-#define	NM_BDG_NAME		"vale"	/* prefix for bridge port name */
+#define	NM_BDG_NAME		"vale"	/* prefix for vale port name */
+#define	NM_PST_NAME		"pst"	/* prefix for stack port name */
 
 /*
  * nr_reqtype: NETMAP_REQ_VALE_ATTACH
@@ -787,6 +796,11 @@ struct nmreq_sync_kloop_start {
 	 * when there is no work to do, before doing another kloop iteration.
 	 */
 	uint32_t	sleep_us;
+	uint32_t	pad1;
+};
+
+struct nmreq_pst_fd_reg {
+	uint32_t	fd;
 	uint32_t	pad1;
 };
 

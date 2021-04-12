@@ -1618,6 +1618,14 @@ netmap_get_na(struct nmreq_header *hdr,
 	if (*na != NULL) /* valid match in netmap_get_bdg_na() */
 		goto out;
 
+	/* try to see if this is a stack port */
+	error = netmap_get_pst_na(hdr, na, nmd, create);
+	if (error)
+		goto out;
+
+	if (*na != NULL) /* valid match (same as vale) */
+		goto out;
+
 	/*
 	 * This must be a hardware na, lookup the name in the system.
 	 * Note that by hardware we actually mean "it shows up in ifconfig".
@@ -2880,7 +2888,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 
 				if (req->nr_extra_bufs) {
 					if (netmap_verbose)
-						nm_prinf("requested %d extra buffers",
+						nm_prinf("requested %u extra buffers",
 							req->nr_extra_bufs);
 					req->nr_extra_bufs = netmap_extra_alloc(na,
 						&nifp->ni_bufs_head, req->nr_extra_bufs);
@@ -3150,6 +3158,31 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			error = netmap_sync_kloop_stop(priv);
 			break;
 		}
+#ifdef WITH_PASTE
+		case NETMAP_REQ_PST_ATTACH: {
+			error = netmap_bdg_attach(hdr, NULL /* userspace request */);
+			break;
+		}
+
+		case NETMAP_REQ_PST_DETACH: {
+			error = netmap_bdg_detach(hdr, NULL /* userspace request */);
+			break;
+		}
+		case NETMAP_REQ_PST_FD_REG: {
+			struct nmreq_pst_fd_reg *fdr =
+				(struct nmreq_pst_fd_reg *)hdr->nr_body;
+			NMG_LOCK();
+			error = netmap_get_pst_na(hdr, &na, NULL, 0);
+			NMG_UNLOCK();
+			if (!error && na) {
+				error = pst_register_fd(na, fdr->fd);
+			}
+			if (na) {
+				netmap_adapter_put(na);
+			}
+			break;
+		}
+#endif /* WITH_PASTE */
 
 		default: {
 			error = EINVAL;
@@ -3270,6 +3303,12 @@ nmreq_size_by_type(uint16_t nr_reqtype)
 		return sizeof(struct nmreq_pools_info);
 	case NETMAP_REQ_SYNC_KLOOP_START:
 		return sizeof(struct nmreq_sync_kloop_start);
+	case NETMAP_REQ_PST_ATTACH:
+		return sizeof(struct nmreq_vale_attach);
+	case NETMAP_REQ_PST_DETACH:
+		return sizeof(struct nmreq_vale_detach);
+	case NETMAP_REQ_PST_FD_REG:
+		return sizeof(struct nmreq_pst_fd_reg);
 	}
 	return 0;
 }

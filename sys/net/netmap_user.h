@@ -642,7 +642,7 @@ nm_parse(const char *ifname, struct nm_desc *d, char *err)
 
 	errno = 0;
 
-	is_vale = (ifname[0] == 'v');
+	is_vale = (ifname[0] == 'v') || (ifname[0] == 's');
 	if (is_vale) {
 		port = index(ifname, ':');
 		if (port == NULL) {
@@ -651,7 +651,8 @@ nm_parse(const char *ifname, struct nm_desc *d, char *err)
 			goto fail;
 		}
 
-		if (!nm_is_identifier(ifname + 4, port)) {
+		if (!nm_is_identifier(ifname + 4, port) &&
+		    !nm_is_identifier(ifname + 5, port)) {
 			snprintf(errmsg, MAXERRMSG, "invalid bridge name");
 			goto fail;
 		}
@@ -837,7 +838,8 @@ nm_open(const char *ifname, const struct nmreq *req,
 	uint32_t nr_reg;
 
 	if (strncmp(ifname, "netmap:", 7) &&
-			strncmp(ifname, NM_BDG_NAME, strlen(NM_BDG_NAME))) {
+			strncmp(ifname, NM_BDG_NAME, strlen(NM_BDG_NAME)) &&
+			strncmp(ifname, NM_PST_NAME, strlen(NM_PST_NAME))) {
 		errno = 0; /* name not recognised, not an error */
 		return NULL;
 	}
@@ -986,7 +988,7 @@ nm_close(struct nm_desc *d)
 		close(d->fd);
 	}
 
-	bzero(d, sizeof(*d));
+	bzero((char *)d, sizeof(*d));
 	free(d);
 	return 0;
 }
