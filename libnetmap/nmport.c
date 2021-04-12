@@ -522,6 +522,8 @@ nmport_enable_option(const char *opt)
 	struct nmreq_opt_parser *p;
 
 	for (p = nmport_opt_parsers; p != NULL; p = p->next) {
+
+		fprintf(stdout, "%s %s\n", opt, p->prefix);
 		if (!strcmp(p->prefix, opt)) {
 			p->flags &= ~NMREQ_OPTF_DISABLED;
 			return 0;
