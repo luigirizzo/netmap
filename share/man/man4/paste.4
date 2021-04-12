@@ -1,0 +1,303 @@
+.\" Copyright (c) 2021 Michio Honda
+.\" All rights reserved.
+.\"
+.\" Redistribution and use in source and binary forms, with or without
+.\" modification, are permitted provided that the following conditions
+.\" are met:
+.\" 1. Redistributions of source code must retain the above copyright
+.\"    notice, this list of conditions and the following disclaimer.
+.\" 2. Redistributions in binary form must reproduce the above copyright
+.\"    notice, this list of conditions and the following disclaimer in the
+.\"    documentation and/or other materials provided with the distribution.
+.\"
+.\" THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+.\" ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+.\" IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+.\" ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+.\" FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+.\" DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+.\" OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+.\" HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+.\" LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+.\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+.\" SUCH DAMAGE.
+.\"
+.\" This document is derived in part from the enet man page (enet.4)
+.\" distributed with 4.3BSD Unix.
+.\"
+.\" $FreeBSD$
+.\"
+.Dd April 2, 2021
+.Dt PASTE 4
+.Os
+.Sh NAME
+.Nm paste
+.Nd a fast TCP/IP networking using the netmap API
+.Sh SYNOPSIS
+.Cd device netmap
+.Sh DESCRIPTION
+.Nm
+is a feature of the
+.Xr netmap 4
+that allows the applications to use the host TCP/IP stack over the netmap API.
+The resulting system call and I/O batching, across multiple connections, and
+zero copy enable high throughput and connection scalability.
+.Nm paste
+also supports zero copy data transfer to or from persistent memory (PM) with the
+.Nm extmem
+feature.
+.Ss NAMING
+.Nm
+ports are named
+.Pa pstSSS:PPP
+where
+.Pa pst
+indicates the
+.Nm
+port type and
+.Pa SSS
+indicates a data path.
+.Pa PPP
+names a port. The same prefix, separated by the colon,
+is used to associate a NIC port with the same data path.
+.Ss SEMANTICS
+Unlike regular port types, a
+.Nm
+port transmits and receives application-level data.
+Every slot thus contains a file descriptor and data offset at which
+the transport protocol header terminates; this offset is additional to
+the generic offset obtained by NETMAP_ROFFSET().
+On RX the kernel sets these slot attributes whereas the application does so for
+TX slots.  A TX or RX ring may contain slots whose buffers belong to different file
+descriptors.
+
+On RX, the applications see an in-order TCP stream across the multiple
+slots indicated by the same file descriptor; the kernel never sets the buffers
+of out-of-order segments in an RX ring of the
+.Nm
+port.
+
+To read or write the file descriptor and data offset in a slot, use the utility
+functions described later.
+
+A typical application would use 66 byte data offset for ethernet and IPv4
+headers, and TCP
+header with the 12 byte timestamp option that is usually attached to every TCP
+segment.
+If the headroom does not match the length of the actual protocol
+headers, the kernel shifts the application data in the buffer at the expense of
+data copy overhead.
+
+.Nm
+port is gone after the process lifetime and the associated NIC port is also
+released, unless one or more registered sockets are alive.
+.\"
+.Ss CONTROL
+.Nm
+introduces two
+.Xr ioctl 2
+subcommands to
+.Xr netmap 4
+ports, indicated in the
+.Pa nr_reqtype
+field of
+.Pa struct nmreq_header .
+.
+.Bl -tag -width XXX
+.It Dv NETMAP_REQ_PST_ATTACH
+attaches a NIC to the port.
+.Pa nr_body
+points to
+.Pa struct nmreq_vale_attach :
+.Bd -literal
+struct nmreq_vale_attach {
+	struct nmreq_register reg;
+	uint32_t port_index;
+	uint32_t pad1;
+};
+.Ed
+.Pp
+.Pa nr_mem_id
+in
+.Pa reg
+must be identical to that of
+.Nm
+port, which can be found in the
+.Pa struct nmport_d
+structure filled by
+.Pa nmport_open_desc() .
+.
+.It Dv NETMAP_REQ_PST_FD_REG
+associates a file descriptor to a
+.Nm
+port.
+.Pa nr_body
+points to
+.Pa struct nmreq_pst_fd_reg :
+.Bd -literal
+struct nmreq_pst_fd_reg {
+	int32_t fd;
+	int32_t pad;
+};
+.Ed
+.Pp
+.Pa fd
+is an accepted TCP socket.
+.Xr listen 2
+socket should not be registered.
+Although currently only TCP is supported, UDP support will be coming soon.
+
+.El
+.\"
+See
+.Xr netmap 4
+for the general
+.Pa struct nmreq_header
+format.
+.\"
+.Ss UTILITY FUNCTIONS
+Four macros are available to read or set the file descriptor or data offset in the slot.
+.\"
+.Bl -ohang
+.It Ft int Fn nm_pst_getfd slot
+Get the file descriptor embedded in
+.Fa slot .
+.It Ft void Fn nm_pst_setfd slot fd
+Set the file descriptor
+.Fa fd
+to the
+.Fa slot .
+.It Ft int Fn nm_pst_getdoff slot
+Get the additional offset embedded in
+.Fa slot .
+.It Ft void Fn nm_pst_setdoff slot doff
+Set the additional offset
+.Fa doff
+in
+.Fa slot .
+.El
+.\"
+.Sh EXAMPLES
+.Ss TEST PROGRAM
+.Pa phttpd
+is an HTTP server that supports
+.Nm .
+General HTTP benchmark tools, such as
+.Nm wrk ,
+can be used as the client.
+.\"
+.Ss BASIC USAGE
+Typical TCP server code look like following.
+.Pp
+.Bd -literal -compact
+
+   ...
+#include <net/netmap_paste.h>
+   ...
+
+const u_int DOFF = 66; /* Ether/TCP/IP + timestamp */
+
+void write_txring(char *p, int len, int fd, struct netmap_ring *ring)
+{
+    u_int cur = ring->cur;
+    struct netmap_slot *txslot = &ring->slot[cur];
+
+    buf = NETMAP_BUF_OFFSET(ring, slot->buf_idx);
+    memcpy(buf + DOFF, p, len);
+
+    slot->len = len + DOFF;
+    nm_pst_setdoff(slot, DOFF);
+    nm_pst_setfd(slot, fd);
+    ring->head = ring->cur = nm_ring_next(cur);
+}
+
+void tcp_server(void)
+{
+    char *name = "pst:0";
+    char *nic_name = "pst:em0";
+    struct nmport_d *nmd;
+    struct nmreq_header hdr;
+    struct nmreq_vale_attach reg; // reuse
+    struct pollfd fds[2];
+
+    /* open and listen socket */
+    sd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    bind(sd, ...);
+    listen(sd, 0);
+
+    /* open a paste port */
+    nmport_enable_option("offset");
+    nmd = nmport_prepare(name);
+    nmport_open_desc(nmd);
+
+    /* attach a NIC */
+    bzero(&hdr, sizeof(hdr));
+    hdr.nr_version = NETMAP_API;
+    hdr.nr_reqtype = NETMAP_REQ_PST_ATTACH;
+    hdr.nr_body = (uintptr_t)&reg;
+    bzero(&reg, sizeof(reg));
+    reg.reg.nr_mem_id = nmd->reg.nr_mem_id;
+    reg.reg.nr_mode = NR_REG_NIC_SW;
+    ioctl(nmd->fd, NIOCCTRL, &hdr);
+
+    fds.[0].fd = nmd->fd;
+    fds.[0].events = POLLIN;
+    fds.[1].fd = sd;
+    fds.[1].events = POLLIN;
+    for (;;) {
+	/* monitor netmap and listen descriptor */
+	poll(&fds, 2, 2000 /* use 0 for busy polling */);
+	if (fds[1].revents & POLLIN) { /* accept and associate new fd */
+	    struct nmreq_header hdr2;
+	    struct nmreq_pst_fd_reg fdr;
+
+	    newfd = accept(fds[1].fd, &client, &len);
+
+	    hdr2 = hdr; // reuse the name
+	    hdr2.nr_reqtype = NETMAP_REQ_PST_FD_REG;
+            fdr.fd = newfd;
+            hdr2.nr_body = (uintptr_t)&fdr;
+            ioctl(nmd->fd, NIOCCTRL, &hdr);
+	}
+	if (fds[0].revents & POLLIN) {
+	    struct netmap_if *nifp = nmd->nifp;
+	    struct netmap_ring *rxr = NETMAP_RXRING(nmd->nifp, 0);
+	    struct netmap_ring *txr = NETMAP_TXRING(nmd->nifp, 0);
+
+	    while (!nm_ring_empty(ring)) {
+		int i = ring->cur;
+		struct netmap_slot *slot = ring->slot[i];
+		char *buf = NETMAP_BUF_OFFSET(ring, slot->buf_idx);
+
+		buf += nm_pst_getdoff(slot);
+		... consume data on buf ...
+		... we have also prepared something to transmit on buf ...
+		write_txring(buf, len, nm_pst_getfd(slot), txr);
+		ring->head = ring->cur = nm_ring_next(ring, i);
+	    }
+	}
+    }
+}
+.Ed
+.Pp
+Note as with other
+.Nm netmap ports ,
+at this point checksum and segmentation offloading features
+must be disabled in FreeBSD. However, in Linux, checksum offload must be enabled
+via ethtool, although it does not actually effect unless the patch described in
+netmap_paste.c is applied.
+.\"
+.Sh SEE ALSO
+.Xr vale 4 ,
+.Xr netmap 4
+.Pp
+Michio Honda, Giuseppe Lettieri, Lars Eggert,
+Douglas Santry,
+PASTE: A Network Programming Interface for Non-Volatile
+Main Memory, USENIX NSDI 2018, Renton
+.Pp
+.\"
+.Sh AUTHOR
+.An -nosplit
+.An Michio Honda .
+.\"
