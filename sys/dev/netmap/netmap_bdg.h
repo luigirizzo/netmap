@@ -181,6 +181,7 @@ int netmap_bwrap_reg(struct netmap_adapter *, int onoff);
 int netmap_bdg_detach_locked(struct nmreq_header *hdr, void *auth_token);
 int netmap_vp_reg(struct netmap_adapter *na, int onoff);
 int netmap_vp_rxsync(struct netmap_kring *kring, int flags);
+int netmap_vp_rxsync_locked(struct netmap_kring *kring, int flags);
 int netmap_bwrap_intr_notify(struct netmap_kring *kring, int flags);
 int netmap_bwrap_notify(struct netmap_kring *kring, int flags);
 int netmap_bwrap_attach_common(struct netmap_adapter *na,
