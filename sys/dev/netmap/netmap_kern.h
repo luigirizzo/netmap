@@ -86,7 +86,6 @@
 
 #if defined(__FreeBSD__)
 #include <sys/selinfo.h>
-#include <netinet/tcp.h>       /* TCP_NODELAY */
 
 #define likely(x)	__builtin_expect((long)!!(x), 1L)
 #define unlikely(x)	__builtin_expect((long)!!(x), 0L)

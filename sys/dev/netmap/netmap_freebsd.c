@@ -73,6 +73,7 @@
 #include <netinet/in.h>		/* in6_cksum_pseudo() */
 #include <machine/in_cksum.h>  /* in_pseudo(), in_cksum_hdr() */
 #include <netinet/in_var.h>	/* ip_input() */
+#include <netinet/tcp.h>       /* TCP_NODELAY */
 /* just for debugging */
 
 #include <net/netmap.h>
