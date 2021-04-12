@@ -17,7 +17,6 @@
 #define _mm_clflush(p) _mm_clflushopt(p)
 #endif
 
-
 #define MAX_BUFFERS 64
 gbuf_t buffer_table[MAX_BUFFERS];
 
@@ -35,7 +34,7 @@ util_load_vp (const char *path)
 		return NULL;
 
 	rc = fstat (fd, &stx);
-	if (rc) 
+	if (rc)
 	{
 		close (fd);
 		return NULL;
@@ -46,7 +45,7 @@ util_load_vp (const char *path)
 	vp->v_fd = fd;
 	vp->v_used = vp->v_size = stx.st_size;
 
-	if (stx.st_size == 0) 
+	if (stx.st_size == 0)
 	{
 		/*
 		 * We assume we're creating a new B+ tree.
@@ -54,7 +53,7 @@ util_load_vp (const char *path)
 		 */
 
 		rc = ftruncate (vp->v_fd, (off_t) TREE_GROW_SIZE);
-		if (rc) 
+		if (rc)
 		{
 			close (vp->v_fd);
 			free (vp);
@@ -62,7 +61,7 @@ util_load_vp (const char *path)
 		}
 
 		rc = fstat (vp->v_fd, &stx);
-		if (rc) 
+		if (rc)
 		{
 			close (vp->v_fd);
 			free (vp);
@@ -99,14 +98,14 @@ int
 map (gfile_t *vp)
 {
 	vp->v_base = (caddr_t) mmap (
-				vp->v_base, 
-				vp->v_size, 
+				vp->v_base,
+				vp->v_size,
 				PROT_READ | PROT_WRITE,
-				MAP_SHARED | MAP_FILE, 
-				vp->v_fd, 
+				MAP_SHARED | MAP_FILE,
+				vp->v_fd,
 				0);
 
-	if (vp->v_base == (caddr_t) -1) 
+	if (vp->v_base == (caddr_t) -1)
 		return errno;
 
 	return 0;
@@ -131,7 +130,7 @@ alloc_block (gfile_t *vp)
 	vp->v_size <<= 1;
 
 	rc = ftruncate (vp->v_fd, vp->v_size);
-	if (rc) 
+	if (rc)
 		return -errno;
 
 	error = map (vp);
@@ -176,13 +175,13 @@ bread (gfile_t *vp, vbn_t blkno)
 	return bp;
 }
 
-void 
+void
 brelse (gbuf_t *bp)
 {
 	bp->b_flags &= ~B_INUSE;
 }
 
-void 
+void
 bdwrite (gbuf_t *bp)
 {
 	/*
@@ -197,4 +196,3 @@ bdwrite (gbuf_t *bp)
 	}
 	brelse (bp);
 }
-

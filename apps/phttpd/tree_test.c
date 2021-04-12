@@ -70,4 +70,3 @@ void verify_existence (btree_key key, int from)
 
 	return;
 }
-

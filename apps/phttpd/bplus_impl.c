@@ -20,16 +20,16 @@
 #endif
 
 typedef enum {
-    BINSERT, 
-	BPUSHLEFT, 
-	BLPIVOT, 
+    BINSERT,
+	BPUSHLEFT,
+	BLPIVOT,
 	BPULLLEFT,
-	BPUSHRIGHT, 
-	BRPIVOT, 
+	BPUSHRIGHT,
+	BRPIVOT,
 	BPULLRIGHT,
-	BSPLIT, 
-	BSCREATE, 
-	BUPDATE, 
+	BSPLIT,
+	BSCREATE,
+	BUPDATE,
 	BHEIGHT,
 	BDELETE
 } btree_lastop;
@@ -50,7 +50,7 @@ typedef struct {
 	uint32_t 		bm_serialno;
 	uint16_t		bm_nkeys;
 	uint16_t		bm_level;
-	
+
 	vbn_t	bm_next;
 	vbn_t	bm_prev;
 	btree_lastop	bm_lop;
@@ -101,7 +101,7 @@ typedef union {
 
 static uint32_t serialno = 0;
 
-static int 
+static int
 btree_lookup_work(vbn_t, btree_lookup_args *);
 
 static vbn_t
@@ -248,7 +248,7 @@ btree_lookup_work(vbn_t bno, btree_lookup_args *cookie)
 				/*
 				 * We are returning a pointer to buffer
 				 * memory.  Only safe in single-threaded
-				 * applications with no intervening 
+				 * applications with no intervening
 				 * non-idempotent operations.
 				 *
 				 */
@@ -264,7 +264,7 @@ btree_lookup_work(vbn_t bno, btree_lookup_args *cookie)
 		} else if (cookie->bt_intent & BTREE_LFLAG_INSERT) {
 
 			brelse(bp);
-			btree_insert_modify(cookie, 
+			btree_insert_modify(cookie,
 						cookie->bt_key,
 						&cookie->bt_data,
 						0);
@@ -328,13 +328,13 @@ btree_lookup_work(vbn_t bno, btree_lookup_args *cookie)
 
 void
 btree_insert_modify(btree_lookup_args *cookie,
-				btree_key key, 
+				btree_key key,
 				TREE_TYPE *payload,
 				int level)
 {
 #if 0
 	extern int nleaves;
-#endif 
+#endif
 	gbuf_t *left_bp=0, *right_bp=0;
 	gbuf_t *bp;
 	vbn_t greater_bno;
@@ -373,19 +373,19 @@ btree_insert_modify(btree_lookup_args *cookie,
 	 *
 	 */
 
-	xmove(b_hdr->bm_keys + stop_here, 
+	xmove(b_hdr->bm_keys + stop_here,
 		b_hdr->bm_keys + stop_here + 1,
 		sizeof(btree_key) * (b_hdr->bm_nkeys - stop_here));
 
 	b_hdr->bm_keys[stop_here] = key;
 
 	if (level > 0) {
-		xmove(b_table.bu_children + stop_here + 1, 
+		xmove(b_table.bu_children + stop_here + 1,
 			b_table.bu_children + stop_here + 2,
 			sizeof(vbn_t) * (b_hdr->bm_nkeys - stop_here));
 		b_table.bu_children[stop_here + 1] = *(vbn_t *) payload;
 	} else {
-		xmove(b_table.bu_data + stop_here, 
+		xmove(b_table.bu_data + stop_here,
 			b_table.bu_data + stop_here + 1,
 			sizeof(TREE_TYPE) * (b_hdr->bm_nkeys - stop_here));
 		b_table.bu_data[stop_here] = *payload;
@@ -400,7 +400,7 @@ btree_insert_modify(btree_lookup_args *cookie,
 
 		if ((u_int)b_hdr->bm_prev != NODE_ANCHOR) {
 
-			left_bp = bread(cookie->bt_vp, b_hdr->bm_prev); 
+			left_bp = bread(cookie->bt_vp, b_hdr->bm_prev);
 			INIT_BTREE_NODE(left_bp, fixup_hdr, fixup_table);
 
 			if (SHIFT_PRED(fixup_hdr)) {
@@ -409,7 +409,7 @@ btree_insert_modify(btree_lookup_args *cookie,
 				rc = btree_shift_left(bp, cookie);
 				if (rc == 0) return;
 			} else brelse(left_bp);
-		} 
+		}
 
 		if ((u_int)b_hdr->bm_next != NODE_ANCHOR) {
 
@@ -422,24 +422,24 @@ btree_insert_modify(btree_lookup_args *cookie,
 				rc = btree_shift_right(bp, cookie);
 				if (rc == 0) return;
 			} else brelse(right_bp);
-		} 
+		}
 
 		greater_bno = btree_split_node(bp, &new_key);
 
 		if (cookie->bt_path[level+1].pt_index != BTREE_ROOT_ADDR)
-			btree_insert_modify(cookie, 
+			btree_insert_modify(cookie,
 					new_key,
 					(TREE_TYPE *) &greater_bno,
-				    	level + 1);
+					level + 1);
 		else /* we are the root */
 			btree_increase_height(bp, greater_bno, new_key);
-	} 
+	}
 
 	bdwrite(bp);
 }
 
 vbn_t
-btree_split_node(gbuf_t *original_bp, 
+btree_split_node(gbuf_t *original_bp,
 			btree_key *new_key)
 {
 	gfile_t *vp;
@@ -469,7 +469,7 @@ btree_split_node(gbuf_t *original_bp,
 
 		right_bp = bread(vp, original_hdr->bm_next);
 
-		((btree_meta *) (right_bp->b_data))->bm_prev = 
+		((btree_meta *) (right_bp->b_data))->bm_prev =
 							sibling_bp->b_blkno;
 		((btree_meta *) (right_bp->b_data))->bm_serialno = serialno;
 		((btree_meta *) (right_bp->b_data))->bm_lop = BUPDATE;
@@ -486,25 +486,24 @@ btree_split_node(gbuf_t *original_bp,
 	lesser_length = original_hdr->bm_nkeys >> 1;
 	greater_length = original_hdr->bm_nkeys - lesser_length;
 
-	xmove(original_hdr->bm_keys + lesser_length, 
+	xmove(original_hdr->bm_keys + lesser_length,
 		sibling_hdr->bm_keys, greater_length * sizeof(btree_key));
 
 	if (original_hdr->bm_level) {
 
 		xmove(original_table.bu_children + lesser_length,
-			sibling_table.bu_children, 
+			sibling_table.bu_children,
 			(greater_length + 1) * sizeof(vbn_t));
-		
+
 		lesser_length--;
 		*new_key = original_hdr->bm_keys[lesser_length];
 	} else {
 		xmove(original_table.bu_data + lesser_length,
-			sibling_table.bu_data, 
+			sibling_table.bu_data,
 			greater_length * sizeof(TREE_TYPE));
 
 		*new_key = sibling_hdr->bm_keys[0];
 	}
-	
 
 	original_hdr->bm_nkeys = lesser_length;
 	sibling_hdr->bm_nkeys = greater_length;
@@ -520,8 +519,8 @@ btree_split_node(gbuf_t *original_bp,
  *
  */
 void
-btree_increase_height(gbuf_t *root, 
-				vbn_t greater_bno, 
+btree_increase_height(gbuf_t *root,
+				vbn_t greater_bno,
 				btree_key key)
 {
 	vbn_t new_bno;
@@ -587,7 +586,7 @@ btree_increase_height(gbuf_t *root,
 }
 
 int
-btree_shift_left(gbuf_t *right_bp, btree_lookup_args *cookie) 
+btree_shift_left(gbuf_t *right_bp, btree_lookup_args *cookie)
 {
 	gbuf_t *parent_bp;
 	gbuf_t *left_bp;
@@ -655,8 +654,8 @@ btree_shift_left(gbuf_t *right_bp, btree_lookup_args *cookie)
 
 	left_hdr->bm_keys[left_hdr->bm_nkeys] = parent_hdr->bm_keys[index];
 
-	xmove(right_hdr->bm_keys, 
-		left_hdr->bm_keys + left_hdr->bm_nkeys + non_leaf, 
+	xmove(right_hdr->bm_keys,
+		left_hdr->bm_keys + left_hdr->bm_nkeys + non_leaf,
 		(space - non_leaf) * sizeof(btree_key));
 
 	parent_hdr->bm_keys[index] = right_hdr->bm_keys[space - non_leaf];
@@ -665,7 +664,7 @@ btree_shift_left(gbuf_t *right_bp, btree_lookup_args *cookie)
 		right_hdr->bm_keys,
 		(right_hdr->bm_nkeys - space) * sizeof(btree_key));
 
-	/* 
+	/*
 	 * Move the data
 	 *
 	 *  i) inter-node shift data right to left
@@ -764,7 +763,7 @@ btree_shift_right(gbuf_t *left_bp, btree_lookup_args *cookie)
 	 *  iv) promote keys from left in to the ancestors
 	 *
 	 */
-	xmove(right_hdr->bm_keys, right_hdr->bm_keys + space, 
+	xmove(right_hdr->bm_keys, right_hdr->bm_keys + space,
 			right_hdr->bm_nkeys * sizeof(btree_key));
 
 	if (non_leaf)
@@ -774,7 +773,7 @@ btree_shift_right(gbuf_t *left_bp, btree_lookup_args *cookie)
 		right_hdr->bm_keys,
 		(space - non_leaf) * sizeof(btree_key));
 
-	if (non_leaf) parent_hdr->bm_keys[index] = 
+	if (non_leaf) parent_hdr->bm_keys[index] =
 		left_hdr->bm_keys[left_hdr->bm_nkeys - space];
 	else parent_hdr->bm_keys[index] = right_hdr->bm_keys[0];
 
@@ -786,24 +785,22 @@ btree_shift_right(gbuf_t *left_bp, btree_lookup_args *cookie)
 	 *
 	 */
 
-
 	if (non_leaf) {
 
-		xmove(right_table.bu_children, 
+		xmove(right_table.bu_children,
 			right_table.bu_children + space,
 			(right_hdr->bm_nkeys + 1) * sizeof(vbn_t));
 		xmove(left_table.bu_children + left_hdr->bm_nkeys + 1 - space,
 			right_table.bu_children,
 			space * sizeof(vbn_t));
 	} else {
-		xmove(right_table.bu_data, 
+		xmove(right_table.bu_data,
 			right_table.bu_data + space,
 			right_hdr->bm_nkeys * sizeof(TREE_TYPE));
 		xmove(left_table.bu_data + left_hdr->bm_nkeys - space,
 			right_table.bu_data,
 			space * sizeof(TREE_TYPE));
 	}
-
 
 	right_hdr->bm_nkeys += space;
 	left_hdr->bm_nkeys -= space;
@@ -845,9 +842,9 @@ btree_intra_lookup(gbuf_t *bp, btree_key key)
 
 		if (left > right) {
 
-			if (right >= 0 && table[right] > key) 
+			if (right >= 0 && table[right] > key)
 				cursor = right;
-			else 
+			else
 				cursor = left;
 
 			break; /* while(1) search loop */
@@ -886,7 +883,7 @@ int btree_create_btree(char *path, gfile_t **btree)
 	unlink (path);
 
 	vp = util_load_vp (path);
-	if (vp == NULL) 
+	if (vp == NULL)
 		return -errno;
 
 	blkno = btree_grow (vp);
@@ -908,7 +905,6 @@ int btree_create_btree(char *path, gfile_t **btree)
 
 	return 0;
 }
-
 
 #if 0
 static int population;
@@ -953,13 +949,13 @@ btree_paranoid(gfile_t *vp, vbn_t fbn, btree_key upper_bound)
 
 			ASSERT(b_hdr->bm_keys[i] == b_table.bu_data[i].key);
 			ASSERT(keys[b_hdr->bm_keys[i]] == b_hdr->bm_keys[i]);
-			ASSERT(atoi(b_table.bu_data[i].name) == 
+			ASSERT(atoi(b_table.bu_data[i].name) ==
 							b_hdr->bm_keys[i]);
 
 			if (i == 0) last_key = b_hdr->bm_keys[0];
 			else {
 
-				for (cursor = last_key + 1; 
+				for (cursor = last_key + 1;
 				     cursor < b_hdr->bm_keys[i];
 				     cursor++) {
 					if (keys[cursor] != 0LL)
@@ -969,9 +965,9 @@ btree_paranoid(gfile_t *vp, vbn_t fbn, btree_key upper_bound)
 				last_key = b_hdr->bm_keys[i];
 			}
 		} else
-			btree_paranoid(vp, b_table.bu_children[i], 
-						(i == b_hdr->bm_nkeys ? 
-						   BTREE_KEY_MAX : 
+			btree_paranoid(vp, b_table.bu_children[i],
+						(i == b_hdr->bm_nkeys ?
+						   BTREE_KEY_MAX :
 						   b_hdr->bm_keys[i]));
 	}
 
@@ -1025,23 +1021,23 @@ btree_delete_modify(btree_lookup_args *cookie, int level)
 	if (level > 0) {
 
 		if (cursor > 0)
-			xmove(b_hdr->bm_keys + cursor, 
-				b_hdr->bm_keys + cursor - 1, 
+			xmove(b_hdr->bm_keys + cursor,
+				b_hdr->bm_keys + cursor - 1,
 				(b_hdr->bm_nkeys - cursor) * sizeof(btree_key));
 		else
-			xmove(b_hdr->bm_keys + 1, 
-				b_hdr->bm_keys, 
+			xmove(b_hdr->bm_keys + 1,
+				b_hdr->bm_keys,
 				b_hdr->bm_nkeys * sizeof(btree_key));
 
-		xmove(b_table.bu_children + cursor + 1, 
+		xmove(b_table.bu_children + cursor + 1,
 			b_table.bu_children + cursor,
 			(b_hdr->bm_nkeys - cursor) * sizeof(vbn_t));
 	} else if (cursor < b_hdr->bm_nkeys - 1) {
 
-		xmove(b_hdr->bm_keys + cursor + 1, b_hdr->bm_keys + cursor, 
+		xmove(b_hdr->bm_keys + cursor + 1, b_hdr->bm_keys + cursor,
 			(b_hdr->bm_nkeys - cursor) * sizeof(btree_key));
 
-		xmove(b_table.bu_data + cursor + 1, 
+		xmove(b_table.bu_data + cursor + 1,
 			b_table.bu_data + cursor,
 			(b_hdr->bm_nkeys - cursor) * sizeof(TREE_TYPE));
 	}
@@ -1079,7 +1075,7 @@ btree_delete_modify(btree_lookup_args *cookie, int level)
 	 * 1) Shift in to a neighbour
 	 *
 	 * 2) Accept keys from a neighbour
-	 * 
+	 *
 	 */
 	if (b_hdr->bm_next != NODE_ANCHOR) {
 
@@ -1090,10 +1086,10 @@ btree_delete_modify(btree_lookup_args *cookie, int level)
 		if (right_hdr->bm_nkeys + b_hdr->bm_nkeys < BTREE_N) {
 
 			/*
-		 	 * We have room in our neighbour so we will shift and
+			 * We have room in our neighbour so we will shift and
 			 * delete the node.
-		 	 *
-		 	 */
+			 *
+			 */
 			brelse(right_bp);
 			rc = btree_shift_right(bp, cookie);
 			if (rc == 0) {
@@ -1126,7 +1122,7 @@ btree_delete_modify(btree_lookup_args *cookie, int level)
 				btree_delete_modify(cookie, level + 1);
 				btree_collapse_node(bp);
 				return;
-			} 
+			}
 
 		} else brelse(left_bp);
 	}
@@ -1194,7 +1190,6 @@ int btree_overwrite(btree_lookup_args *cookie)
 
 	b_hdr->bm_keys[cookie->bt_index] = cookie->bt_key;
 	b_table.bu_data[cookie->bt_index] = cookie->bt_data;
-
 
 	bdwrite(cookie->bt_bp);
 
@@ -1318,4 +1313,3 @@ btree_insert (gfile_t *vp, btree_key key, TREE_TYPE datum)
 
 	return 0;
 }
-

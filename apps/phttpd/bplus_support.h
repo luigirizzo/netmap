@@ -33,7 +33,7 @@ typedef struct {
 	vbn_t				b_blkno;
 	int					b_flags;
 	caddr_t				b_data;
-	
+
 } gbuf_t;
 
 gfile_t *util_load_vp (const char *path);
@@ -45,4 +45,3 @@ void brelse (gbuf_t *);
 void bdwrite (gbuf_t *);
 
 #endif
-

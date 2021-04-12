@@ -45,7 +45,7 @@ typedef struct {
 	uint32_t		bt_intent;	/* Plans for key, if found */
 	gfile_t  	*bt_vp;		/* inode for tree		*/
 
- 	/* Stack of nodes traversed; do not touch */
+	/* Stack of nodes traversed; do not touch */
 	path_node 	bt_path[BTREE_MAX_DEPTH];
 
 	/* OUT */
