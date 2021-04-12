@@ -480,7 +480,7 @@ phttpd_req(char *rxbuf, int len, struct nm_msg *m, int *no_ok,
 			uint32_t extra_i = netmap_extra_next(m->targ,
 						&db->cur, 1);
 			const u_int off = NETMAP_ROFFSET(m->rxring, m->slot) +
-			       	nm_pst_getdoff(m->slot);
+						nm_pst_getdoff(m->slot);
 			/* flush data buffer */
 			for (; i < thisclen; i += CLSIZ) {
 				_mm_clflush(datap + i);
@@ -717,7 +717,7 @@ clean_dir(char *dirpath)
 	DIR *dp;
 	struct dirent *ent;
 
-	if (!dirpath) 
+	if (!dirpath)
 		return;
 	if ((dp = opendir(dirpath)) == NULL) {
 		return;

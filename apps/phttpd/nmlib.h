@@ -180,7 +180,7 @@ struct nm_targ {
 #ifdef NMLIB_EXTRA_SLOT
 	struct netmap_slot *extra;
 #else
-	uint32_t *extra; 
+	uint32_t *extra;
 #endif
 	uint32_t extra_cur;
 	uint32_t extra_num;
@@ -305,7 +305,7 @@ nm_start_threads(struct nm_garg *g)
 				}
 				if (nmport_open_desc(t->nmd)) {
 					D("Unable to open %s: %s", t->g->ifname,
-						       	strerror(errno));
+						strerror(errno));
 					continue;
 				}
 				D("thread %d %u extra bufs at %u", i,
@@ -527,7 +527,7 @@ nm_start(struct nm_garg *g)
 			(char *)",ring-num=%u", (char *)",ring-size=%u",
 			(char *)",buf-num=%u"};
 		u_int32_t prmvals[4];
-	       
+
 		//= {IF_OBJTOTAL, RING_OBJTOTAL,
 		//	RING_OBJSIZE, (uint32_t)g->extra_bufs + 320000};
 		need_rings = 8 * g->nthreads;
@@ -723,7 +723,7 @@ static inline uint32_t
 netmap_extra_next(struct nm_targ *t, size_t *curp, int wrap)
 {
 	uint32_t ret = t->extra_cur;
-       
+
 	if (unlikely(ret == t->extra_num)) {
 		if (!wrap) {
 			return NM_NOEXTRA;
@@ -1130,7 +1130,7 @@ close_pfds:
 #endif
 			for (i = 0; i < nfd; i++) {
 				u_int j;
-#ifdef linux	
+#ifdef linux
 				int fd = evts[i].data.fd;
 #else
 				int fd = evts[i].ident;
@@ -1293,7 +1293,7 @@ netmap_eventloop(const char *name, char *ifname, void **ret, int *error, int *fd
  * an app-level header beforehand
  */
 #ifndef min
-#define min(a, b) (((a) < (b)) ? (a) : (b)) 
+#define min(a, b) (((a) < (b)) ? (a) : (b))
 #endif
 const u_int DEFAULT_MTU = 1420; // maximum option space
 static int

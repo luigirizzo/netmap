@@ -173,7 +173,7 @@ Get the additional offset embedded in
 .It Ft void Fn nm_pst_setdoff slot doff
 Set the additional offset
 .Fa doff
-in 
+in
 .Fa slot .
 .El
 .\"
@@ -257,7 +257,7 @@ void tcp_server(void)
 	    hdr2.nr_reqtype = NETMAP_REQ_PST_FD_REG;
             fdr.fd = newfd;
             hdr2.nr_body = (uintptr_t)&fdr;
-    	    ioctl(nmd->fd, NIOCCTRL, &hdr);
+            ioctl(nmd->fd, NIOCCTRL, &hdr);
 	}
 	if (fds[0].revents & POLLIN) {
 	    struct netmap_if *nifp = nmd->nifp;
@@ -266,7 +266,7 @@ void tcp_server(void)
 
 	    while (!nm_ring_empty(ring)) {
 		int i = ring->cur;
-	    	struct netmap_slot *slot = ring->slot[i];
+		struct netmap_slot *slot = ring->slot[i];
 		char *buf = NETMAP_BUF_OFFSET(ring, slot->buf_idx);
 
 		buf += nm_pst_getdoff(slot);

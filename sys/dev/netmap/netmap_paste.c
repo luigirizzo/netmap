@@ -91,7 +91,7 @@ rollup(struct netmap_kring *kring, u_int from, u_int to, u_int *n)
 		struct netmap_slot *slot = &kring->ring->slot[i];
 		struct nmcb *cb = NMCB_SLT(kring->na, slot);
 		struct nmcb *ncb;
-	       
+
 		i = nm_next(i, lim);
 		ncb = NMCB_SLT(kring->na, &kring->ring->slot[i]);
 		__builtin_prefetch(ncb);
@@ -562,7 +562,7 @@ pst_poststack(struct netmap_kring *kring)
 				} else if (unlikely(cb != NMB(na, ts))) {
 					PST_DBG("fd %d cb %p != nmb %p "
 						   "len %d state %d", fd, cb,
-					  	   NMB(na, nmcb_slot(cb)),
+						   NMB(na, nmcb_slot(cb)),
 						   ts->len,
 						   nmcb_rstate(cb) == MB_FTREF);
 				}
@@ -1540,7 +1540,7 @@ netmap_pst_rxsync(struct netmap_kring *kring, int flags)
 		struct netmap_adapter *na = &vpna->up;
 		struct netmap_adapter *hwna;
 		u_int first, last, j, hostnr;
-	
+
 		if (netmap_bdg_idx(vpna) == netmap_bdg_idx(&sna->up))
 			continue;
 		else if (is_host(na))
@@ -1552,7 +1552,7 @@ netmap_pst_rxsync(struct netmap_kring *kring, int flags)
 		last = na->num_rx_rings;
 		for (j = first; j < last; j += kring->na->num_rx_rings) {
 			struct netmap_kring *hwk, *bk, *hk;
-		       
+
 			hwk = NMR(hwna, NR_RX)[j];
 			bk = NMR(na, NR_TX)[j];
 			hk = NMR(hwna, NR_RX)[last + (j % hostnr)];
