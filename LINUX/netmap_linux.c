@@ -1394,7 +1394,7 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	if (unlikely(slot->len <  pst_offset)) {
 		return -EINVAL;
 	} else if (unlikely(offset != sizeof(*cb))) {
-		PST_DBG("bad offset %lu", offset);
+		PST_DBG("bad offset %u", offset);
 		return -EINVAL;
 	}
 
