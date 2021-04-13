@@ -717,61 +717,6 @@ mbuf_proto_headers(struct mbuf *m)
 }
 #else
 #define mbuf_proto_headers(m)
-
-#define I40E_TXD_QW1_CMD_SHIFT	4
-#define I40E_TXD_QW1_CMD_MASK	(0x3FFUL << I40E_TXD_QW1_CMD_SHIFT)
-
-enum i40e_tx_desc_cmd_bits {
-	I40E_TX_DESC_CMD_EOP			= 0x0001,
-	I40E_TX_DESC_CMD_RS			= 0x0002,
-	I40E_TX_DESC_CMD_ICRC			= 0x0004,
-	I40E_TX_DESC_CMD_IL2TAG1		= 0x0008,
-	I40E_TX_DESC_CMD_DUMMY			= 0x0010,
-	I40E_TX_DESC_CMD_IIPT_NONIP		= 0x0000, /* 2 BITS */
-	I40E_TX_DESC_CMD_IIPT_IPV6		= 0x0020, /* 2 BITS */
-	I40E_TX_DESC_CMD_IIPT_IPV4		= 0x0040, /* 2 BITS */
-	I40E_TX_DESC_CMD_IIPT_IPV4_CSUM		= 0x0060, /* 2 BITS */
-	I40E_TX_DESC_CMD_FCOET			= 0x0080,
-	I40E_TX_DESC_CMD_L4T_EOFT_UNK		= 0x0000, /* 2 BITS */
-	I40E_TX_DESC_CMD_L4T_EOFT_TCP		= 0x0100, /* 2 BITS */
-	I40E_TX_DESC_CMD_L4T_EOFT_SCTP		= 0x0200, /* 2 BITS */
-	I40E_TX_DESC_CMD_L4T_EOFT_UDP		= 0x0300, /* 2 BITS */
-	I40E_TX_DESC_CMD_L4T_EOFT_EOF_N		= 0x0000, /* 2 BITS */
-	I40E_TX_DESC_CMD_L4T_EOFT_EOF_T		= 0x0100, /* 2 BITS */
-	I40E_TX_DESC_CMD_L4T_EOFT_EOF_NI	= 0x0200, /* 2 BITS */
-	I40E_TX_DESC_CMD_L4T_EOFT_EOF_A		= 0x0300, /* 2 BITS */
-};
-
-#define I40E_TXD_QW1_OFFSET_SHIFT	16
-#define I40E_TXD_QW1_OFFSET_MASK	(0x3FFFFULL << \
-					 I40E_TXD_QW1_OFFSET_SHIFT)
-
-enum i40e_tx_desc_length_fields {
-	/* Note: These are predefined bit offsets */
-	I40E_TX_DESC_LENGTH_MACLEN_SHIFT	= 0, /* 7 BITS */
-	I40E_TX_DESC_LENGTH_IPLEN_SHIFT		= 7, /* 7 BITS */
-	I40E_TX_DESC_LENGTH_L4_FC_LEN_SHIFT	= 14 /* 4 BITS */
-};
-
-#ifndef ETH_HDR_LEN
-#define ETH_HDR_LEN	ETH_HLEN
-#endif
-static inline int
-csum_ctx(uint32_t *cmd, uint32_t *off,
-		struct nm_iphdr *iph, struct nm_tcphdr *th)
-{
-	if (unlikely(iph->protocol != IPPROTO_TCP))
-		return -1;
-	*cmd = *off = 0;
-	*cmd |= I40E_TX_DESC_CMD_IIPT_IPV4; /* no tso */
-	*off |= (ETH_HDR_LEN >> 1) << I40E_TX_DESC_LENGTH_MACLEN_SHIFT;
-	*off |= ((4 * (iph->version_ihl & 0x0F)) >> 2)
-		<< I40E_TX_DESC_LENGTH_IPLEN_SHIFT;
-
-	*cmd |= I40E_TX_DESC_CMD_L4T_EOFT_TCP;
-	*off |= ((4 * (th->doff >> 4)) >> 2) << I40E_TX_DESC_LENGTH_L4_FC_LEN_SHIFT;
-	return 0;
-}
 #endif /* !FreeBSD */
 
 static void
@@ -899,9 +844,6 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 		len = slot->len - MBUF_TRANSPORT_OFFSET(m);
 		nm_os_csum_tcpudp_ipv4(iph, tcph, len, check);
 	}
-#ifdef linux
-csum_done:
-#endif
 	pst_fdtable_add(cb, kring);
 
 	/* the stack might hold reference via clone, so let's see */

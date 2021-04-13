@@ -1342,10 +1342,6 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 
 	nmcb_wstate(cb, MB_STACK);
 	nm_pst_setfd(slot, 0);
-	if (slot->flags & NS_CSUM) {
-		m->ip_summed = CHECKSUM_UNNECESSARY;
-		slot->flags &= ~NS_CSUM;
-	}
 	m->protocol = eth_type_trans(m, m->dev);
 	/* have orphan() set data_destructor */
 	SET_MBUF_DESTRUCTOR(m, nm_os_pst_mbuf_destructor);
