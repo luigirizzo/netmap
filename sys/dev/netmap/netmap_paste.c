@@ -1065,10 +1065,20 @@ pst_write_offset(struct netmap_adapter *na, bool noring)
 
 			kring->offset_max = offset;
 			kring->offset_mask = mask;
-			if (!noring && !nm_kring_pending_on(kring))
-				continue; // ring is not ready
-			if (noring)
+			/* Since app threads individually register port/rings,
+			 * there exist rings not enabled yet.
+			 *
+			 * We cannot use nm_kring_pending_on(). Unlike main
+			 * rings, host rings have both mode and pending_mode
+			 * turned on already by netmap_update_hostrings_mode().
+			 */
+			if (noring) {
 				continue;
+			} else if (kring->nr_pending_mode != NKR_NETMAP_ON) {
+				nm_prinf("%s %s %d not ready", na->name,
+					t == NR_TX ? "tx" : "rx", i);
+				continue;
+			}
 			*(uint64_t *)(uintptr_t)&ring->offset_mask = mask;
 			for (j = 0; j < kring->nkr_num_slots; j++) {
 				nm_write_offset(kring, ring->slot + j, offset);
