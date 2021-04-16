@@ -984,7 +984,6 @@ ptn_memdev_shutdown(device_t dev)
 #endif /* WITH_PTNETMAP */
 
 #ifdef WITH_PASTE
-#define TCP_RCVD
 #include <sys/protosw.h>
 
 int
@@ -994,9 +993,7 @@ nm_os_pst_upcall(NM_SOCK_T *so, void *x, int y)
 	struct sockbuf *sb = &so->so_rcv;
 	struct nmcb *cb;
 	struct netmap_kring *kring = NULL;
-#ifdef TCP_RCVD
 	int flags = MSG_DONTWAIT | MSG_EOR;
-#endif /* TCP_RCVD */
 
 	if (unlikely(!sbavail(sb))) {
 		struct pst_so_adapter *soa = pst_so(so);
@@ -1056,7 +1053,6 @@ skip_mfree:
 	sb->sb_mb = NULL;
 	sb->sb_lastrecord = NULL;
 	SB_EMPTY_FIXUP(sb);
-#ifdef TCP_RCVD
 	/* taken from soreceive_stream() */
 	if (paste_usrrcv && (so->so_proto->pr_flags & PR_WANTRCVD) &&
 		((flags & MSG_WAITALL) || !(flags & MSG_SOCALLBCK))) {
@@ -1066,7 +1062,6 @@ skip_mfree:
 		(*so->so_proto->pr_usrreqs->pru_rcvd)(so, flags);
 		SOCKBUF_LOCK(sb);
 	}
-#endif
 	return 0;
 }
 
@@ -1171,11 +1166,9 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	struct mbuf *m;
 	int ret = 0;
 	struct epoch_tracker et;
-#ifdef __FreeBSD__
 	struct netmap_pst_adapter *sna =
 		(struct netmap_pst_adapter *)pst_na(na);
 	sna->eventso[curcpu] = NULL;
-#endif /* __FreeBSD__ */
 
 	m = maybe_new_mbuf(kring);
 	if (unlikely(m == NULL)) {
@@ -1226,7 +1219,6 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 		/* soa is NULL when the soupcall() context closed the socket */
 		if (soa != NULL && nmcb_rstate(cb) == MB_NOREF) {
 			nm_pst_setfd(slot, soa->fd);
-			nm_prdis("soa %p soa->fd %d", soa, soa->fd);
 			nm_pst_setdoff(slot, 0);
 			pst_fdtable_add(cb, kring);
 		}
@@ -1234,7 +1226,7 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 
 	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {
 		nmcb_wstate(cb, MB_QUEUED);
-		if (pst_extra_enq(kring, slot)) {
+		if (unlikely(pst_extra_enq(kring, slot))) {
 			ret = -EBUSY;
 		}
 	}

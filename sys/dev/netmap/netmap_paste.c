@@ -90,12 +90,8 @@ rollup(struct netmap_kring *kring, u_int from, u_int to, u_int *n)
 	for (i = from; i != to; m++) {
 		struct netmap_slot *slot = &kring->ring->slot[i];
 		struct nmcb *cb = NMCB_SLT(kring->na, slot);
-		struct nmcb *ncb;
 
 		i = nm_next(i, lim);
-		ncb = NMCB_SLT(kring->na, &kring->ring->slot[i]);
-		__builtin_prefetch(ncb);
-
 		if (nmcb_valid(cb) && nmcb_rstate(cb) != MB_NOREF) {
 			i = nm_prev(i, lim);
 			break;
@@ -501,7 +497,7 @@ pst_poststack(struct netmap_kring *kring)
 		goto runlock;
 	}
 	howmany = pst_kr_rxspace(rxr);
-	if (unlikely(howmany < want)) { // try to reclaim completed buffers
+	if (howmany < want) { // try to reclaim completed buffers
 		u_int n = 0;
 		rxr->nkr_hwlease =
 			rollup(rxr, rxr->nkr_hwlease, rxr->nr_hwtail, &n);
@@ -541,12 +537,10 @@ pst_poststack(struct netmap_kring *kring)
 				struct nmcb *cb;
 
 				rs = &rxr->ring->slot[j];
-				__builtin_prefetch(rs);
 				cb = NMCB_SLT(na, &tmp);
 				if (likely(nmcb_valid(cb))) {
 					next = cb->next;
 					cb->next = NM_FDT_NULL;
-					/* XXX prefetch next? */
 				} else {
 					next = NM_FDT_NULL;
 					goto skip;
@@ -581,7 +575,7 @@ skip:
 				sent++;
 				howmany--;
 			}
-			if (likely(next == NM_FDT_NULL)) {
+			if (next == NM_FDT_NULL) {
 				n++;
 				fq->fq_tail = NM_FDT_NULL;
 			}
