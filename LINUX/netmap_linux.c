@@ -418,7 +418,7 @@ nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
 {
 	(void)ifp;
 	(void)prev;
-#ifdef ATL_CHANGE
+#if defined(ATL_CHANGE) && defined(ATL_PRE_RX_HANDLER)
 	if (ifp->pre_rx_handler)
 #else
 	if (ifp->rx_handler)
@@ -637,7 +637,7 @@ nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 
 	nm_os_ifnet_lock();
 	if (intercept) {
-#ifdef ATL_CHANGE
+#if defined(ATL_CHANGE) && defined(ATL_PRE_RX_HANDLER)
 		ret = -netdev_pre_rx_handler_register (ifp,
 				&linux_generic_rx_handler, na);
 #else
@@ -645,7 +645,7 @@ nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 				&linux_generic_rx_handler, na);
 #endif
 	} else {
-#ifdef ATL_CHANGE
+#if defined(ATL_CHANGE) && defined(ATL_PRE_RX_HANDLER)
 		netdev_pre_rx_handler_unregister(ifp);
 #else
 		netdev_rx_handler_unregister(ifp);
