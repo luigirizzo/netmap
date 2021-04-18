@@ -481,7 +481,6 @@ static int octeon_netmap_rxsync(struct netmap_kring *kring, int flags)
 	nm_i = kring->nr_hwcur;
 	for (n = 0; nm_i != head; n++) {
 		struct netmap_slot *slot = &ring->slot[nm_i];
-		uint64_t offset = nm_get_offset(kring, slot);
 		void *addr = NMB(na, slot);
 
 		/* We currently do not do anything here. But if we
@@ -490,7 +489,7 @@ static int octeon_netmap_rxsync(struct netmap_kring *kring, int flags)
 		 * back to the FPA pool.
 		 */
 		nm_prdis("%s: Free RX buffer @ %p (index %d)",
-			 kring->name, addr + offset, nm_i);
+			 kring->name, addr + nm_get_offset(kring, slot), nm_i);
 
 		if (addr == NETMAP_BUF_BASE(na))	/* bad buf */
 			goto ring_reset;
