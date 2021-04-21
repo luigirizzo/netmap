@@ -1387,13 +1387,6 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	const u_int offset = nm_get_offset(kring, slot);
 	const u_int pst_offset = nm_pst_getdoff(slot);
 
-	if (unlikely(slot->len <  pst_offset)) {
-		return -EINVAL;
-	} else if (unlikely(offset != sizeof(*cb))) {
-		PST_DBG("bad offset %u", offset);
-		return -EINVAL;
-	}
-
 	nmb = NMB(na, slot);
 	soa = pst_soa_from_fd(na, nm_pst_getfd(slot));
 	if (unlikely(!soa)) {
@@ -1483,6 +1476,13 @@ nm_os_hwcsum_ok(struct netmap_adapter *na)
 {
 	return na->ifp->features & NETIF_F_CSUM_MASK;
 }
+
+int
+nm_os_so_connected(NM_SOCK_T *so)
+{
+	return so->sk_socket->state == SS_CONNECTED;
+}
+
 #endif /* WITH_PASTE */
 
 /* Use ethtool to find the current NIC rings lengths, so that the netmap

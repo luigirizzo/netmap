@@ -622,7 +622,7 @@ pst_prestack(struct netmap_kring *kring)
 {
 	struct netmap_adapter *na = kring->na;
 	int k = kring->nr_hwcur;
-	u_int lim_tx = kring->nkr_num_slots - 1;
+	const u_int lim_tx = kring->nkr_num_slots - 1;
 	const int rhead = kring->rhead;
 	const bool tx = na == pst_na(na) ? 1 : 0;
 	struct pst_fdtable *ft = pst_fdt(kring);
@@ -636,8 +636,22 @@ pst_prestack(struct netmap_kring *kring)
 		if (unlikely(slot->len == 0))
 			continue;
 		nmcbw(NMCB_SLT(na, slot), kring, slot);
-		err = tx ? nm_os_pst_tx(kring, slot) :
-			   nm_os_pst_rx(kring, slot);
+		if (tx) {
+			const u_int offset = nm_get_offset(kring, slot);
+			const u_int pst_offset = nm_pst_getdoff(slot);
+
+			/* XXX how to inform -EINVAL */
+			if (unlikely(slot->len <  pst_offset)) {
+				PST_DBG("data offset %u too large", offset);
+				break;
+			} else if (unlikely(offset != sizeof(*cb))) {
+				PST_DBG("offset should be %u", offset);
+				break;
+			}
+			err = nm_os_pst_tx(kring, slot);
+		} else {
+			err = nm_os_pst_rx(kring, slot);
+		}
 		if (unlikely(err)) {
 			/*
 			 * EBUSY advances the cursor as the stack has consumed
@@ -1262,6 +1276,10 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	so = nm_os_sock_fget(fd, &file);
 	if (!so)
 		return EINVAL;
+	if (!nm_os_so_connected(so)) {
+		nm_os_sock_fput(so, file);
+		return EINVAL;
+	}
 
 	so_lock(so); // sosetopt() internally locks socket
 #ifdef linux

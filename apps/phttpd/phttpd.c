@@ -874,9 +874,7 @@ main(int argc, char **argv)
 		usage();
 	else if (pg.dba.flags & DF_PASTE && strlen(pg.ifname) == 0)
 		usage();
-	else if (pg.dba.type != DT_NONE && pg.dba.size == 0)
-		usage();
-	else if (pg.dba.type != DT_DUMB && pg.dba.flags)
+	else if (pg.dba.type == DT_NONE && pg.dba.flags)
 		usage();
 #ifdef WITH_BPLUS
 	else if (pg.dba.flags & DF_BPLUS && !(pg.dba.flags & DF_MMAP))

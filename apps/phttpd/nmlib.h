@@ -530,18 +530,25 @@ nm_start(struct nm_garg *g)
 
 		//= {IF_OBJTOTAL, RING_OBJTOTAL,
 		//	RING_OBJSIZE, (uint32_t)g->extra_bufs + 320000};
-		need_rings = 8 * g->nthreads;
+		need_rings = 12 * g->nthreads;
 		need_rings_space = (g->ring_objsize+64) * need_rings;
 		need_rings_bufs = (g->ring_objsize+64)/sizeof(struct netmap_slot);
 		need_ifs = g->nthreads * 2;
 		need_ifs_space = (sizeof(struct netmap_if)+64) * need_ifs;
 		buf_space = g->extmem_siz - need_rings_space - need_ifs_space;
 		buf_avail = buf_space / 2048;
+		buf_avail = (buf_avail/10) * 10;
 		if (buf_avail < need_rings * need_rings_bufs) {
 			D("only %lu bufs available", buf_avail);
 			return -EINVAL;
 		}
 		g->extra_bufs = buf_avail - need_rings * need_rings_bufs;
+		D("extmem_siz %lu need_ifs %lu need_rings %lu buf_avail %lu need_ring_bufs %lu extra_bufs %u",
+				g->extmem_siz,
+				need_ifs, need_rings, buf_avail,
+				need_rings_bufs,
+				g->extra_bufs
+				);
 		prmvals[0] = need_ifs;
 		prmvals[1] = need_rings;
 		prmvals[2] = g->ring_objsize;
@@ -1305,6 +1312,12 @@ copy_to_nm(struct netmap_ring *ring, const char *data,
 	size_t copied = 0;
 	const u_int space = nm_ring_space(ring);
 	size_t space_bytes;
+
+	if (unlikely(off0 > DEFAULT_MTU)) {
+		D("first offset must be < %u", DEFAULT_MTU);
+	} else if (unlikely(off > DEFAULT_MTU)) {
+		D("offset must be < %u", DEFAULT_MTU);
+	}
 
 	space_bytes = DEFAULT_MTU - off0 + (DEFAULT_MTU - off) * (space - 1);
 	if (unlikely(!space || space_bytes < len)) {
