@@ -1352,9 +1352,8 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	 */
 	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {
 		nmcb_wstate(cb, MB_QUEUED);
-		if (pst_extra_enq(kring, slot)) {
+		if (pst_extra_enq(kring, slot))
 			ret = -EBUSY;
-		}
 	}
 #ifdef PST_MB_RECYCLE
 	/* XXX avoid refcount_read... */
@@ -1362,13 +1361,11 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 		/* we can recycle this mbuf (see nm_os_pst_data_ready) */
 		struct ubuf_info *uarg = skb_shinfo(m)->destructor_arg;
 
-		if (likely(uarg->callback)) {
+		if (likely(uarg->callback))
 			uarg->callback(uarg, true);
-		}
 		kring->tx_pool[1] = m;
-	} else {
+	} else
 		kring->tx_pool[1] = NULL;
-	}
 #endif
 	return ret;
 }
@@ -1384,8 +1381,8 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	NM_SOCK_T *sk;
 	void *nmb;
 	int err, pageref = 0;
-	const u_int offset = nm_get_offset(kring, slot);
 	const u_int pst_offset = nm_pst_getdoff(slot);
+	const int flags = MSG_DONTWAIT;
 
 	nmb = NMB(na, slot);
 	soa = pst_soa_from_fd(na, nm_pst_getfd(slot));
@@ -1399,7 +1396,8 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	get_page(page); // survive __kfree_skb()
 	pageref = page_ref_count(page);
 	cb = NMCB_BUF(nmb);
-	poff = nmb - page_to_virt(page) + offset + pst_offset;
+	poff = nmb - page_to_virt(page)
+		+ nm_get_offset(kring, slot) + pst_offset;
 	len = slot->len - pst_offset;
 	nmcb_wstate(cb, MB_STACK);
 
@@ -1420,12 +1418,11 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	 * If the kernel is configured to detect incorrect locking, disable
 	 * paste_optim_sendpage.
 	 */
-	if (paste_optim_sendpage) {
-		err = kernel_sendpage_locked(sk, page, poff, len, MSG_DONTWAIT);
-	} else
+	if (paste_optim_sendpage)
+		err = kernel_sendpage_locked(sk, page, poff, len, flags);
+	else
 #endif /* NETMAP_LINUX_HAVE_KERNEL_SENDPAGE_LOCKED */
-		err = kernel_sendpage(sk->sk_socket, page, poff, len,
-					MSG_DONTWAIT);
+		err = kernel_sendpage(sk->sk_socket, page, poff, len, flags);
 	if (unlikely(err < 0)) {
 		/* XXX check if it is enough to assume EAGAIN only */
 		PST_DBG("error %d in sendpage() slot %ld",
@@ -1445,9 +1442,8 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 		}
 		nmcb_wstate(cb, MB_QUEUED);
 
-		if (likely(pst_extra_enq(kring, slot))) {
+		if (likely(pst_extra_enq(kring, slot)))
 			return -EBUSY;
-		}
 	} /* usually MB_TXREF (TCP) or MB_NOREF (UDP) */
 	return 0;
 }

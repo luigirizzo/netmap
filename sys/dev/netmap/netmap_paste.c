@@ -633,8 +633,9 @@ pst_prestack(struct netmap_kring *kring)
 		struct netmap_slot *slot = &kring->ring->slot[k];
 		int err;
 
-		if (unlikely(slot->len == 0))
+		if (unlikely(slot->len == 0)) {
 			continue;
+		}
 		nmcbw(NMCB_SLT(na, slot), kring, slot);
 		if (tx) {
 			const u_int offset = nm_get_offset(kring, slot);
@@ -644,7 +645,7 @@ pst_prestack(struct netmap_kring *kring)
 			if (unlikely(slot->len <  pst_offset)) {
 				PST_DBG("data offset %u too large", offset);
 				break;
-			} else if (unlikely(offset != sizeof(*cb))) {
+			} else if (unlikely(offset != sizeof(struct nmcb))) {
 				PST_DBG("offset should be %u", offset);
 				break;
 			}
@@ -658,15 +659,17 @@ pst_prestack(struct netmap_kring *kring)
 			 * data (see nm_os_pst_tx()). EINVAL stops that as the
 			 * client is likely misbehaving.
 			 */
-			if (err == -EBUSY)
+			if (err == -EBUSY) {
 				k = nm_next(k, lim_tx);
+			}
 			break;
 		}
 	}
 	kring->nkr_hwlease = k; // next position to process in the stack
 	pst_poststack(kring);
-	if (ft->npkts) // we have leftover, cannot report k
+	if (ft->npkts) { // we have leftover, cannot report k
 		k = rollup(kring, kring->nr_hwcur, k, NULL);
+	}
 	return k;
 }
 
@@ -674,7 +677,7 @@ static int
 nombq(struct netmap_adapter *na, struct mbuf *m)
 {
 	struct netmap_kring *kring;
-	struct netmap_slot *hslot;
+	struct netmap_slot *hs;
 	u_int head, nm_i, lim, len = MBUF_LEN(m);
 
 	/* host ring */
@@ -694,17 +697,18 @@ nombq(struct netmap_adapter *na, struct mbuf *m)
 		m_freem(m);
 		return ENXIO;
 	}
-	hslot = &kring->ring->slot[nm_i];
-	m_copydata(m, 0, len,
-		   (char *)NMB(na, hslot) + nm_get_offset(kring, hslot));
-	hslot->len = len;
+	hs = &kring->ring->slot[nm_i];
+	m_copydata(m, 0, len, (char *)NMB(na, hs) + nm_get_offset(kring, hs));
+	hs->len = len;
 	kring->nr_hwtail = nm_next(nm_i, lim);
 
 	nm_i = kring->nr_hwcur;
-	if (likely(nm_i != head))
+	if (likely(nm_i != head)) {
 		kring->nr_hwcur = head;
-	if (!paste_host_batch)
+	}
+	if (!paste_host_batch) {
 		netmap_bwrap_intr_notify(kring, 0);
+	}
 	/* as if netmap_transmit + rxsync_from_host done */
 	m_freem(m);
 	return 0;
@@ -767,7 +771,6 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 	int mismatch;
 	const u_int bufsize = NETMAP_BUF_SIZE(na);
 	u_int poff, doff;
-
 #ifdef __FreeBSD__
 	struct mbuf *md = m;
 
@@ -874,13 +877,12 @@ pst_extra_free_kring(struct netmap_kring *kring)
 	 * (e.g., for allocating some netmap object)
 	 */
 	if (!kring->extra) {
-		PST_DBG("%s kring %u no extra",
-				kring->na->name, kring->ring_id);
+		PST_DBG("%s kr %u no extra", kring->na->name, kring->ring_id);
 		return;
 	}
 	extra = kring->extra;
 	if (extra->busy != NM_EXT_NULL) {
-		PST_DBG("%s kring %u extra->busy %u",
+		PST_DBG("%s kr %u busy %u",
 				kring->na->name, kring->ring_id, extra->busy);
 	}
 	kring->extra = NULL;
@@ -908,13 +910,15 @@ pst_extra_alloc_kring(struct netmap_kring *kring)
 	struct pst_extra_slot *extra_slots = NULL;
 	u_int want = paste_extra, n, j, next;
 
-	pool = nm_os_malloc(sizeof(*kring->extra));
+	pool = nm_os_malloc(sizeof(*pool));
 	if (!pool)
 		return ENOMEM;
-	kring->extra = pool;
+	kring->extra = pool; // make extra_free_kring()-able
 
 	n = netmap_extra_alloc(na, &next, want);
-	if (n < want) {
+	if (n == 0) {
+		return ENOMEM;
+	} else if (n < want) {
 		if (netmap_verbose)
 			nm_prinf("allocated only %u bufs", n);
 	}
@@ -1202,6 +1206,8 @@ pst_unregister_socket(struct pst_so_adapter *soa)
 	NM_SOCK_T *so = soa->so;
 	struct netmap_pst_adapter *sna = tosna(soa->na);
 
+	/* FreeBSD needs lock to restore so_dtor */
+	so_lock(so);
 	mtx_lock(&sna->so_adapters_lock);
 	if (soa->fd >= sna->so_adapters_max)
 		panic("non-registered or invalid fd %d", soa->fd);
@@ -1216,6 +1222,7 @@ pst_unregister_socket(struct pst_so_adapter *soa)
 	bzero(soa, sizeof(*soa));
 	nm_os_free(soa);
 	mtx_unlock(&sna->so_adapters_lock);
+	so_unlock(so);
 }
 
 static void
@@ -1300,8 +1307,8 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	/* first check table size */
 	if (fd >= sna->so_adapters_max) {
 		struct pst_so_adapter **old = sna->so_adapters, **new;
-		int oldsize = sna->so_adapters_max;
-		int newsize = oldsize ? oldsize * 2 : DEFAULT_SK_ADAPTERS;
+		const int oldsize = sna->so_adapters_max;
+		const int newsize = oldsize ? oldsize * 2 : DEFAULT_SK_ADAPTERS;
 
 		new = nm_os_malloc(sizeof(new) * newsize);
 		if (!new) {

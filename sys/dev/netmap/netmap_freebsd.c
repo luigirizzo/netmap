@@ -1243,7 +1243,6 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	int err;
 	struct nmcb *cb = NMCB_BUF(nmb);
 	const int flags = MSG_DONTWAIT | MSG_DONTROUTE;
-	const u_int offset = nm_get_offset(kring, slot);
 	const u_int pst_offset = nm_pst_getdoff(slot);
 
 	/* Link to the external mbuf storage */
@@ -1255,13 +1254,13 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	m->m_ext.ext_size = slot->len;
 	m->m_ext.ext_free = nm_os_pst_mbuf_data_dtor;
 	m->m_len = m->m_pkthdr.len = slot->len - pst_offset;
-	m->m_data = nmb + offset + pst_offset;
+	m->m_data = nmb + nm_get_offset(kring, slot) + pst_offset;
 
 	nmcb_wstate(cb, MB_STACK);
 
 	soa = pst_soa_from_fd(na, nm_pst_getfd(slot));
 	if (unlikely(!soa)) {
-		PST_DBG("no soa of fd %d (na %s)", nm_pst_getfd(slot), na->name);
+		PST_DBG("no soa (fd %d na %s)", nm_pst_getfd(slot), na->name);
 		return 0;
 	}
 	pst_get_extra_ref(nmcb_kring(cb));

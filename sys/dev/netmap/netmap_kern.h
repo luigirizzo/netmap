@@ -168,7 +168,7 @@ struct hrtimer {
 #define SAVE_SOUPCALL(so, soa)
 #define RESTORE_SOUPCALL(so, soa)    soupcall_clear(so, SO_RCV)
 #define SAVE_SODTOR(so, soa)	(soa)->save_sodtor = (so)->so_dtor
-#define RESTORE_SODTOR(so, soa)	sodtor_set(so, (soa)->save_sodtor)
+#define RESTORE_SODTOR(so, soa)	(so)->so_dtor = (soa)->save_sodtor /* no lock */
 #define SET_SOUPCALL(so, f)	soupcall_set(so, SO_RCV, f, NULL)
 #define SET_SODTOR(so, f)	sodtor_set(so, f)
 //#define MBUF_HEADLEN(m)	((m)->m_pkthdr.len)
@@ -1221,6 +1221,7 @@ struct netmap_pipe_adapter {
 #endif /* WITH_PIPES */
 
 #ifdef WITH_PASTE
+#define CONFIG_NETMAP_DEBUG
 
 #ifdef CONFIG_NETMAP_DEBUG
 #define	PST_DBG(format, ...)					\

@@ -3,7 +3,7 @@
 
 static const uint64_t NS_PST_FD_MASK = 0x000000ffffffff00;
 static const int NS_PST_FD_SHIFT = 8;
-static const uint64_t NS_PST_OFST_MASK = 0x00ffff0000000000;
+static const uint64_t NS_PST_OFST_MASK = 0x0003ff0000000000;
 static const int NS_PST_OFST_SHIFT = 40;
 
 static inline int32_t

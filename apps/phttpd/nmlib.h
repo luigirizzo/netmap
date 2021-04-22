@@ -1304,7 +1304,7 @@ netmap_eventloop(const char *name, char *ifname, void **ret, int *error, int *fd
 #endif
 const u_int DEFAULT_MTU = 1420; // maximum option space
 static int
-copy_to_nm(struct netmap_ring *ring, const char *data,
+nm_write(struct netmap_ring *ring, const char *data,
 		size_t len, int off0, int off, int fd)
 {
 	u_int const tail = ring->tail;
@@ -1313,13 +1313,13 @@ copy_to_nm(struct netmap_ring *ring, const char *data,
 	const u_int space = nm_ring_space(ring);
 	size_t space_bytes;
 
-	if (unlikely(off0 > DEFAULT_MTU)) {
-		D("first offset must be < %u", DEFAULT_MTU);
+	if (unlikely(off + off0 > DEFAULT_MTU)) {
+		D("total offset must be < %u", DEFAULT_MTU);
 	} else if (unlikely(off > DEFAULT_MTU)) {
 		D("offset must be < %u", DEFAULT_MTU);
 	}
 
-	space_bytes = DEFAULT_MTU - off0 + (DEFAULT_MTU - off) * (space - 1);
+	space_bytes = (DEFAULT_MTU - off) * space - off0;
 	if (unlikely(!space || space_bytes < len)) {
 		RD(1, "no space (%d slots)", space);
 		return -1;
@@ -1327,18 +1327,17 @@ copy_to_nm(struct netmap_ring *ring, const char *data,
 
 	while (likely(cur != tail) && copied < len) {
 		struct netmap_slot *slot = &ring->slot[cur];
-		char *p = NETMAP_BUF_OFFSET(ring, slot) + off0;
-		/* off0 contains some payload */
-		int l = min(DEFAULT_MTU - (off0 - off), len - copied);
+		char *p = NETMAP_BUF_OFFSET(ring, slot) + off + off0;
+		int l = min(DEFAULT_MTU - off0, len - copied);
 
 		if (data) {
 			nm_pkt_copy(data + copied, p, l);
 		}
-		slot->len = off0 + l;
+		slot->len = off + off0 + l;
 		nm_pst_setdoff(slot, off);
 		nm_pst_setfd(slot, fd);
 		copied += l;
-		off0 = off;
+		off0 = 0;
 		cur = nm_ring_next(ring, cur);
 	}
 	ring->cur = ring->head = cur;
@@ -1346,7 +1345,7 @@ copy_to_nm(struct netmap_ring *ring, const char *data,
 }
 
 static inline struct netmap_slot *
-swap_to_nm(struct netmap_ring *txr, struct netmap_slot *slot)
+nm_zcopy(struct netmap_ring *txr, struct netmap_slot *slot)
 {
 	struct netmap_slot tmp, *txs = NULL;
 
