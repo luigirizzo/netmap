@@ -1175,7 +1175,7 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 		return 0; // drop and skip
 	}
 	m->m_ext.ext_buf = nmb;
-	m->m_ext.ext_size = slot->len;
+	m->m_ext.ext_size = NETMAP_BUF_SIZE(na);
 	m->m_ext.ext_free = nm_os_pst_mbuf_data_dtor;
 	m->m_ext.ext_arg2 = NULL;
 	m->m_len = m->m_pkthdr.len = slot->len;
@@ -1251,7 +1251,7 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 		return 0; // XXX
 	}
 	m->m_ext.ext_buf = m->m_data = nmb;
-	m->m_ext.ext_size = slot->len;
+	m->m_ext.ext_size = NETMAP_BUF_SIZE(na);
 	m->m_ext.ext_free = nm_os_pst_mbuf_data_dtor;
 	m->m_len = m->m_pkthdr.len = slot->len - pst_offset;
 	m->m_data = nmb + nm_get_offset(kring, slot) + pst_offset;
