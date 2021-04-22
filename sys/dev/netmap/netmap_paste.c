@@ -1206,8 +1206,6 @@ pst_unregister_socket(struct pst_so_adapter *soa)
 	NM_SOCK_T *so = soa->so;
 	struct netmap_pst_adapter *sna = tosna(soa->na);
 
-	/* FreeBSD needs lock to restore so_dtor */
-	so_lock(so);
 	mtx_lock(&sna->so_adapters_lock);
 	if (soa->fd >= sna->so_adapters_max)
 		panic("non-registered or invalid fd %d", soa->fd);
@@ -1222,7 +1220,6 @@ pst_unregister_socket(struct pst_so_adapter *soa)
 	bzero(soa, sizeof(*soa));
 	nm_os_free(soa);
 	mtx_unlock(&sna->so_adapters_lock);
-	so_unlock(so);
 }
 
 static void
