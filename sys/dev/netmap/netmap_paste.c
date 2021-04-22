@@ -1221,10 +1221,8 @@ pst_unregister_socket(struct pst_so_adapter *soa)
 static void
 pst_sodtor(NM_SOCK_T *so)
 {
-	so_lock(so);
 	if (pst_so(so))
 		pst_unregister_socket(pst_so(so));
-	so_unlock(so);
 	if (so->so_dtor) {
 		if (so->so_dtor == pst_sodtor) {
 			panic("recursive so_dtor");
