@@ -657,7 +657,6 @@ static unsigned int nmring_tg4(struct sk_buff *skb,
 	struct netmap_adapter *na = NULL;
 	struct iphdr *iph = ip_hdr(skb);
 	unsigned int mtu;
-	int error = 0;
 	unsigned int rc = NF_STOLEN;
 	const struct icmphdr *icmph;
 
@@ -719,9 +718,10 @@ static unsigned int nmring_tg4(struct sk_buff *skb,
 			}
 		}
 		return NF_STOLEN;
-	} else if (skb->len > mtu) {
+	}
+	else if (skb->len > mtu) {
 		if ((iph->frag_off & htons(IP_DF)) == 0) {
-			error = ip_do_fragment(priv->net, NULL, skb, copy_pkt_to_queue);
+			ip_do_fragment(priv->net, NULL, skb, copy_pkt_to_queue);
 		}
 		else if (unlikely(!skb->ignore_df ||
 				(IPCB(skb)->frag_max_size &&
@@ -737,13 +737,11 @@ static unsigned int nmring_tg4(struct sk_buff *skb,
 		return NF_STOLEN;
 	}
 	else {
-		error = copy_pkt_to_queue(NULL, NULL, skb);
+		if (copy_pkt_to_queue(NULL, NULL, skb) != 0) {
+			rc = NF_DROP;
+		}
+		return rc;
 	}
-	if (error != 0) {
-		rc = NF_DROP;
-	}
-
-	return rc;
 }
 
 static unsigned int nmring_tg6(struct sk_buff *skb,
@@ -755,7 +753,6 @@ static unsigned int nmring_tg6(struct sk_buff *skb,
 	struct netmap_kring *rx_kring = NULL;
 	struct netmap_adapter *na = NULL;
 	unsigned int mtu;
-	int error = 0;
 	unsigned int rc = NF_STOLEN;
 	struct ipv6hdr *ip6h = ipv6_hdr(skb);
 	const struct icmp6hdr *icmp6h = NULL;
@@ -811,13 +808,11 @@ static unsigned int nmring_tg6(struct sk_buff *skb,
 		return NF_STOLEN;
 	}
 	else {
-		error = copy_pkt_to_queue(NULL, NULL, skb);
+		if (copy_pkt_to_queue(NULL, NULL, skb) != 0) {
+			rc = NF_DROP;
+		}
+		return rc;
 	}
-	if (error != 0) {
-		rc = NF_DROP;
-	}
-
-	return rc;
 }
 
 static int nmring_tg_checkentry(const struct xt_tgchk_param *par)
