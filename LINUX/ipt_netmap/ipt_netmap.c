@@ -658,6 +658,7 @@ static unsigned int nmring_tg4(struct sk_buff *skb,
 	struct iphdr *iph = ip_hdr(skb);
 	unsigned int mtu;
 	int error = 0;
+	unsigned int rc = NF_STOLEN;
 	const struct icmphdr *icmph;
 
 	if (!priv || priv->hooknum == NF_INET_UNSET ||
@@ -731,14 +732,18 @@ static unsigned int nmring_tg4(struct sk_buff *skb,
 			return NF_DROP;
 		}
 		else {
-			error = ip_do_fragment(priv->net, NULL, skb, copy_pkt_to_queue);
+			ip_do_fragment(priv->net, NULL, skb, copy_pkt_to_queue);
 		}
+		return NF_STOLEN;
 	}
 	else {
 		error = copy_pkt_to_queue(NULL, NULL, skb);
 	}
+	if (error != 0) {
+		rc = NF_DROP;
+	}
 
-	return error == 0 ? NF_STOLEN : NF_DROP;
+	return rc;
 }
 
 static unsigned int nmring_tg6(struct sk_buff *skb,
@@ -751,6 +756,7 @@ static unsigned int nmring_tg6(struct sk_buff *skb,
 	struct netmap_adapter *na = NULL;
 	unsigned int mtu;
 	int error = 0;
+	unsigned int rc = NF_STOLEN;
 	struct ipv6hdr *ip6h = ipv6_hdr(skb);
 	const struct icmp6hdr *icmp6h = NULL;
 
@@ -801,13 +807,17 @@ static unsigned int nmring_tg6(struct sk_buff *skb,
 			(skb_dst(skb) && dst_allfrag(skb_dst(skb))) ||
 			(IP6CB(skb)->frag_max_size &&
 					skb->len > IP6CB(skb)->frag_max_size)) {
-		error = ip6_fragment(priv->net, NULL, skb, copy_pkt_to_queue);
+		ip6_fragment(priv->net, NULL, skb, copy_pkt_to_queue);
+		return NF_STOLEN;
 	}
 	else {
 		error = copy_pkt_to_queue(NULL, NULL, skb);
 	}
+	if (error != 0) {
+		rc = NF_DROP;
+	}
 
-	return error == 0 ? NF_STOLEN : NF_DROP;
+	return rc;
 }
 
 static int nmring_tg_checkentry(const struct xt_tgchk_param *par)
