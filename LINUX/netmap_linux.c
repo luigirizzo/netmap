@@ -1105,25 +1105,10 @@ linux_pst_start_xmit(struct sk_buff *skb, struct net_device *dev)
  * zerocopy_success is false when MB_TXREF and the slot is not on-ring.
  */
 void
-nm_os_pst_mbuf_data_dtor(struct ubuf_info *uarg,
-	bool zerocopy_success)
+nm_os_pst_mbuf_data_dtor(struct ubuf_info *uarg, bool zerocopy_success)
 {
-	struct nmcb *cb;
 	struct nm_ubuf_info *u = (struct nm_ubuf_info *)uarg;
-
-	cb = container_of(u, struct nmcb, ui);
-	if (unlikely(!nmcb_valid(cb))) {
-		PST_DBG("invalid cb %p", cb);
-		return;
-	} else if (unlikely(nmcb_kring(cb) == NULL)) {
-		PST_DBG("no kring in cb %p", cb);
-		return;
-	}
-	pst_put_extra_ref(nmcb_kring(cb));
-	if (nmcb_rstate(cb) != MB_FTREF) {
-		pst_extra_deq(nmcb_kring(cb), nmcb_slot(cb));
-		nmcb_wstate(cb, MB_NOREF);
-	}
+	return pst_mbuf_data_dtor(container_of(u, struct nmcb, ui));
 }
 
 static void

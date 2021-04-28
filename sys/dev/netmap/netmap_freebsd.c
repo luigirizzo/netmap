@@ -1116,11 +1116,7 @@ nm_os_pst_sbdrain(struct netmap_adapter *na, NM_SOCK_T *so)
 void
 nm_os_pst_mbuf_data_dtor(struct mbuf *m)
 {
-	struct nmcb *cb = NMCB(m);
-
-	nmcb_wstate(cb, MB_NOREF);
-	pst_put_extra_ref(nmcb_kring(cb));
-	pst_extra_deq(nmcb_kring(cb), nmcb_slot(cb));
+	return pst_mbuf_data_dtor(NMCB(m));
 }
 
 #ifdef PST_MB_RECYCLE

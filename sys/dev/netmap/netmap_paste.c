@@ -1235,6 +1235,23 @@ pst_sodtor(NM_SOCK_T *so)
 	}
 }
 
+void
+pst_mbuf_data_dtor(struct nmcb *cb)
+{
+	if (unlikely(!nmcb_valid(cb))) {
+		PST_DBG("invalid cb %p", cb);
+		return;
+	} else if (unlikely(nmcb_kring(cb) == NULL)) {
+		PST_DBG("no kring in cb %p", cb);
+		return;
+	}
+	pst_put_extra_ref(nmcb_kring(cb));
+	if (nmcb_rstate(cb) != MB_FTREF) {
+		pst_extra_deq(nmcb_kring(cb), nmcb_slot(cb));
+		nmcb_wstate(cb, MB_NOREF);
+	}
+}
+
 /* Under NMG_LOCK() */
 static void
 netmap_pst_bdg_dtor(const struct netmap_vp_adapter *vpna)
