@@ -1244,6 +1244,12 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	const int flags = MSG_DONTWAIT | MSG_DONTROUTE;
 	const u_int pst_offset = nm_pst_getdoff(slot);
 
+	soa = pst_soa_from_fd(na, nm_pst_getfd(slot));
+	if (unlikely(!soa)) {
+		PST_DBG("no soa (fd %d na %s)", nm_pst_getfd(slot), na->name);
+		return 0;
+	}
+
 	/* Link to the external mbuf storage */
 	m = nm_os_get_mbuf(na->ifp, NETMAP_BUF_SIZE(na));
 	if (unlikely(m == NULL)) {
@@ -1257,11 +1263,6 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 
 	nmcb_wstate(cb, MB_STACK);
 
-	soa = pst_soa_from_fd(na, nm_pst_getfd(slot));
-	if (unlikely(!soa)) {
-		PST_DBG("no soa (fd %d na %s)", nm_pst_getfd(slot), na->name);
-		return 0;
-	}
 	pst_get_extra_ref(nmcb_kring(cb));
 	err = sosend(soa->so, NULL, NULL, m, NULL, flags, curthread);
 	if (unlikely(err < 0)) {
