@@ -986,6 +986,7 @@ ptn_memdev_shutdown(device_t dev)
 #ifdef WITH_PASTE
 #include <sys/protosw.h>
 
+/* sockbuf is locked */
 int
 nm_os_pst_upcall(NM_SOCK_T *so, void *x, int y)
 {
