@@ -1211,15 +1211,15 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 		NM_SOCK_T *so = sna->eventso[curcpu];
 		struct pst_so_adapter *soa = pst_so(so);
 
-		if (unlikely(nm_pst_getfd(slot) != 0)) {
-			panic("eventso with slot fd set");
-		}
 		sna->eventso[curcpu] = NULL;
-		/* soa is NULL when the soupcall() context closed the socket */
-		if (soa != NULL && nmcb_rstate(cb) == MB_NOREF) {
-			nm_pst_setfd(slot, soa->fd);
-			nm_pst_setdoff(slot, 0);
-			pst_fdtable_add(cb, kring);
+		/* ignore additional empty upcall */
+		if (nm_pst_getfd(slot) == 0) {
+			/* NULL soa when the soupcall() context closed it */
+			if (soa != NULL && nmcb_rstate(cb) == MB_NOREF) {
+				nm_pst_setfd(slot, soa->fd);
+				nm_pst_setdoff(slot, 0);
+				pst_fdtable_add(cb, kring);
+			}
 		}
 	}
 
