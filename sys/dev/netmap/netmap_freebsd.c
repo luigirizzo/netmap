@@ -1096,19 +1096,21 @@ nm_os_pst_sbdrain(struct netmap_adapter *na, NM_SOCK_T *so)
 	struct nmcb *cb;
 	int error = 0;
 
+	SOCKBUF_LOCK(&so->so_rcv);
 	if (!sbavail(&so->so_rcv)) {
 		if (so->so_rcv.sb_state & SBS_CANTRCVMORE) {
 			error = ENOTCONN;
 		}
+		SOCKBUF_UNLOCK(&so->so_rcv);
 		return error;
 	}
 	m = so->so_rcv.sb_mb;
 	cb = NMCB_EXT(m, 0, NETMAP_BUF_SIZE(na));
 	if (!nmcb_valid(cb)) {
 		PST_DBG("invalid cb");
+		SOCKBUF_UNLOCK(&so->so_rcv);
 		return error;
 	}
-	SOCKBUF_LOCK(&so->so_rcv);
 	error = nm_os_pst_upcall(so, NULL, 0);
 	SOCKBUF_UNLOCK(&so->so_rcv);
 	return error;
