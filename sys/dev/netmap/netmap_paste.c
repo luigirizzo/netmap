@@ -1497,6 +1497,9 @@ netmap_pst_txsync(struct netmap_kring *kring, int flags)
 	if (unlikely(!pst_bdg_valid(na))) {
 		done = head;
 		return 0;
+	} else if (unlikely(kring->nr_mode == NKR_NETMAP_OFF)) {
+		PST_DBG("na %s kring %d OFF", na->name, kring->ring_id);
+		return 0;
 	}
 	done = pst_prestack(kring);
 
