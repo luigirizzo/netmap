@@ -274,7 +274,7 @@ pst_extra_deq(struct netmap_kring *kring, struct netmap_slot *slot)
 			return;
 		}
 	} else {
-		PST_DBG_LIM("%s kring %u not ON",
+		PST_DBG("%s kring %u not ON",
 				kring->na->name, kring->ring_id);
 	}
 	if (unlikely(!(BETWEEN(slot, slots, slots + pool->num)))) {
