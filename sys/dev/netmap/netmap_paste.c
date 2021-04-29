@@ -994,8 +994,10 @@ pst_mbufpool_alloc(struct netmap_adapter *na)
 			kring = NMR(na, NR_TX)[i];
 			if (kring->tx_pool == NULL)
 				break; // further allocation has never happened
-			if (kring->tx_pool[0])
+			if (kring->tx_pool[0]) {
 				nm_os_free(kring->tx_pool[0]);
+				kring->tx_pool[0] = NULL;
+			}
 			nm_os_free(kring->tx_pool);
 			kring->tx_pool = NULL;
 		}
@@ -1015,9 +1017,12 @@ pst_mbufpool_free(struct netmap_adapter *na)
 			continue;
 		if (kring->tx_pool[1]) {
 			m_freem((struct mbuf *)kring->tx_pool[1]);
+			kring->tx_pool[1] = NULL;
 		}
-		if (kring->tx_pool[0])
+		if (kring->tx_pool[0]) {
 			nm_os_free(kring->tx_pool[0]);
+			kring->tx_pool[0] = NULL;
+		}
 		nm_os_free(kring->tx_pool);
 		kring->tx_pool = NULL;
 	}
