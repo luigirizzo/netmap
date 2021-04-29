@@ -1382,7 +1382,7 @@ netmap_pst_reg(struct netmap_adapter *na, int onoff)
 	if (onoff) {
 		pst_write_offset(na, 0);
 		if (na->active_fds > 0) {
-			return 0;
+			goto vp_reg;
 		}
 		err = pst_extra_alloc(na);
 		if (err)
