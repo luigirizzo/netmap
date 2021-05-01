@@ -79,7 +79,7 @@ nm_swap_reset(struct netmap_slot *s, struct netmap_slot *d)
 {
 	nm_swap(s, d);
 	s->len = 0;
-	nm_pst_reset_fddoff(s);
+	//nm_pst_reset_fddoff(s);
 }
 
 static inline u_int
@@ -565,6 +565,10 @@ pst_poststack(struct netmap_kring *kring)
 					nonfree[nonfree_num++] = j;
 				}
 				nm_swap_reset(ts, rs);
+				/* reclaimed slot may have adjusted offset */
+				if (nm_get_offset(kring, ts) != sizeof(*cb)) {
+					nm_write_offset(kring, ts, sizeof(*cb));
+				}
 				if (nmcb_rstate(cb) == MB_FTREF) {
 					nmcb_wstate(cb, MB_NOREF);
 					pst_extra_deq(nmcb_kring(cb), ts);
@@ -645,8 +649,8 @@ pst_prestack(struct netmap_kring *kring)
 			if (unlikely(slot->len <  pst_offset)) {
 				PST_DBG("data offset %u too large", offset);
 				break;
-			} else if (unlikely(offset != sizeof(struct nmcb))) {
-				PST_DBG("offset should be %u", offset);
+			} else if (unlikely(offset < sizeof(struct nmcb))) {
+				PST_DBG("offset should be at least %lu", sizeof(struct nmcb));
 				break;
 			}
 			err = nm_os_pst_tx(kring, slot);
@@ -827,15 +831,41 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 	/* bring protocol headers in */
 	poff = nm_get_offset(kring, slot);
 	doff = nm_pst_getdoff(slot);
-	mismatch = MBUF_HEADLEN(m) - (int)doff;
+	mismatch = (int)doff - MBUF_HEADLEN(m);
 	if (!mismatch) {
 		/* Length has already been validated */
 		memcpy(nmb + poff, MBUF_DATA(m), doff);
 		PST_DBG_LIM("zerocopy done (hlen %u)", MBUF_HEADLEN(m));
+	} else if (mismatch > 0 && poff + mismatch < kring->offset_max) {
+		PST_DBG("nmb %p data %p hlen %u", nmb, MBUF_DATA(m), MBUF_HEADLEN(m));
+		memcpy(nmb + poff + mismatch, MBUF_DATA(m), MBUF_HEADLEN(m));
+		nm_write_offset(kring, slot, (uint64_t)(poff + mismatch));
+
+		slot->len -= mismatch;
+		nm_pst_setdoff(slot, doff - mismatch); // inform user
+
+		poff += mismatch;
+		PST_DBG_LIM("new offset %lu", (uint64_t)(doff - mismatch));
 	} else {
-		m_copydata(m, 0, MBUF_LEN(m), nmb + poff);
-		PST_DBG_LIM("copy (hlen %u doff %u)", MBUF_HEADLEN(m), doff);
-		slot->len += mismatch;
+		if (mismatch < 0) {
+			caddr_t p = nmb + poff + doff;
+			memmove(p - mismatch, p, MBUF_LEN(m));
+#ifdef __FreeBSD__
+			m->m_next->m_data = p - mismatch;
+#else
+			skb_frag_off_add(&skb_shinfo(m)->frags[0], mismatch);
+#endif
+			memcpy(nmb + poff, MBUF_DATA(m), MBUF_HEADLEN(m));
+		} else {
+			m_copydata(m, 0, MBUF_LEN(m), nmb + poff);
+		}
+
+		slot->len -= mismatch;
+		nm_pst_setdoff(slot, doff - mismatch); // inform user
+
+		PST_DBG_LIM("copy (hlen %u len %u doff %u) mismatch %d slen %u",
+			MBUF_HEADLEN(m), m_length(m, NULL),
+			doff, mismatch, slot->len);
 	}
 
 	if (nm_os_mbuf_has_csum_offld(m)) {
@@ -850,6 +880,7 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 #ifdef linux
 		m->ip_summed = CHECKSUM_COMPLETE;
 #endif
+		nm_prinf("port %u %u", ntohs(tcph->source), ntohs(tcph->dest));
 		check = &tcph->check;
 		*check = 0;
 		len = slot->len - MBUF_TRANSPORT_OFFSET(m);
@@ -1080,7 +1111,7 @@ pst_write_offset(struct netmap_adapter *na, bool noring)
 			struct netmap_kring *kring = NMR(na, t)[i];
 			struct netmap_ring *ring = kring->ring;
 
-			kring->offset_max = offset;
+			kring->offset_max = mask;
 			kring->offset_mask = mask;
 			/* Since app threads individually register port/rings,
 			 * there exist rings not enabled yet.
@@ -1233,9 +1264,6 @@ pst_sodtor(NM_SOCK_T *so)
 	if (pst_so(so))
 		pst_unregister_socket(pst_so(so));
 	if (so->so_dtor) {
-		if (so->so_dtor == pst_sodtor) {
-			panic("recursive so_dtor");
-		}
 		so->so_dtor(so);
 	}
 }

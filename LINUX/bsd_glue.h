@@ -575,6 +575,7 @@ void netmap_bns_unregister(void);
 	NMCB_BUF(page_address(skb_frag_page(&skb_shinfo((_m))->frags[_i])) + \
 		 _bs * (skb_frag_off(&skb_shinfo((_m))->frags[_i]) / _bs))
 #define NMCB_BUF(_buf)		((struct nmcb *)(_buf))
+#define m_length(_m, _x)	(_m)->len
 
 struct nm_ubuf_info {
 	struct ubuf_info ubuf;

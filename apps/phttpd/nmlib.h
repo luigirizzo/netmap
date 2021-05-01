@@ -706,7 +706,7 @@ out:
 }
 
 
-#define IPV4TCP_HDRLEN	66
+#define IPV4TCP_HDRLEN	70
 static inline int
 netmap_sendmsg (struct nm_msg *msgp, void *data, size_t len)
 {
@@ -1305,19 +1305,20 @@ netmap_eventloop(const char *name, char *ifname, void **ret, int *error, int *fd
 const u_int DEFAULT_MTU = 1420; // maximum option space
 static int
 nm_write(struct netmap_ring *ring, const char *data,
-		size_t len, int off0, int off, int fd)
+		size_t len, int off0, int fd)
 {
 	u_int const tail = ring->tail;
 	u_int cur = ring->cur;
 	size_t copied = 0;
 	const u_int space = nm_ring_space(ring);
 	size_t space_bytes;
+	const int off = IPV4TCP_HDRLEN;
 
-	if (unlikely(off + off0 > DEFAULT_MTU)) {
-		D("total offset must be < %u", DEFAULT_MTU);
-	} else if (unlikely(off > DEFAULT_MTU)) {
-		D("offset must be < %u", DEFAULT_MTU);
-	}
+	//if (unlikely(off + off0 > DEFAULT_MTU)) {
+	//	D("total offset must be < %u", DEFAULT_MTU);
+	//} else if (unlikely(off > DEFAULT_MTU)) {
+	//	D("offset must be < %u", DEFAULT_MTU);
+	//}
 
 	space_bytes = (DEFAULT_MTU - off) * space - off0;
 	if (unlikely(!space || space_bytes < len)) {
@@ -1335,6 +1336,7 @@ nm_write(struct netmap_ring *ring, const char *data,
 		}
 		slot->len = off + off0 + l;
 		nm_pst_setdoff(slot, off);
+		D("%u", nm_pst_getdoff(slot));
 		nm_pst_setfd(slot, fd);
 		copied += l;
 		off0 = 0;

@@ -77,7 +77,6 @@ user_clock_gettime(struct timespec *ts)
 #define BPLUSFILE	"bplus"
 #define DATAFILE	"dumb"
 
-#define IPV4TCP_HDRLEN	66
 #define NETMAP_BUF_SIZE	2048
 #define GET_LEN		4 // the request look like GET /3
 #define POST_LEN	5
@@ -585,8 +584,7 @@ phttpd_data(struct nm_msg *m)
 		} else {
 			httplen = generate_httphdr(msglen, p);
 		}
-		len = nm_write(txr, content, msglen, httplen,
-				IPV4TCP_HDRLEN, m->fd);
+		len = nm_write(txr, content, msglen, httplen, m->fd);
 		if (unlikely(len < msglen)) {
 			D("no space");
 		}
