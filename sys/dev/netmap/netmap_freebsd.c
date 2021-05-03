@@ -1243,6 +1243,7 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 	struct nmcb *cb = NMCB_BUF(nmb);
 	const int flags = MSG_DONTWAIT | MSG_DONTROUTE;
 	const u_int pst_offset = nm_pst_getdoff(slot);
+	const u_int nm_offset = nm_get_offset(kring, slot);
 
 	soa = pst_soa_from_fd(na, nm_pst_getfd(slot));
 	if (unlikely(!soa)) {
@@ -1256,10 +1257,16 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 		return 0; // XXX
 	}
 	m->m_ext.ext_buf = m->m_data = nmb;
-	m->m_ext.ext_size = NETMAP_BUF_SIZE(na);
+	/*
+	 * If we give the entire netmap buffer size, subsequent data can be
+	 * copied to the (unused) trailing space, causing pst_transmit()
+	 * to see the same cb multiple times and only the first one
+	 * with MB_STACK is zero-copied.
+	 */
+	m->m_ext.ext_size = slot->len;
 	m->m_ext.ext_free = nm_os_pst_mbuf_data_dtor;
-	m->m_len = m->m_pkthdr.len = slot->len - pst_offset;
-	m->m_data = nmb + nm_get_offset(kring, slot) + pst_offset;
+	m->m_len = slot->len - pst_offset;
+	m->m_data = nmb + nm_offset + pst_offset;
 
 	nmcb_wstate(cb, MB_STACK);
 
@@ -1282,15 +1289,9 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 int
 nm_os_set_nodelay(NM_SOCK_T *so)
 {
-	struct sockopt sopt;
 	int on = 1;
 
-	sopt.sopt_dir = SOPT_SET;
-	sopt.sopt_level = SOL_SOCKET;
-	sopt.sopt_name = TCP_NODELAY;
-	sopt.sopt_val = &on;
-	sopt.sopt_valsize = sizeof(on);
-	return sosetopt(so, &sopt);
+	return so_setsockopt(so, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
 }
 
 int

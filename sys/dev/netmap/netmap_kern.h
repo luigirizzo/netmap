@@ -1370,6 +1370,12 @@ pst_wso(struct pst_so_adapter *soa, NM_SOCK_T *so)
 {
 	so->so_emuldata = (void *)soa;
 }
+
+static inline void
+pst_m_extshift(struct mbuf *m, int off)
+{
+//	m->m_next->m_data = p - mismatch;
+}
 #endif
 #define NMCB_SLT(_na, _slt)	NMCB_BUF(NMB(_na, (_slt)))
 
@@ -1391,6 +1397,7 @@ int pst_extra_noref(struct netmap_adapter *);
 void pst_get_extra_ref(struct netmap_kring *);
 void pst_put_extra_ref(struct netmap_kring *);
 u_int pst_peek_extra_ref(struct netmap_kring *);
+void nm_os_m_ext_shift(struct mbuf *);
 extern int paste_usrrcv;
 extern int paste_optim_sendpage;
 #endif /* WITH_PASTE */

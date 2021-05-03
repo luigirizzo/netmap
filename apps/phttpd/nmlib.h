@@ -706,7 +706,7 @@ out:
 }
 
 
-#define IPV4TCP_HDRLEN	70
+#define IPV4TCP_HDRLEN	66
 static inline int
 netmap_sendmsg (struct nm_msg *msgp, void *data, size_t len)
 {
@@ -1331,12 +1331,12 @@ nm_write(struct netmap_ring *ring, const char *data,
 		char *p = NETMAP_BUF_OFFSET(ring, slot) + off + off0;
 		int l = min(DEFAULT_MTU - off0, len - copied);
 
+		D("l %d", l);
 		if (data) {
 			nm_pkt_copy(data + copied, p, l);
 		}
 		slot->len = off + off0 + l;
 		nm_pst_setdoff(slot, off);
-		D("%u", nm_pst_getdoff(slot));
 		nm_pst_setfd(slot, fd);
 		copied += l;
 		off0 = 0;

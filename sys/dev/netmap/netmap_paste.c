@@ -774,7 +774,7 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 	char *nmb;
 	int mismatch;
 	const u_int bufsize = NETMAP_BUF_SIZE(na);
-	u_int poff, doff;
+	u_int poff, doff, mlen;
 #ifdef __FreeBSD__
 	struct mbuf *md = m;
 
@@ -797,11 +797,19 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 
 	cb = NMCB_EXT(m, 0, bufsize);
 #endif /* __FreeBSD__ */
+	/*
+	 * FreeBSD pushes down the same cb multiple times for different slots
+	 */
 	if (unlikely(!(cb && nmcb_valid(cb)))) {
 		csum_transmit(na, m);
 		return 0;
 	}
 	kring = nmcb_kring(cb);
+	/*
+	 * Linux pushes down the same cb multiple times for a slot whose
+	 * len > MTU, but its cb state does not have MB_STACK anymore, which is
+	 * creared in the first pass
+	 */
 	if (unlikely(nmcb_rstate(cb) != MB_STACK)
 #ifdef __FreeBSD__
 	    /* FreeBSD ARP reply recycles the request mbuf */
@@ -828,26 +836,28 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 	if (unlikely((struct nmcb *)nmb != cb)) {
 		panic("nmb %p cb %p", nmb, cb);
 	}
-	/* bring protocol headers in */
+	mlen = m_length(m, NULL);
 	poff = nm_get_offset(kring, slot);
 	doff = nm_pst_getdoff(slot);
 	mismatch = (int)doff - MBUF_HEADLEN(m);
 	if (!mismatch) {
+		/* bring protocol headers in */
 		/* Length has already been validated */
 		memcpy(nmb + poff, MBUF_DATA(m), doff);
-		PST_DBG_LIM("zerocopy done (hlen %u)", MBUF_HEADLEN(m));
-	} else if (mismatch > 0 && poff + mismatch < kring->offset_max) {
-		PST_DBG("nmb %p data %p hlen %u", nmb, MBUF_DATA(m), MBUF_HEADLEN(m));
-		memcpy(nmb + poff + mismatch, MBUF_DATA(m), MBUF_HEADLEN(m));
-		nm_write_offset(kring, slot, (uint64_t)(poff + mismatch));
-
-		slot->len -= mismatch;
-		nm_pst_setdoff(slot, doff - mismatch); // inform user
-
-		poff += mismatch;
-		PST_DBG_LIM("new offset %lu", (uint64_t)(doff - mismatch));
+		PST_DBG_LIM("zerocopy done (hlen %u mleh %u slen %u)",
+				MBUF_HEADLEN(m), mlen, slot->len);
 	} else {
-		if (mismatch < 0) {
+		PST_DBG_LIM("copy (l %u o %u do %u mis %d mhl %u ml %u",
+			slot->len, poff, doff, mismatch, MBUF_HEADLEN(m), mlen);
+		if (mismatch > 0 && poff + mismatch < kring->offset_max) {
+			memcpy(nmb + poff + mismatch, MBUF_DATA(m),
+					MBUF_HEADLEN(m));
+			nm_write_offset(kring, slot, (uint64_t)poff + mismatch);
+
+			poff += mismatch;
+			PST_DBG_LIM("new off %lu", (uint64_t)(doff - mismatch));
+
+		} else if (mismatch < 0) {
 			caddr_t p = nmb + poff + doff;
 			memmove(p - mismatch, p, MBUF_LEN(m));
 #ifdef __FreeBSD__
@@ -862,10 +872,11 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 
 		slot->len -= mismatch;
 		nm_pst_setdoff(slot, doff - mismatch); // inform user
+	}
 
-		PST_DBG_LIM("copy (hlen %u len %u doff %u) mismatch %d slen %u",
-			MBUF_HEADLEN(m), m_length(m, NULL),
-			doff, mismatch, slot->len);
+	if (unlikely(slot->len > mlen)) {
+		PST_DBG_LIM("trim from %u to %u", slot->len, mlen);
+		slot->len = mlen;
 	}
 
 	if (nm_os_mbuf_has_csum_offld(m)) {
@@ -880,7 +891,6 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 #ifdef linux
 		m->ip_summed = CHECKSUM_COMPLETE;
 #endif
-		nm_prinf("port %u %u", ntohs(tcph->source), ntohs(tcph->dest));
 		check = &tcph->check;
 		*check = 0;
 		len = slot->len - MBUF_TRANSPORT_OFFSET(m);
@@ -1333,7 +1343,7 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 		return EINVAL;
 	}
 
-	so_lock(so); // sosetopt() internally locks socket
+	so_lock(so);
 #ifdef linux
 	if (sock_flag(so, SOCK_DEAD)) {
 		PST_DBG("so %p SOCK_DEAD", so);
@@ -1388,15 +1398,25 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	SET_SODTOR(so, pst_sodtor);
 	sna->so_adapters[fd] = soa;
 	sna->num_so_adapters++;
+#ifdef __FreeBSD__
+	so->so_snd.sb_flags |= SB_NOCOALESCE; // XXX might not be needed
+#endif
 	wmb();
 	SOCKBUF_UNLOCK(&so->so_rcv);
-	nm_os_set_nodelay(so);
+#ifndef __FreeBSD__
+	nm_os_set_nodelay(so); // within the same socket lock.
+#endif
 unlock_return:
 	if (!error) {
 		error = nm_os_pst_sbdrain(na, so);
 	}
 	mtx_unlock(&sna->so_adapters_lock);
 	so_unlock(so);
+#ifdef __FreeBSD__
+	if (!error) {
+		nm_os_set_nodelay(so); // FreeBSD locks inp internally
+	}
+#endif
 	nm_os_sock_fput(so, file);
 	return error;
 }

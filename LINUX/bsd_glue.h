@@ -615,6 +615,12 @@ pst_wso(struct pst_so_adapter *soa, NM_SOCK_T *sk)
 	sk->sk_user_data = soa;
 }
 
+static inline void
+pst_m_extshift(struct mbuf *m, int off)
+{
+	skb_frag_off_add(&skb_shinfo(m)->frags[0], mismatch);
+}
+
 /* Since FreeBSD doesn't have generic callback for a receive-data-ready event,
  * we so far use a bit high level macro, also for destructor..
  */
