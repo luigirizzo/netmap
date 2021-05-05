@@ -1331,7 +1331,6 @@ nm_write(struct netmap_ring *ring, const char *data,
 		char *p = NETMAP_BUF_OFFSET(ring, slot) + off + off0;
 		int l = min(DEFAULT_MTU - off0, len - copied);
 
-		D("l %d", l);
 		if (data) {
 			nm_pkt_copy(data + copied, p, l);
 		}

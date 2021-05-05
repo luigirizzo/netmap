@@ -1262,6 +1262,21 @@ nm_os_pst_sbdrain(struct netmap_adapter *na, NM_SOCK_T *sk)
 	return 0;
 }
 
+int
+nm_os_pst_mbuf_extadj(struct mbuf *m, int i, int off)
+{
+	if (unlikely(skb_shinfo(m)->nr_frags <= i))
+		return -1;
+	skb_frag_off_add(&skb_shinfo(m)->frags[i], off);
+	return 0;
+}
+
+int
+nm_os_sock_dead(NM_SOCK_T *so)
+{
+	return !!sock_flag(so, SOCK_DEAD);
+}
+
 static inline int
 nm_os_mbuf_valid(struct mbuf *m)
 {

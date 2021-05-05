@@ -3175,7 +3175,7 @@ netmap_ioctl(struct netmap_priv_d *priv, u_long cmd, caddr_t data,
 			error = netmap_get_pst_na(hdr, &na, NULL, 0);
 			NMG_UNLOCK();
 			if (!error && na) {
-				error = pst_register_fd(na, fdr->fd);
+				error = netmap_pst_register_fd(na, fdr->fd);
 			}
 			if (na) {
 				netmap_adapter_put(na);

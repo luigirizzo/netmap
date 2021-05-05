@@ -420,15 +420,6 @@ pst_fdtable_may_reset(struct netmap_kring *kring)
 	}
 }
 
-
-/* TX:
- * We overwrite ptr field (8 byte width) of netmap slot to store a
- * socket (4 byte), next buf index (2 byte).
- * The rest of 2 bytes may be used to store the number of frags
- * (1 byte) and destination port (1 byte).
- * We do not support INDIRECT as packet movement is done by swapping
- */
-
 struct pst_so_adapter *
 pst_soa_from_fd(struct netmap_adapter *na, int fd)
 {
@@ -650,7 +641,8 @@ pst_prestack(struct netmap_kring *kring)
 				PST_DBG("data offset %u too large", offset);
 				break;
 			} else if (unlikely(offset < sizeof(struct nmcb))) {
-				PST_DBG("offset should be at least %lu", sizeof(struct nmcb));
+				PST_DBG("offset must be at least %lu",
+					sizeof(struct nmcb));
 				break;
 			}
 			err = nm_os_pst_tx(kring, slot);
@@ -726,7 +718,7 @@ mbuf_proto_headers(struct mbuf *m)
 	uint16_t ethertype;
 
 	ethertype = ntohs(*(uint16_t *)(m->m_data + 12));
-	if (MBUF_NETWORK_OFFSET(m) > 0)
+	if (MBUF_L3_OFST(m) > 0)
 		return;
 	m->m_pkthdr.l2hlen = sizeof(struct ether_header);
 	m->m_pkthdr.l3hlen = sizeof(struct nm_iphdr);
@@ -744,8 +736,8 @@ csum_transmit(struct netmap_adapter *na, struct mbuf *m)
 		uint16_t *check;
 
 		mbuf_proto_headers(m);
-		iph = (struct nm_iphdr *)MBUF_NETWORK_HEADER(m);
-		th = MBUF_TRANSPORT_HEADER(m);
+		iph = (struct nm_iphdr *)MBUF_L3_HEADER(m);
+		th = MBUF_L4_HEADER(m);
 		if (iph->protocol == IPPROTO_UDP)
 			check = &((struct nm_udphdr *)th)->check;
 		else if (likely(iph->protocol == IPPROTO_TCP))
@@ -757,7 +749,7 @@ csum_transmit(struct netmap_adapter *na, struct mbuf *m)
 		 */
 		*check = 0;
 		nm_os_csum_tcpudp_ipv4(iph, th,
-			MBUF_LEN(m) - MBUF_TRANSPORT_OFFSET(m), check);
+			MBUF_LEN(m) - MBUF_L4_OFST(m), check);
 		//m->ip_summed = 0;
 		//m->m_pkthdr.csum_flags = CSUM_TSO; // XXX
 	}
@@ -772,25 +764,23 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 	struct netmap_kring *kring;
 	struct netmap_slot *slot;
 	char *nmb;
-	int mismatch;
+	int hole;
 	const u_int bufsize = NETMAP_BUF_SIZE(na);
 	u_int poff, doff, mlen;
-#ifdef __FreeBSD__
-	struct mbuf *md = m;
 
+#ifdef __FreeBSD__
 	/* M_EXT or multiple mbufs (i.e., chain) */
 	if ((m->m_flags & M_EXT)) // not TCP case
 		cb = NMCB_EXT(m, 0, bufsize);
 	if (!(cb && nmcb_valid(cb))) { // TCP case
-		if (MBUF_NONLINEAR(m) && (m->m_next->m_flags & M_EXT)) {
+		if (MBUF_HASNEXT(m) && (m->m_next->m_flags & M_EXT)) {
 			(void)bufsize;
 			cb = NMCB_EXT(m->m_next, 0, bufsize);
 		}
-		md = m->m_next;
 	}
 #elif defined(linux)
 	/* txsync-ing TX packets are always frags */
-	if (!MBUF_NONLINEAR(m)) {
+	if (!MBUF_HASNEXT(m)) {
 		csum_transmit(na, m);
 		return 0;
 	}
@@ -807,8 +797,8 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 	kring = nmcb_kring(cb);
 	/*
 	 * Linux pushes down the same cb multiple times for a slot whose
-	 * len > MTU, but its cb state does not have MB_STACK anymore, which is
-	 * creared in the first pass
+	 * len > MTU, but its cb state does not have MB_STACK anymore, which
+	 * has been cleared in the first pass
 	 */
 	if (unlikely(nmcb_rstate(cb) != MB_STACK)
 #ifdef __FreeBSD__
@@ -816,15 +806,15 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 	    || unlikely(kring && kring->na->na_private == na->na_private)
 #endif /* __FreeBSD__ */
 	    ) {
+		PST_DBG_LIM("cb %p len %u state %d",
+				cb, MBUF_LEN(m), nmcb_rstate(cb));
 #ifdef linux
 		if (unlikely(nmcb_rstate(cb) == MB_QUEUED)) {
-			int i;
-			for (i = 0; i < MBUF_CLUSTERS(m); i++)
-				nmcb_wstate(NMCB_EXT(m, i, bufsize), MB_NOREF);
+			nmcb_wstate(NMCB_EXT(m, 0, bufsize), MB_NOREF);
 			pst_extra_deq(kring, nmcb_slot(cb));
 		}
 #endif
-		MBUF_LINEARIZE(m); // XXX
+		MBUF_FLATTEN(m); // XXX
 		csum_transmit(na, m);
 		return 0;
 	}
@@ -839,39 +829,33 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 	mlen = m_length(m, NULL);
 	poff = nm_get_offset(kring, slot);
 	doff = nm_pst_getdoff(slot);
-	mismatch = (int)doff - MBUF_HEADLEN(m);
-	if (!mismatch) {
+	hole = (int)doff - MBUF_HDRLEN(m);
+	if (!hole) {
 		/* bring protocol headers in */
-		/* Length has already been validated */
 		memcpy(nmb + poff, MBUF_DATA(m), doff);
-		PST_DBG_LIM("zerocopy done (hlen %u mleh %u slen %u)",
-				MBUF_HEADLEN(m), mlen, slot->len);
+		PST_DBG_LIM("zerocopy (hlen %u mlen %u slen %u)",
+				MBUF_HDRLEN(m), mlen, slot->len);
 	} else {
-		PST_DBG_LIM("copy (l %u o %u do %u mis %d mhl %u ml %u",
-			slot->len, poff, doff, mismatch, MBUF_HEADLEN(m), mlen);
-		if (mismatch > 0 && poff + mismatch < kring->offset_max) {
-			memcpy(nmb + poff + mismatch, MBUF_DATA(m),
-					MBUF_HEADLEN(m));
-			nm_write_offset(kring, slot, (uint64_t)poff + mismatch);
+		PST_DBG_LIM("copy (l %u o %u do %u hole %d mhl %u ml %u",
+			slot->len, poff, doff, hole, MBUF_HDRLEN(m), mlen);
+		if (hole > 0 && poff + hole < kring->offset_max) {
+			memcpy(nmb + poff + hole, MBUF_DATA(m), MBUF_HDRLEN(m));
+			nm_write_offset(kring, slot, (uint64_t)poff + hole);
 
-			poff += mismatch;
-			PST_DBG_LIM("new off %lu", (uint64_t)(doff - mismatch));
+			poff += hole;
+			PST_DBG_LIM("new off %lu", (uint64_t)(doff - hole));
 
-		} else if (mismatch < 0) {
+		} else if (hole < 0) {
 			caddr_t p = nmb + poff + doff;
-			memmove(p - mismatch, p, MBUF_LEN(m));
-#ifdef __FreeBSD__
-			m->m_next->m_data = p - mismatch;
-#else
-			skb_frag_off_add(&skb_shinfo(m)->frags[0], mismatch);
-#endif
-			memcpy(nmb + poff, MBUF_DATA(m), MBUF_HEADLEN(m));
+			memmove(p - hole, p, MBUF_LEN(m));
+			nm_os_pst_mbuf_extadj(m, 0, -hole);
+			memcpy(nmb + poff, MBUF_DATA(m), MBUF_HDRLEN(m));
 		} else {
 			m_copydata(m, 0, MBUF_LEN(m), nmb + poff);
 		}
 
-		slot->len -= mismatch;
-		nm_pst_setdoff(slot, doff - mismatch); // inform user
+		slot->len -= hole;
+		nm_pst_setdoff(slot, doff - hole); // inform user
 	}
 
 	if (unlikely(slot->len > mlen)) {
@@ -883,17 +867,15 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 		struct nm_iphdr *iph;
 		struct nm_tcphdr *tcph;
 		uint16_t *check;
-		int len, v = poff;
+		int len;
 
 		mbuf_proto_headers(m);
-		iph = (struct nm_iphdr *)(nmb + v + MBUF_NETWORK_OFFSET(m));
-		tcph = (struct nm_tcphdr *)(nmb + v + MBUF_TRANSPORT_OFFSET(m));
-#ifdef linux
-		m->ip_summed = CHECKSUM_COMPLETE;
-#endif
+		iph = (struct nm_iphdr *)(nmb + poff + MBUF_L3_OFST(m));
+		tcph = (struct nm_tcphdr *)(nmb + poff + MBUF_L4_OFST(m));
+		MBUF_CSUM_DONE(m);
 		check = &tcph->check;
 		*check = 0;
-		len = slot->len - MBUF_TRANSPORT_OFFSET(m);
+		len = slot->len - MBUF_L4_OFST(m);
 		nm_os_csum_tcpudp_ipv4(iph, tcph, len, check);
 	}
 	pst_fdtable_add(cb, kring);
@@ -901,7 +883,7 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 	/* the stack might hold reference via clone, so let's see */
 	nmcb_wstate(cb, MB_TXREF);
 #ifdef linux
-	/* for FreeBSD mbuf comes from our code */
+	/* in FreeBSD mbuf comes from our code */
 	pst_get_extra_ref(kring);
 	nm_os_set_mbuf_data_destructor(m, &cb->ui, nm_os_pst_mbuf_data_dtor);
 #endif /* linux */
@@ -977,9 +959,8 @@ pst_extra_alloc_kring(struct netmap_kring *kring)
 		exs = &extra_slots[j];
 		exs->slot.buf_idx = next;
 		exs->slot.len = 0;
-		exs->slot.ptr =
-		  (exs->slot.ptr & ~kring->offset_mask) |
-		  (sizeof(struct nmcb) & kring->offset_mask);
+		exs->slot.ptr = (exs->slot.ptr & ~kring->offset_mask) |
+				(sizeof(struct nmcb) & kring->offset_mask);
 		exs->prev = j == 0 ? NM_EXT_NULL : j - 1;
 		exs->next = j + 1 == n ? NM_EXT_NULL : j + 1;
 		next = *(uint32_t *)NMB(na, &tmp);
@@ -994,18 +975,16 @@ pst_extra_alloc_kring(struct netmap_kring *kring)
 static int
 pst_extra_alloc(struct netmap_adapter *na)
 {
-	int error = 0, i;
+	int i;
 
-		/* XXX probably we don't need extra on host rings */
+	/* XXX probably we don't need extra on host rings */
 	for (i = 0; i < netmap_real_rings(na, NR_TX); i++) {
 		if (pst_extra_alloc_kring(NMR(na, NR_TX)[i])) {
-			error = ENOMEM;
-			break;
+			pst_extra_free(na);
+			return ENOMEM;
 		}
 	}
-	if (error)
-		pst_extra_free(na);
-	return error;
+	return 0;
 }
 
 /* Create extra buffers and mbuf pool */
@@ -1133,7 +1112,7 @@ pst_write_offset(struct netmap_adapter *na, bool noring)
 			if (noring) {
 				continue;
 			} else if (kring->nr_pending_mode != NKR_NETMAP_ON) {
-				nm_prinf("%s %s %d not ready", na->name,
+				PST_DBG("%s %s %d not ready", na->name,
 					t == NR_TX ? "tx" : "rx", i);
 				continue;
 			}
@@ -1217,7 +1196,6 @@ netmap_pst_bwrap_reg(struct netmap_adapter *na, int onoff)
 	return 0;
 }
 
-
 static int
 netmap_pst_bwrap_intr_notify(struct netmap_kring *kring, int flags) {
 	struct netmap_adapter *hwna = kring->na, *vpna, *mna;
@@ -1241,11 +1219,6 @@ netmap_pst_bwrap_intr_notify(struct netmap_kring *kring, int flags) {
 	return NM_IRQ_COMPLETED;
 }
 
-/*
- * When stack dies first, it simply restores all the socket
- * information on dtor().
- * Otherwise our sk->sk_destructor will cleanup stack states
- */
 static void
 pst_unregister_socket(struct pst_so_adapter *soa)
 {
@@ -1319,7 +1292,7 @@ netmap_pst_bdg_dtor(const struct netmap_vp_adapter *vpna)
 
 /* not NMG_LOCK held */
 int
-pst_register_fd(struct netmap_adapter *na, int fd)
+netmap_pst_register_fd(struct netmap_adapter *na, int fd)
 {
 	NM_SOCK_T *so;
 	void *file;
@@ -1344,14 +1317,13 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	}
 
 	so_lock(so);
-#ifdef linux
-	if (sock_flag(so, SOCK_DEAD)) {
+	/* [Linux] It is possible that socket is disconnected but dead */
+	if (nm_os_sock_dead(so)) {
 		PST_DBG("so %p SOCK_DEAD", so);
 		so_unlock(so);
 		nm_os_sock_fput(so, file);
 		return EINVAL;
 	}
-#endif /* linux */
 	if (pst_so(so)) {
 		PST_DBG("already registered %d", fd);
 		so_unlock(so);
@@ -1398,12 +1370,15 @@ pst_register_fd(struct netmap_adapter *na, int fd)
 	SET_SODTOR(so, pst_sodtor);
 	sna->so_adapters[fd] = soa;
 	sna->num_so_adapters++;
-#ifdef __FreeBSD__
-	so->so_snd.sb_flags |= SB_NOCOALESCE; // XXX might not be needed
-#endif
+	nm_os_sock_set_nocoalesce(&so->so_rcv);
 	wmb();
 	SOCKBUF_UNLOCK(&so->so_rcv);
-#ifndef __FreeBSD__
+
+	SOCKBUF_LOCK(&so->so_snd);
+	nm_os_sock_set_nocoalesce(&so->so_snd);
+	SOCKBUF_UNLOCK(&so->so_snd);
+
+#ifdef linux
 	nm_os_set_nodelay(so); // within the same socket lock.
 #endif
 unlock_return:
@@ -1414,7 +1389,7 @@ unlock_return:
 	so_unlock(so);
 #ifdef __FreeBSD__
 	if (!error) {
-		nm_os_set_nodelay(so); // FreeBSD locks inp internally
+		nm_os_set_nodelay(so); // inp must be locked outside our lock
 	}
 #endif
 	nm_os_sock_fput(so, file);
@@ -1439,11 +1414,12 @@ netmap_pst_reg(struct netmap_adapter *na, int onoff)
 	if (!onoff) {
 		struct nm_bridge *b = vpna->na_bdg;
 		int i;
-		struct netmap_pst_adapter *sna = (struct netmap_pst_adapter *)na;
+		struct netmap_pst_adapter *sna;
 
 		if (na->active_fds > 0)
 			goto vp_reg;
 
+	       	sna = (struct netmap_pst_adapter *)na;
 		if (netmap_verbose)
 			nm_prinf("%s active_fds %d num_so_adapters %d",
 				na->name, na->active_fds, sna->num_so_adapters);
@@ -1494,7 +1470,7 @@ del_kpriv:
 
 		for_bdg_ports(i, b) {
 			struct netmap_vp_adapter *s;
-			struct netmap_adapter *slvna;
+			struct netmap_adapter *bna;
 			struct nmreq_header hdr;
 			struct nmreq_port_hdr req;
 			int err;
@@ -1507,12 +1483,12 @@ del_kpriv:
 			hdr.nr_reqtype = NETMAP_REQ_PST_DETACH;
 			hdr.nr_version = NETMAP_API;
 			hdr.nr_body = (uintptr_t)&req;
-			slvna = &s->up;
-			netmap_adapter_get(slvna);
-			if (slvna->nm_bdg_ctl) {
-				err = slvna->nm_bdg_ctl(&hdr, slvna);
+			bna = &s->up;
+			netmap_adapter_get(bna);
+			if (bna->nm_bdg_ctl) {
+				err = bna->nm_bdg_ctl(&hdr, bna);
 			}
-			netmap_adapter_put(slvna);
+			netmap_adapter_put(bna);
 		}
 		pst_extra_free(na);
 	}
@@ -1556,7 +1532,6 @@ netmap_pst_txsync(struct netmap_kring *kring, int flags)
 	return 0;
 }
 
-/* We can call rxsync without locks because of run-to-completion */
 static int
 netmap_pst_rxsync(struct netmap_kring *kring, int flags)
 {
@@ -1596,9 +1571,8 @@ netmap_pst_rxsync(struct netmap_kring *kring, int flags)
 			bk = NMR(na, NR_TX)[j];
 			hk = NMR(hwna, NR_RX)[last + (j % hostnr)];
 			/*
-			 * We do not run pst_poststack() in the drain context.
-			 * nm_os_pst_drain() may have drained the buffers
-			 * arrived at socket and linked to the fdtable.
+			 * the nm_os_pst_drain() context may have linked
+			 * buffer(s) to the fdtable.
 			 */
 			if (pst_fdt(bk)->npkts > 0) {
 				pst_poststack(bk);
@@ -1680,7 +1654,6 @@ netmap_pst_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 	struct netmap_adapter *na;
 	int error = 0;
 	u_int npipes = 0;
-	int i;
 
 	if (hdr->nr_reqtype != NETMAP_REQ_REGISTER) {
 		return EINVAL;
@@ -1711,10 +1684,6 @@ netmap_pst_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 	/* XXX should we check extra bufs? */
 	na->num_rx_desc = req->nr_rx_slots;
 	na->na_flags |= NAF_BDG_MAYSLEEP;
-	/*
-	 * persistent VALE ports look like hw devices
-	 * with a native netmap adapter
-	 */
 	if (ifp)
 		na->na_flags |= NAF_NATIVE;
 	na->nm_txsync = netmap_pst_txsync;
@@ -1731,11 +1700,6 @@ netmap_pst_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 			req->nr_extra_bufs, npipes, &error);
 	if (na->nm_mem == NULL)
 		goto err;
-	for (i = 0; i < 64; i++) {
-		sna->first_fds[i] = 0;
-	}
-	/* We have no na->nm_bdg_attach */
-	/* other nmd fields are set in the common routine */
 	error = netmap_attach_common(na);
 	if (error)
 		goto err;
@@ -1781,13 +1745,10 @@ netmap_pst_bwrap_attach(const char *nr_name, struct netmap_adapter *hwna)
 	na->na_flags |= NAF_HOST_ALL;
 
 	bna->nm_intr_notify = netmap_pst_bwrap_intr_notify;
-	/* Set the mfs, needed on the VALE mismatch datapath. */
-	bna->up.mfs = NM_BDG_MFS_DEFAULT;
 
 	if (hwna->na_flags & NAF_HOST_RINGS) {
 		hostna = &bna->host.up;
 		hostna->nm_notify = netmap_bwrap_notify;
-		bna->host.mfs = NM_BDG_MFS_DEFAULT;
 	}
 
 	error = netmap_bwrap_attach_common(na, hwna);

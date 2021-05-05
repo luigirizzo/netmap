@@ -1116,10 +1116,33 @@ nm_os_pst_sbdrain(struct netmap_adapter *na, NM_SOCK_T *so)
 	return error;
 }
 
+int
+nm_os_pst_mbuf_extadj(struct mbuf *m, int i, int off)
+{
+	struct mbuf *n;
+	int cnt = 0;
+
+	for (n = m; n; n = n->m_next) {
+		if (n->m_flags & M_PKTHDR)
+			continue;
+		if (cnt++ > i)
+			break;
+		n->m_data += off;
+		return 0;
+	}
+	return -1;
+}
+
 void
 nm_os_pst_mbuf_data_dtor(struct mbuf *m)
 {
 	return pst_mbuf_data_dtor(NMCB(m));
+}
+
+int
+nm_os_sock_dead(NM_SOCK_T *so)
+{
+	return 0;
 }
 
 #ifdef PST_MB_RECYCLE
