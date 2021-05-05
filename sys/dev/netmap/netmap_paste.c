@@ -112,7 +112,7 @@ pst_na(const struct netmap_adapter *slave)
 }
 
 static inline struct netmap_pst_adapter *
-tosna(struct netmap_adapter *na)
+topna(struct netmap_adapter *na)
 {
 	return (struct netmap_pst_adapter *)na;
 }
@@ -423,11 +423,11 @@ pst_fdtable_may_reset(struct netmap_kring *kring)
 struct pst_so_adapter *
 pst_soa_from_fd(struct netmap_adapter *na, int fd)
 {
-	struct netmap_pst_adapter *sna = tosna(na);
+	struct netmap_pst_adapter *pna = topna(na);
 
-	if (unlikely(fd >= sna->so_adapters_max))
+	if (unlikely(fd >= pna->so_adapters_max))
 		return NULL;
-	return sna->so_adapters[fd];
+	return pna->so_adapters[fd];
 }
 
 /* Differ from nm_kr_space() due to different meaning of the lease */
@@ -1051,19 +1051,19 @@ pst_mbufpool_free(struct netmap_adapter *na)
 static int
 pst_kwait(void *data)
 {
-	struct netmap_pst_adapter *sna = (struct netmap_pst_adapter *)data;
-	struct netmap_priv_d *kpriv = sna->kpriv;
+	struct netmap_pst_adapter *pna = (struct netmap_pst_adapter *)data;
+	struct netmap_priv_d *kpriv = pna->kpriv;
 	int lim = 20;
 	bool s = false;
 
 	for (; lim > 0; s = 0) {
-		if (sna->num_so_adapters > 0) {
+		if (pna->num_so_adapters > 0) {
 			if (netmap_verbose)
 				nm_prinf("waiting for %d sockets to go",
-					sna->num_so_adapters);
+					pna->num_so_adapters);
 			s = true;
 		}
-		if (!pst_extra_noref(&sna->up.up)) {
+		if (!pst_extra_noref(&pna->up.up)) {
 			if (netmap_verbose)
 				nm_prinf("waiting for mbufs to go");
 			if (s == false)
@@ -1075,10 +1075,10 @@ pst_kwait(void *data)
 		pause("netmap-pst-kwait-pause", 1000);
 	}
 	if (netmap_verbose)
-		nm_prinf("%s deleting priv", sna->up.up.name);
+		nm_prinf("%s deleting priv", pna->up.up.name);
 	NMG_LOCK();
-	sna->kpriv = NULL;
-	/* we don't clear sna->kwaittdp to indicate my run */
+	pna->kpriv = NULL;
+	/* we don't clear pna->kwaittdp to indicate my run */
 	netmap_priv_delete(kpriv);
 	NMG_UNLOCK();
 #ifdef __FreeBSD__
@@ -1223,13 +1223,13 @@ static void
 pst_unregister_socket(struct pst_so_adapter *soa)
 {
 	NM_SOCK_T *so = soa->so;
-	struct netmap_pst_adapter *sna = tosna(soa->na);
+	struct netmap_pst_adapter *pna = topna(soa->na);
 
-	mtx_lock(&sna->so_adapters_lock);
-	if (soa->fd >= sna->so_adapters_max)
+	mtx_lock(&pna->so_adapters_lock);
+	if (soa->fd >= pna->so_adapters_max)
 		panic("non-registered or invalid fd %d", soa->fd);
-	sna->so_adapters[soa->fd] = NULL;
-	sna->num_so_adapters--;
+	pna->so_adapters[soa->fd] = NULL;
+	pna->num_so_adapters--;
 	SOCKBUF_LOCK(&so->so_rcv);
 	RESTORE_SOUPCALL(so, soa);
 	RESTORE_SODTOR(so, soa);
@@ -1238,7 +1238,7 @@ pst_unregister_socket(struct pst_so_adapter *soa)
 	wmb();
 	bzero(soa, sizeof(*soa));
 	nm_os_free(soa);
-	mtx_unlock(&sna->so_adapters_lock);
+	mtx_unlock(&pna->so_adapters_lock);
 }
 
 static void
@@ -1272,19 +1272,19 @@ pst_mbuf_data_dtor(struct nmcb *cb)
 static void
 netmap_pst_bdg_dtor(const struct netmap_vp_adapter *vpna)
 {
-	struct netmap_pst_adapter *sna;
+	struct netmap_pst_adapter *pna;
 
 	if (&vpna->up != pst_na(&vpna->up))
 		return;
 
-	sna = (struct netmap_pst_adapter *)(void *)(uintptr_t)vpna;
-	mtx_lock(&sna->so_adapters_lock);
-	bzero(sna->so_adapters, sizeof(uintptr_t) * sna->so_adapters_max);
-	sna->so_adapters_max = 0;
-	nm_os_free(sna->so_adapters);
-	sna->so_adapters = NULL;
-	mtx_unlock(&sna->so_adapters_lock);
-	mtx_destroy(&sna->so_adapters_lock);
+	pna = (struct netmap_pst_adapter *)(void *)(uintptr_t)vpna;
+	mtx_lock(&pna->so_adapters_lock);
+	bzero(pna->so_adapters, sizeof(uintptr_t) * pna->so_adapters_max);
+	pna->so_adapters_max = 0;
+	nm_os_free(pna->so_adapters);
+	pna->so_adapters = NULL;
+	mtx_unlock(&pna->so_adapters_lock);
+	mtx_destroy(&pna->so_adapters_lock);
 	wmb();
 	if (netmap_verbose)
 		nm_prinf("destroyed everything");
@@ -1297,7 +1297,7 @@ netmap_pst_register_fd(struct netmap_adapter *na, int fd)
 	NM_SOCK_T *so;
 	void *file;
 	struct pst_so_adapter *soa;
-	struct netmap_pst_adapter *sna = tosna(na);
+	struct netmap_pst_adapter *pna = topna(na);
 	int error = 0;
 
 	if (unlikely(fd > NM_PST_FD_MAX)) {
@@ -1332,11 +1332,11 @@ netmap_pst_register_fd(struct netmap_adapter *na, int fd)
 	}
 
 	/*serialize simultaneous accept/config */
-	mtx_lock(&sna->so_adapters_lock);
+	mtx_lock(&pna->so_adapters_lock);
 	/* first check table size */
-	if (fd >= sna->so_adapters_max) {
-		struct pst_so_adapter **old = sna->so_adapters, **new;
-		const int oldsize = sna->so_adapters_max;
+	if (fd >= pna->so_adapters_max) {
+		struct pst_so_adapter **old = pna->so_adapters, **new;
+		const int oldsize = pna->so_adapters_max;
 		const int newsize = oldsize ? oldsize * 2 : DEFAULT_SK_ADAPTERS;
 
 		new = nm_os_malloc(sizeof(new) * newsize);
@@ -1350,8 +1350,8 @@ netmap_pst_register_fd(struct netmap_adapter *na, int fd)
 			bzero(old, sizeof(old) * oldsize);
 			nm_os_free(old);
 		}
-		sna->so_adapters = new;
-		sna->so_adapters_max = newsize;
+		pna->so_adapters = new;
+		pna->so_adapters_max = newsize;
 	}
 
 	soa = nm_os_malloc(sizeof(*soa));
@@ -1368,8 +1368,8 @@ netmap_pst_register_fd(struct netmap_adapter *na, int fd)
 	pst_wso(soa, so);
 	SET_SOUPCALL(so, nm_os_pst_upcall);
 	SET_SODTOR(so, pst_sodtor);
-	sna->so_adapters[fd] = soa;
-	sna->num_so_adapters++;
+	pna->so_adapters[fd] = soa;
+	pna->num_so_adapters++;
 	nm_os_sock_set_nocoalesce(&so->so_rcv);
 	wmb();
 	SOCKBUF_UNLOCK(&so->so_rcv);
@@ -1385,7 +1385,7 @@ unlock_return:
 	if (!error) {
 		error = nm_os_pst_sbdrain(na, so);
 	}
-	mtx_unlock(&sna->so_adapters_lock);
+	mtx_unlock(&pna->so_adapters_lock);
 	so_unlock(so);
 #ifdef __FreeBSD__
 	if (!error) {
@@ -1414,17 +1414,17 @@ netmap_pst_reg(struct netmap_adapter *na, int onoff)
 	if (!onoff) {
 		struct nm_bridge *b = vpna->na_bdg;
 		int i;
-		struct netmap_pst_adapter *sna;
+		struct netmap_pst_adapter *pna;
 
 		if (na->active_fds > 0)
 			goto vp_reg;
 
-	       	sna = (struct netmap_pst_adapter *)na;
+	       	pna = (struct netmap_pst_adapter *)na;
 		if (netmap_verbose)
 			nm_prinf("%s active_fds %d num_so_adapters %d",
-				na->name, na->active_fds, sna->num_so_adapters);
-		if (!sna->kwaittdp &&
-		    (sna->num_so_adapters > 0 || !pst_extra_noref(na))) {
+				na->name, na->active_fds, pna->num_so_adapters);
+		if (!pna->kwaittdp &&
+		    (pna->num_so_adapters > 0 || !pst_extra_noref(na))) {
 			struct netmap_priv_d *kpriv;
 			struct netmap_if *nifp;
 			enum txrx t;
@@ -1457,14 +1457,14 @@ del_kpriv:
 			kpriv->np_nifp = nifp;
 			na->active_fds++;
 
-			sna->kpriv = kpriv;
+			pna->kpriv = kpriv;
 			netmap_adapter_get(na);
 			/* we cannot die, create another and return */
 
 			if (netmap_verbose)
 				nm_prinf("spawning kwait");
-			nm_os_kthread_add(pst_kwait, (void *)sna, NULL,
-				    &sna->kwaittdp, 0, 0, "netmap-pst-kwait");
+			nm_os_kthread_add(pst_kwait, (void *)pna, NULL,
+				    &pna->kwaittdp, 0, 0, "netmap-pst-kwait");
 			return EBUSY; // XXX the caller doesn't care
 		}
 
@@ -1535,8 +1535,8 @@ netmap_pst_txsync(struct netmap_kring *kring, int flags)
 static int
 netmap_pst_rxsync(struct netmap_kring *kring, int flags)
 {
-	struct netmap_pst_adapter *sna = tosna(kring->na);
-	struct nm_bridge *b = sna->up.na_bdg;
+	struct netmap_pst_adapter *pna = topna(kring->na);
+	struct nm_bridge *b = pna->up.na_bdg;
 	int i, err;
 	u_int intr;
 
@@ -1555,7 +1555,7 @@ netmap_pst_rxsync(struct netmap_kring *kring, int flags)
 		struct netmap_adapter *hwna;
 		u_int first, last, j, hostnr;
 
-		if (netmap_bdg_idx(vpna) == netmap_bdg_idx(&sna->up))
+		if (netmap_bdg_idx(vpna) == netmap_bdg_idx(&pna->up))
 			continue;
 		else if (is_host(na))
 			continue;
@@ -1649,7 +1649,7 @@ netmap_pst_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 {
 	struct nmreq_register *req =
 		(struct nmreq_register *)(uintptr_t)hdr->nr_body;
-	struct netmap_pst_adapter *sna;
+	struct netmap_pst_adapter *pna;
 	struct netmap_vp_adapter *vpna;
 	struct netmap_adapter *na;
 	int error = 0;
@@ -1659,11 +1659,11 @@ netmap_pst_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 		return EINVAL;
 	}
 
-	sna = nm_os_malloc(sizeof(*sna));
-	if (sna == NULL)
+	pna = nm_os_malloc(sizeof(*pna));
+	if (pna == NULL)
 		return ENOMEM;
-	mtx_init(&sna->so_adapters_lock, "so_adapters_lock", NULL, MTX_DEF);
-	vpna = &sna->up;
+	mtx_init(&pna->so_adapters_lock, "so_adapters_lock", NULL, MTX_DEF);
+	vpna = &pna->up;
 	na = &vpna->up;
 
 	na->ifp = ifp;
@@ -1709,7 +1709,7 @@ netmap_pst_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 err:
 	if (na->nm_mem != NULL)
 		netmap_mem_put(na->nm_mem);
-	nm_os_free(sna);
+	nm_os_free(pna);
 	return error;
 }
 

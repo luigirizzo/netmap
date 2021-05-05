@@ -1001,9 +1001,9 @@ nm_os_pst_upcall(NM_SOCK_T *so, void *x, int y)
 
 		/* XXX We need trick to set zero-length buffer */
 		if (likely(soa)) {
-			struct netmap_pst_adapter *sna =
+			struct netmap_pst_adapter *pna =
 				(struct netmap_pst_adapter *)soa->na;
-			sna->eventso[curcpu] = so;
+			pna->eventso[curcpu] = so;
 		}
 		return 0;
 	}
@@ -1188,9 +1188,9 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	struct mbuf *m;
 	int ret = 0;
 	struct epoch_tracker et;
-	struct netmap_pst_adapter *sna =
+	struct netmap_pst_adapter *pna =
 		(struct netmap_pst_adapter *)pst_na(na);
-	sna->eventso[curcpu] = NULL;
+	pna->eventso[curcpu] = NULL;
 
 	m = maybe_new_mbuf(kring);
 	if (unlikely(m == NULL)) {
@@ -1230,11 +1230,11 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 	 * The buffer might have triggered the socket upcall without
 	 * passing the mbuf.
 	 */
-	if (unlikely(sna->eventso[curcpu] != NULL)) {
-		NM_SOCK_T *so = sna->eventso[curcpu];
+	if (unlikely(pna->eventso[curcpu] != NULL)) {
+		NM_SOCK_T *so = pna->eventso[curcpu];
 		struct pst_so_adapter *soa = pst_so(so);
 
-		sna->eventso[curcpu] = NULL;
+		pna->eventso[curcpu] = NULL;
 		/* ignore additional empty upcall */
 		if (nm_pst_getfd(slot) == 0) {
 			/* NULL soa when the soupcall() context closed it */
