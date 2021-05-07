@@ -1302,7 +1302,7 @@ netmap_eventloop(const char *name, char *ifname, void **ret, int *error, int *fd
 #ifndef min
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 #endif
-const u_int DEFAULT_MTU = 1420; // maximum option space
+const u_int DEFAULT_MTU = 1520; // maximum option space
 static int
 nm_write(struct netmap_ring *ring, const char *data,
 		size_t len, int off0, int fd)
