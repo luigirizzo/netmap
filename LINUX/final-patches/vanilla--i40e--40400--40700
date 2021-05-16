@@ -74,7 +74,7 @@ index 4a9873ec28c7..58c0ca3401d3 100644
  
  err_rings:
 diff --git a/i40e/i40e_txrx.c b/i40e/i40e_txrx.c
-index 635b3ac17877..baed465e8b35 100644
+index 635b3ac17877..ad7d41e84bd4 100644
 --- a/i40e/i40e_txrx.c
 +++ b/i40e/i40e_txrx.c
 @@ -29,6 +29,10 @@
@@ -93,14 +93,30 @@ index 635b3ac17877..baed465e8b35 100644
  	unsigned int total_bytes = 0;
  
 +#ifdef DEV_NETMAP
-+	if (netmap_tx_irq(tx_ring->netdev, tx_ring->queue_index) != NM_IRQ_PASS)
++	if (tx_ring->netdev && netmap_tx_irq(tx_ring->netdev, tx_ring->queue_index) != NM_IRQ_PASS)
 +		return true;
 +#endif /* DEV_NETMAP */
 +
  	tx_buf = &tx_ring->tx_bi[i];
  	tx_desc = I40E_TX_DESC(tx_ring, i);
  	i -= tx_ring->count;
-@@ -1912,6 +1921,14 @@ int i40e_napi_poll(struct napi_struct *napi, int budget)
+@@ -1477,6 +1486,15 @@ static int i40e_clean_rx_irq_ps(struct i40e_ring *rx_ring, int budget)
+ 	u8 rx_ptype;
+ 	u64 qword;
+ 
++#ifdef DEV_NETMAP
++	if (rx_ring->netdev) {
++		int dummy, nm_irq;
++		nm_irq = netmap_rx_irq(rx_ring->netdev, rx_ring->queue_index, &dummy);
++		if (nm_irq != NM_IRQ_PASS)
++			return (nm_irq == NM_IRQ_RESCHED) ? budget : 1;
++	}
++#endif /* DEV_NETMAP */
++
+ 	if (budget <= 0)
+ 		return 0;
+ 
+@@ -1912,6 +1930,14 @@ int i40e_napi_poll(struct napi_struct *napi, int budget)
  
  	i40e_for_each_ring(ring, q_vector->rx) {
  		int cleaned;
