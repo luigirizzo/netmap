@@ -630,20 +630,12 @@ linux_generic_rx_handler(struct mbuf *m)
 int
 nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 {
-	struct ifnet *ifp = netmap_generic_getifp(gna);
-#if defined(NETMAP_LINUX_HAVE_NF_NETDEV_INGRESS)
-	struct nf_hook_ops netmap_nf_ops = {
-		.hook           = netmap_hook,
-		.pf             = NFPROTO_NETDEV,
-		.hooknum        = NF_NETDEV_INGRESS,
-		.priority       = INT_MIN,
-		.dev            = ifp,
-	};
-#elif defined(NETMAP_LINUX_HAVE_RX_REGISTER)
-	struct netmap_adapter *na = &gna->up.up;
-#else
+#if !defined(NETMAP_LINUX_HAVE_NF_NETDEV_INGRESS) && !defined(NETMAP_LINUX_HAVE_RX_REGISTER)
 #warning "Packet reception with emulated (generic) mode not supported for this kernel version"
-#endif
+	return 0;
+#else /* HAVE_NF_NETDEV_INGRESS || HAVE_RX_REGISTER */
+	struct netmap_adapter *na = &gna->up.up;
+	struct ifnet *ifp = netmap_generic_getifp(gna);
 	int ret = 0;
 
 	if (!ifp) {
@@ -654,9 +646,26 @@ nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 	nm_os_ifnet_lock();
 #if defined(NETMAP_LINUX_HAVE_NF_NETDEV_INGRESS)
 	if (intercept) {
-		ret = nf_register_net_hook(dev_net(ifp), &netmap_nf_ops);
+		struct nf_hook_ops *ops = kzalloc(sizeof(struct nf_hook_ops), GFP_KERNEL);
+		WARN_ON(na->na_private != NULL);
+		if (ops) {
+			ops->hook = netmap_hook;
+			ops->pf = NFPROTO_NETDEV;
+			ops->hooknum = NF_NETDEV_INGRESS;
+			ops->priority = INT_MIN;
+			ops->dev = ifp;
+			ret = nf_register_net_hook(dev_net(ifp), ops);
+			if (ret < 0) {
+				kfree(ops);
+				ops = NULL;
+			}
+			na->na_private = (void*)ops;
+		}
 	} else {
-		nf_unregister_net_hook(dev_net(ifp), &netmap_nf_ops);
+		WARN_ON(na->na_private == NULL);
+		nf_unregister_net_hook(dev_net(ifp),(struct nf_hook_ops *)na->na_private);
+		kfree(na->na_private);
+		na->na_private = NULL;
 	}
 #elif defined(NETMAP_LINUX_HAVE_RX_REGISTER)
 	if (intercept) {
@@ -668,6 +677,7 @@ nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 #endif
 	nm_os_ifnet_unlock();
 	return ret;
+#endif /* HAVE_NF_NETDEV_INGRESS || HAVE_RX_REGISTER */
 }
 
 #ifndef NETMAP_LINUX_SELECT_QUEUE_PARM3
