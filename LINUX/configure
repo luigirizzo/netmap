@@ -1159,6 +1159,16 @@ EOF
 	}
 EOF
 
+  # NF_NETDEV_INGRESS (intercept packets in the generic adapter)
+  add_test 'have NF_NETDEV_INGRESS' <<EOF
+	#include <uapi/linux/netfilter.h>
+
+	int dummy(void)
+	{
+		return NF_NETDEV_INGRESS;
+	}
+EOF
+
   # (un)use_mm is unavailable in kernel 5.8 and later
   add_test 'have KTHREAD_USE_MM' <<EOF
 	#include <linux/kthread.h>

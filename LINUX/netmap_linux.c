@@ -45,6 +45,9 @@
 #ifdef NETMAP_LINUX_HAVE_SCHED_MM
 #include <linux/sched/mm.h>
 #endif /* NETMAP_LINUX_HAVE_SCHED_MM */
+#ifdef NETMAP_LINUX_HAVE_NF_NETDEV_INGRESS
+#include <linux/netfilter.h>
+#endif
 
 #include "netmap_linux_config.h"
 
@@ -418,11 +421,6 @@ nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
 {
 	(void)ifp;
 	(void)prev;
-#if defined(ATL_CHANGE) && defined(ATL_PRE_RX_HANDLER)
-	if (ifp->pre_rx_handler)
-#else
-	if (ifp->rx_handler)
-#endif
 	m->priority = NM_MAGIC_PRIORITY_RX; /* do not reinject to netmap */
 	netif_rx_ni(m);
 	return NULL;
@@ -536,7 +534,7 @@ nm_os_mitigation_cleanup(struct nm_generic_mit *mit)
  * Packets that comes from netmap_txsync_to_host() are not
  * stolen.
  */
-#ifdef NETMAP_LINUX_HAVE_RX_REGISTER
+#if defined(NETMAP_LINUX_HAVE_NF_NETDEV_INGRESS) || defined(NETMAP_LINUX_HAVE_RX_REGISTER)
 enum {
 	NM_RX_HANDLER_STOLEN,
 	NM_RX_HANDLER_PASS,
@@ -595,7 +593,17 @@ linux_generic_rx_handler_common(struct mbuf *m)
 
 	return NM_RX_HANDLER_PASS;
 }
+#endif
 
+#ifdef NETMAP_LINUX_HAVE_NF_NETDEV_INGRESS
+static unsigned int netmap_hook(void *priv,
+					struct sk_buff *skb,
+					const struct nf_hook_state *state)
+{
+	int ret = linux_generic_rx_handler_common(skb);
+	return likely(ret == NM_RX_HANDLER_STOLEN) ? NF_STOLEN : NF_ACCEPT;
+}
+#elif defined(NETMAP_LINUX_HAVE_RX_REGISTER)
 #ifdef NETMAP_LINUX_HAVE_RX_HANDLER_RESULT
 static rx_handler_result_t
 linux_generic_rx_handler(struct mbuf **pm)
@@ -622,12 +630,20 @@ linux_generic_rx_handler(struct mbuf *m)
 int
 nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 {
-#ifndef NETMAP_LINUX_HAVE_RX_REGISTER
-#warning "Packet reception with emulated (generic) mode not supported for this kernel version"
-	return 0;
-#else /* HAVE_RX_REGISTER */
-	struct netmap_adapter *na = &gna->up.up;
 	struct ifnet *ifp = netmap_generic_getifp(gna);
+#if defined(NETMAP_LINUX_HAVE_NF_NETDEV_INGRESS)
+	struct nf_hook_ops netmap_nf_ops = {
+		.hook           = netmap_hook,
+		.pf             = NFPROTO_NETDEV,
+		.hooknum        = NF_NETDEV_INGRESS,
+		.priority       = INT_MIN,
+		.dev            = ifp,
+	};
+#elif defined(NETMAP_LINUX_HAVE_RX_REGISTER)
+	struct netmap_adapter *na = &gna->up.up;
+#else
+#warning "Packet reception with emulated (generic) mode not supported for this kernel version"
+#endif
 	int ret = 0;
 
 	if (!ifp) {
@@ -636,24 +652,22 @@ nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 	}
 
 	nm_os_ifnet_lock();
+#if defined(NETMAP_LINUX_HAVE_NF_NETDEV_INGRESS)
 	if (intercept) {
-#if defined(ATL_CHANGE) && defined(ATL_PRE_RX_HANDLER)
-		ret = -netdev_pre_rx_handler_register (ifp,
-				&linux_generic_rx_handler, na);
-#else
+		ret = nf_register_net_hook(dev_net(ifp), &netmap_nf_ops);
+	} else {
+		nf_unregister_net_hook(dev_net(ifp), &netmap_nf_ops);
+	}
+#elif defined(NETMAP_LINUX_HAVE_RX_REGISTER)
+	if (intercept) {
 		ret = -netdev_rx_handler_register(ifp,
 				&linux_generic_rx_handler, na);
-#endif
 	} else {
-#if defined(ATL_CHANGE) && defined(ATL_PRE_RX_HANDLER)
-		netdev_pre_rx_handler_unregister(ifp);
-#else
 		netdev_rx_handler_unregister(ifp);
-#endif
 	}
+#endif
 	nm_os_ifnet_unlock();
 	return ret;
-#endif /* HAVE_RX_REGISTER */
 }
 
 #ifndef NETMAP_LINUX_SELECT_QUEUE_PARM3
