@@ -1567,6 +1567,12 @@ static struct file_operations netmap_fops = {
 #ifdef CONFIG_NET_NS
 #include <net/netns/generic.h>
 
+unsigned int
+nm_os_get_nsid(void)
+{
+	return current->nsproxy->net_ns->ns.inum;
+}
+
 int netmap_bns_id;
 
 struct netmap_bns {

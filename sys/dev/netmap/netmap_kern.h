@@ -1608,6 +1608,7 @@ int netmap_get_null_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 #endif /* WITH_NMNULL */
 
 #ifdef CONFIG_NET_NS
+unsigned int nm_os_get_nsid(void);
 struct net *netmap_bns_get(void);
 void netmap_bns_put(struct net *);
 void netmap_bns_getbridges(struct nm_bridge **, u_int *);

@@ -176,6 +176,9 @@ struct netmap_mem_d {
 	struct netmap_obj_pool pools[NETMAP_POOLS_NR];
 
 	nm_memid_t nm_id;	/* allocator identifier */
+#ifdef CONFIG_NET_NS
+	unsigned int nsid; /* namespace id */
+#endif
 	int nm_grp;	/* iommu groupd id */
 
 	/* list of all existing allocators, sorted by nm_id */
@@ -314,6 +317,9 @@ static int netmap_mem_map(struct netmap_obj_pool *, struct netmap_adapter *);
 static int netmap_mem_unmap(struct netmap_obj_pool *, struct netmap_adapter *);
 static int nm_mem_check_group(struct netmap_mem_d *, struct device *);
 static void nm_mem_release_id(struct netmap_mem_d *);
+#ifdef CONFIG_NET_NS
+struct netmap_mem_d *netmap_mem_ns_create(void);
+#endif
 
 nm_memid_t
 netmap_mem_get_id(struct netmap_mem_d *nmd)
@@ -597,8 +603,8 @@ static const struct netmap_mem_d nm_blueprint = {
 			.name 	= "%s_if",
 			.objminsize = sizeof(struct netmap_if),
 			.objmaxsize = 4096,
-			.nummin     = 1,
-			.nummax	    = 100,
+			.nummin     = 10,
+			.nummax	    = 10000,
 		},
 		[NETMAP_RING_POOL] = {
 			.name 	= "%s_ring",
@@ -717,7 +723,14 @@ netmap_mem_find(nm_memid_t id)
 	NM_MTX_LOCK(nm_mem_list_lock);
 	nmd = netmap_last_mem_d;
 	do {
-		if (!(nmd->flags & NETMAP_MEM_HIDDEN) && nmd->nm_id == id) {
+		if (!(nmd->flags & NETMAP_MEM_HIDDEN) &&
+#ifdef CONFIG_NET_NS
+			  ((nmd->nm_id != 1 && nmd->nm_id == id) ||
+			   (id == 1 && nmd->nsid == nm_os_get_nsid()))
+#else
+			  nmd->nm_id == id
+#endif
+		) {
 			nmd->refcount++;
 			NM_DBG_REFC(nmd, __FUNCTION__, __LINE__);
 			NM_MTX_UNLOCK(nm_mem_list_lock);
@@ -726,6 +739,12 @@ netmap_mem_find(nm_memid_t id)
 		nmd = nmd->next;
 	} while (nmd != netmap_last_mem_d);
 	NM_MTX_UNLOCK(nm_mem_list_lock);
+#ifdef CONFIG_NET_NS
+	if (id == 1) {
+		/* Create a namespace aware global memory region */
+		return netmap_mem_ns_create();
+	}
+#endif
 	return NULL;
 }
 
@@ -1812,6 +1831,26 @@ netmap_mem_private_new(u_int txr, u_int txd, u_int rxr, u_int rxd,
 
 	return d;
 }
+
+#ifdef CONFIG_NET_NS
+struct netmap_mem_d *
+netmap_mem_ns_create(void)
+{
+	struct netmap_mem_d *nmd;
+	int error = 0;
+
+	nmd = _netmap_mem_private_new(sizeof(*nmd), nm_mem.params, -1, &netmap_mem_global_ops, 0, &error);
+	if (nmd == NULL) {
+		nm_prerr("Failed to create ns global memory (error=%d)", error);
+	} else {
+		nmd->nsid = nm_os_get_nsid();
+		if (netmap_verbose) {
+			nm_prinf("New global memory for namespace %u nr_mem_id=%d\n", nmd->nsid, nmd->nm_id);
+		}
+	}
+	return nmd;
+}
+#endif
 
 /* Reference iommu allocator - find existing or create new,
  * for not hw addapeters fallback to global allocator.
