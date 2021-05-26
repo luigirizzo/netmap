@@ -583,18 +583,9 @@ static int create_ifc_pipe(struct xt_nmring_info *info,
 	INIT_LIST_HEAD(&priv->list);
 	list_add(&priv->list, &ipt_netmap_pipes.list);
 
-	/* NETMAP_IOCTL */
-	nmr = nm_os_malloc(sizeof(struct nmreq));
-
-	/* Populate nmr.nr_arg2 = membase */
-	nmr->nr_version = NETMAP_API;
-	error = netmap_ioctl_legacy(priv->netmap_priv, NIOCGINFO, (caddr_t) nmr, NULL);
-	if (error) {
-		nm_os_free(nmr);
-		return -ENOMEM;
-	}
-
 	/* Register the pipe */
+	nmr = nm_os_malloc(sizeof(struct nmreq));
+	nmr->nr_version = NETMAP_API;
 	strncpy(nmr->nr_name, pipe, sizeof(nmr->nr_name) - 1);
 	nmr->nr_name[sizeof(nmr->nr_name) - 1] = '\0';
 	nmr->nr_version = NETMAP_API;
@@ -604,6 +595,7 @@ static int create_ifc_pipe(struct xt_nmring_info *info,
 	nmr->nr_cmd = 0;
 	nmr->nr_tx_rings = nmr->nr_rx_rings = 1;
 	nmr->nr_tx_slots = nmr->nr_rx_slots = netmap_generic_ringsize;
+	nmr->nr_arg2 = 1; /* Use the global namespace */
 	error = netmap_ioctl_legacy(priv->netmap_priv, NIOCREGIF, (caddr_t) nmr, NULL);
 	if (!priv->netmap_priv->np_nifp) {
 		nm_os_free(nmr);
