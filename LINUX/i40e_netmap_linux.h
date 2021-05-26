@@ -569,6 +569,9 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 			slot->len = ((qword & I40E_RXD_QW1_LENGTH_PBUF_MASK)
 			    >> I40E_RXD_QW1_LENGTH_PBUF_SHIFT) - crclen;
 
+			if (!slot->len)
+				break;
+
 			if (unlikely((staterr & (1<<I40E_RX_DESC_STATUS_EOF_SHIFT)) == 0 )) {
 				slot_flags = NS_MOREFRAG;
 			} else {
