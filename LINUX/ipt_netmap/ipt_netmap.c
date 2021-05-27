@@ -40,6 +40,9 @@ struct ipt_netmap_priv {
 	int hooknum;
 	int __percpu *percpu_recursion;
 	struct list_head list;
+#ifdef CONFIG_NET_NS
+	unsigned int nsid;
+#endif
 };
 
 static struct ipt_netmap_priv ipt_netmap_pipes = { 0 };
@@ -50,7 +53,11 @@ static struct ipt_netmap_priv *find_ifc_pipe(const char pipe[])
 	struct ipt_netmap_priv *entry = NULL;
 	list_for_each(node, &ipt_netmap_pipes.list) {
 		entry = list_entry(node, struct ipt_netmap_priv, list);
-		if (strcmp(pipe, entry->name) == 0)
+		if (strcmp(pipe, entry->name) == 0
+#ifdef CONFIG_NET_NS
+			&& entry->nsid == current->nsproxy->net_ns
+#endif
+		)
 			return entry;
 	}
 	return NULL;
@@ -580,6 +587,9 @@ static int create_ifc_pipe(struct xt_nmring_info *info,
 	priv->hooknum = hooknum;
 	priv->percpu_recursion = alloc_percpu(int);
 	strncpy(priv->name, pipe, IFNAMSIZ);
+#ifdef CONFIG_NET_NS
+	priv->nsid = current->nsproxy->net_ns;
+#endif
 	INIT_LIST_HEAD(&priv->list);
 	list_add(&priv->list, &ipt_netmap_pipes.list);
 
