@@ -40,12 +40,10 @@ struct ipt_netmap_priv {
 	int hooknum;
 	int __percpu *percpu_recursion;
 	struct list_head list;
-#ifdef CONFIG_NET_NS
-	unsigned int nsid;
-#endif
 };
 
 static struct ipt_netmap_priv ipt_netmap_pipes = { 0 };
+static unsigned ipt_netmap_net_id __read_mostly;
 
 static struct ipt_netmap_priv *find_ifc_pipe(const char pipe[])
 {
@@ -55,7 +53,7 @@ static struct ipt_netmap_priv *find_ifc_pipe(const char pipe[])
 		entry = list_entry(node, struct ipt_netmap_priv, list);
 		if (strcmp(pipe, entry->name) == 0
 #ifdef CONFIG_NET_NS
-			&& entry->nsid == current->nsproxy->net_ns
+			&& entry->net == current->nsproxy->net_ns
 #endif
 		)
 			return entry;
@@ -587,9 +585,6 @@ static int create_ifc_pipe(struct xt_nmring_info *info,
 	priv->hooknum = hooknum;
 	priv->percpu_recursion = alloc_percpu(int);
 	strncpy(priv->name, pipe, IFNAMSIZ);
-#ifdef CONFIG_NET_NS
-	priv->nsid = current->nsproxy->net_ns;
-#endif
 	INIT_LIST_HEAD(&priv->list);
 	list_add(&priv->list, &ipt_netmap_pipes.list);
 
@@ -837,11 +832,10 @@ static int nmring_tg_checkentry(const struct xt_tgchk_param *par)
 	return -EINVAL;
 }
 
-static void nmring_tg_destroy(const struct xt_tgdtor_param *par)
+static void
+ipt_netmap_release_ring (struct ipt_netmap_priv *priv)
 {
 	bool freed = false;
-	const struct xt_nmring_info *info = par->targinfo;
-	struct ipt_netmap_priv *priv = find_ifc_pipe(info->ifc_pipe);
 	struct netmap_adapter *na;
 	struct netmap_kring *kring;
 
@@ -865,6 +859,14 @@ static void nmring_tg_destroy(const struct xt_tgdtor_param *par)
 		}
 	}
 	NMG_UNLOCK();
+}
+
+static void nmring_tg_destroy(const struct xt_tgdtor_param *par)
+{
+	const struct xt_nmring_info *info = par->targinfo;
+	struct ipt_netmap_priv *priv = find_ifc_pipe(info->ifc_pipe);
+
+	ipt_netmap_release_ring (priv);
 }
 
 static struct xt_target nmring_tg_reg[] __read_mostly = {
@@ -892,14 +894,36 @@ static struct xt_target nmring_tg_reg[] __read_mostly = {
 	 },
 };
 
+static void __net_exit ipt_netmap_net_exit(struct net *net)
+{
+#ifdef CONFIG_NET_NS
+	struct list_head *node, *next;
+	struct ipt_netmap_priv *entry = NULL;
+
+	list_for_each_safe(node, next, &ipt_netmap_pipes.list) {
+		entry = list_entry(node, struct ipt_netmap_priv, list);
+		ipt_netmap_release_ring (entry);
+	}
+#endif
+	return NULL;
+}
+
+static struct pernet_operations ipt_netmap_net_ops = {
+	.pre_exit	= ipt_netmap_net_exit,
+	.id	= &ipt_netmap_net_id,
+	.size	= 0,
+};
+
 static int __init nmring_tg_init(void)
 {
 	INIT_LIST_HEAD(&ipt_netmap_pipes.list);
+	register_pernet_subsys(&ipt_netmap_net_ops);
 	return xt_register_targets(nmring_tg_reg, ARRAY_SIZE(nmring_tg_reg));
 }
 
 static void __exit nmring_tg_exit(void)
 {
+	unregister_pernet_subsys(&ipt_netmap_net_ops);
 	xt_unregister_targets(nmring_tg_reg, ARRAY_SIZE(nmring_tg_reg));
 }
 
