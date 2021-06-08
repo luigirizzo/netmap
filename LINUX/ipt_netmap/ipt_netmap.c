@@ -902,7 +902,9 @@ static void __net_exit ipt_netmap_net_exit(struct net *net)
 
 	list_for_each_safe(node, next, &ipt_netmap_pipes.list) {
 		entry = list_entry(node, struct ipt_netmap_priv, list);
-		ipt_netmap_release_ring (entry);
+		if (entry->net == net) {
+			ipt_netmap_release_ring (entry);
+		}
 	}
 #endif
 	return NULL;
