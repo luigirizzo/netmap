@@ -1,13 +1,19 @@
 #CFLAGS += -Werror -Wall -O2 -g -fsanitize=address
 CFLAGS += -Werror -Wall -O2 -g
 NMLIB = ../../libnetmap/libnetmap.a
-LDFLAGS += $(NMLIB) -lpthread -lm
+NOCFLAGS := $(CFLAGS)
+NOCFLAGS += -DNOLIBNETMAP -DLIBNETMAP_NOTHREADSAFE
+CC = g++
+
+LDFLAGS += -lpthread -lm
 UNAME := $(shell uname)
 ifeq ($(UNAME), Linux)
 LDFLAGS += -lbsd
 endif
+NOLDFLAGS := $(LDFLAGS)
+LDFLAGS += $(NMLIB)
 #CFLAGS += -I/usr/local/include -I../libsqlite/include
-OBJS = phttpd-b.o phttpd-k.o phttpd-f.o bplus_support.o bplus_impl.o
+OBJS = phttpd-b.o phttpd-k.o phttpd-f.o bplus_support.o bplus_impl.o client.o
 SPATH ?= -I../../sys/ -I../include -I../../libnetmap -DNETMAP_WITH_LIBS
 BOPT = -DWITH_BPLUS -I./
 FOPT = -DWITH_NOFLUSH
@@ -17,7 +23,7 @@ OOPT = -DWITH_CLFLUSHOPT -mclflushopt
 # compile phttpd-o only if your CPU supports clflushopt
 #
 #PROG = phttpd phttpd-b phttpd-o phttpd-f
-PROG = phttpd phttpd-b phttpd-f
+PROG = phttpd phttpd-b phttpd-f client nophttpd
 
 all: $(PROG)
 
@@ -25,6 +31,10 @@ all: $(PROG)
 #	$(CC) $(CFLAGS) -o test_nvdimm test_nvdimm.o $(LDFLAGS) $(EXTRA_LDFLAGS)
 #test_nvdimm.o: test_nvdimm.c nmlib.h
 #	$(CC) $(CFLAGS) $(OPT) $(SOPT) $(SPATH) -c test_nvdimm.c -o test_nvdimm.o $(EXTRA_CFLAGS)
+
+nophttpd: phttpd.c nmlib.h
+	$(CC) $(NOCFLAGS) $(SPATH) phttpd.c -o nophttpd $(NOLDFLAGS)
+
 phttpd: phttpd.c nmlib.h
 	$(CC) $(CFLAGS) $(OPT) $(SOPT) $(SPATH) phttpd.c -o phttpd $(EXTRA_CFLAGS) $(LDFLAGS)
 
@@ -46,5 +56,7 @@ bplus_impl.o: bplus_impl.c
 	$(CC) $(CFLAGS) $(BOPT) -c bplus_impl.c
 bplus_support.o: bplus_support.c
 	$(CC) $(CFLAGS) $(BOPT) -c bplus_support.c
+client: client.c nmlib.h
+	$(CC) $(CFLAGS) $(SPATH) client.c -o client $(EXTRA_CFLAGS) $(LDFLAGS)
 clean:
 	-@rm -f $(PROG) $(OBJS)

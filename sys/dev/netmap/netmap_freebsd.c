@@ -1034,7 +1034,7 @@ nm_os_pst_upcall(NM_SOCK_T *so, void *x, int y)
 		nm_pst_setfd(slot, pst_so(so)->fd);
 		nm_pst_setdoff(slot,
 			m->m_data - M_START(m) - nm_get_offset(kring, slot));
-		pst_fdtable_add(cb, kring);
+		pst_fdt_add(cb, kring);
 #ifdef PST_MB_RECYCLE
 		if (unlikely(nmcb_rstate(cb) == MB_QUEUED)) {
 			queued = 1;
@@ -1241,7 +1241,7 @@ nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
 			if (soa != NULL && nmcb_rstate(cb) == MB_NOREF) {
 				nm_pst_setfd(slot, soa->fd);
 				nm_pst_setdoff(slot, 0);
-				pst_fdtable_add(cb, kring);
+				pst_fdt_add(cb, kring);
 			}
 		}
 	}

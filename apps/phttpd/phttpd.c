@@ -751,7 +751,6 @@ main(int argc, char **argv)
 	struct phttpd_global pg;
 	struct nm_garg nmg, *g;
 	int error = 0;
-	struct netmap_events e;
 
 	bzero(&nmg, sizeof(nmg));
 	nmg.nmr_config = NULL;
@@ -762,15 +761,14 @@ main(int argc, char **argv)
 	nmg.targ_opaque_len = sizeof(struct dbctx);
 	nmg.ring_objsize = RING_OBJSIZE;
 
-	bzero(&e, sizeof(e));
-	e.thread = phttpd_thread;
-	e.read = phttpd_read;
+	nmg.thread = phttpd_thread;
+	nmg.read = phttpd_read;
 
 	bzero(&pg, sizeof(pg));
 	pg.msglen = 64;
 
 	while ((ch = getopt(argc, argv,
-			    "P:l:b:md:Di:PcC:a:p:x:L:BkFe:h")) != -1) {
+			    "P:l:b:md:Di:cC:a:p:x:L:BkFe:h")) != -1) {
 		switch (ch) {
 		default:
 			D("bad option %c %s", ch, optarg);
@@ -813,8 +811,8 @@ main(int argc, char **argv)
 			if (sizeof(pg.ifname) < strlen(optarg) + 1)
 				break;
 			strncpy(pg.ifname, optarg, sizeof(pg.ifname));
-			e.read = NULL;
-			e.data = phttpd_data;
+			nmg.read = NULL;
+			nmg.data = phttpd_data;
 			break;
 		case 'x': /* PASTE */
 			pg.dba.flags |= DF_PASTE;
@@ -961,7 +959,7 @@ main(int argc, char **argv)
 		close(fd);
 	}
 	netmap_eventloop(PST_NAME, pg.ifname, (void **)&g, &error,
-			&pg.sd, 1, &e, &nmg, &pg);
+			&pg.sd, 1, NULL, 0, &nmg, &pg);
 
 	free_if_exist(nmg.nmr_config);
 

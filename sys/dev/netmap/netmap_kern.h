@@ -1374,7 +1374,7 @@ int netmap_pst_register_fd(struct netmap_adapter *na, int fd);
 struct pst_so_adapter * pst_soa_from_fd(struct netmap_adapter *, int);
 int pst_extra_enq(struct netmap_kring *, struct netmap_slot *);
 void pst_extra_deq(struct netmap_kring *, struct netmap_slot *);
-void pst_fdtable_add(struct nmcb *, struct netmap_kring *);
+void pst_fdt_add(struct nmcb *, struct netmap_kring *);
 int netmap_pst_transmit(struct ifnet *, struct mbuf *);
 void pst_mbuf_data_dtor(struct nmcb *);
 void pst_get_extra_ref(struct netmap_kring *);

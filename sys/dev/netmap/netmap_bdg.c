@@ -1134,7 +1134,7 @@ netmap_vp_rxsync_locked(struct netmap_kring *kring, int flags)
 	int n;
 
 	if (head > lim) {
-		nm_prerr("ouch dangerous reset!!!");
+		nm_prerr("ouch dangerous reset!!! %s", na->name);
 		n = netmap_ring_reinit(kring);
 		goto done;
 	}

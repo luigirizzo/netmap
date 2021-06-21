@@ -140,6 +140,7 @@ struct nm_garg {
 	int64_t win[STATS_WIN];
 	int wait_link;
 	int polltimeo;
+	int pollevents;
 #ifdef __FreeBSD__
 	struct timespec *polltimeo_ts;
 #endif
@@ -154,8 +155,11 @@ struct nm_garg {
 	void (*connection)(struct nm_msg *);
 	int (*read)(struct nm_msg *);
 	int (*thread)(struct nm_targ *);
+	int (*writable)(struct nm_msg *);
 	int *fds;
 	u_int fdnum;
+	int *cfds;
+	u_int cfdnum;
 	int emu_delay;
 	void *garg_private;
 	char ifname2[NETMAP_REQ_IFNAMSIZ];
@@ -275,11 +279,12 @@ nm_start_threads(struct nm_garg *g)
 		bzero(t, sizeof(*t));
 		t->fd = -1;
 		t->g = g;
-		t->opaque = calloc(g->targ_opaque_len, 1);
+		t->opaque = calloc(1, g->targ_opaque_len);
 		if (t->opaque == NULL) {
 			continue;
 		}
 
+#ifndef NOLIBNETMAP
 		if (g->dev_type == DEV_NETMAP) {
 			t->nmd = nmport_clone(g->nmd);
 			if (i > 0) {
@@ -317,6 +322,7 @@ nm_start_threads(struct nm_garg *g)
 			t->fd = t->nmd->fd;
 
 		}
+#endif /* NOLIBNETMAP */
 		t->used = 1;
 		t->me = i;
 		if (g->affinity >= 0) {
@@ -439,7 +445,9 @@ nm_main_thread(struct nm_garg *g)
 		if (targs[i].used)
 			pthread_join(targs[i].thread, NULL); /* blocking */
 		if (g->dev_type == DEV_NETMAP) {
+#ifndef NOLIBNETMAP
 			nmport_close(targs[i].nmd);
+#endif /* !NOLIBNETMAP */
 			targs[i].nmd = NULL;
 		} else if (targs[i].fd > 2) {
 			close(targs[i].fd);
@@ -484,7 +492,9 @@ nm_start(struct nm_garg *g)
 	int i, devqueues = 0;
 	struct sigaction sa;
 	sigset_t ss;
+#ifndef NOLIBNETMAP
 	int error;
+#endif
 
 	g->main_fd = -1;
 	g->wait_link = 3;
@@ -503,6 +513,7 @@ nm_start(struct nm_garg *g)
 	if (g->dev_type != DEV_NETMAP)
 		goto nonetmap;
 
+#ifndef NOLIBNETMAP
 	if (g->nthreads > 1) {
 		/* register only one ring */
 		if (strlen(g->ifname) + 2 > sizeof(g->ifname) - 1) {
@@ -572,11 +583,11 @@ nm_start(struct nm_garg *g)
 	D("now nmport_open %s", g->ifname);
 	//g->nmd = nmport_open(g->ifname);
 	if (nmport_enable_option("offset"))
-		goto out;
+		goto nonetmap;
 	g->nmd = nmport_prepare(g->ifname);
 	if (g->nmd == NULL) {
 		D("Unable to prepare %s: %s", g->ifname, strerror(errno));
-		goto out;
+		goto nonetmap;
 	}
 	if (g->extra_bufs) {
 		g->nmd->reg.nr_extra_bufs = g->extra_bufs / g->nthreads;
@@ -584,7 +595,7 @@ nm_start(struct nm_garg *g)
 	error = nmport_open_desc(g->nmd);
 	if (error) {
 		D("Unable to open_desc %s: %s", g->ifname, strerror(errno));
-		goto out;
+		goto nonetmap;
 	}
 	D("got %u extra bufs at %u", g->nmd->reg.nr_extra_bufs,
 			g->nmd->nifp->ni_bufs_head);
@@ -655,6 +666,7 @@ nm_start(struct nm_garg *g)
 		}
 	}
 
+#endif /* !NOLIBNETMAP */
 nonetmap:
 	/* Print some debug information. */
 	fprintf(stdout,
@@ -663,7 +675,6 @@ nonetmap:
 		devqueues,
 		g->nthreads,
 		g->cpus);
-out:
 	/* return -1 if something went wrong. */
 	if (g->dev_type == DEV_NETMAP && g->main_fd < 0) {
 		D("aborting");
@@ -802,7 +813,7 @@ static int fdtable_expand(struct nm_targ *t)
 	int *newfds, fdsiz = sizeof(*t->fdtable);
 	int nfds = t->fdtable_siz;
 
-	newfds = (int *)calloc(fdsiz, nfds * 2);
+	newfds = (int *)calloc(nfds * 2, fdsiz);
 	if (!newfds) {
 		perror("calloc");
 		return ENOMEM;
@@ -837,7 +848,7 @@ wait_ns(long ns)
 #endif /* WITH_CLFLUSHOPT */
 
 static void
-do_nm_ring(struct nm_targ *t, int ring_nr)
+do_nm_rx_ring(struct nm_targ *t, int ring_nr)
 {
 	struct netmap_ring *rxr = NETMAP_RXRING(t->nmd->nifp, ring_nr);
 	struct netmap_ring *txr = NETMAP_TXRING(t->nmd->nifp, ring_nr);
@@ -848,7 +859,8 @@ do_nm_ring(struct nm_targ *t, int ring_nr)
 		struct netmap_slot *rxs = &rxr->slot[rxcur];
 		struct nm_msg m = {.rxring = rxr, .txring = txr, .slot = rxs, .targ = t, .fd = nm_pst_getfd(rxs)} ;
 
-		t->g->data(&m);
+		if (t->g->data)
+			t->g->data(&m);
 		nm_update_ctr(t, 1, rxs->len - nm_pst_getdoff(rxs));
 	}
 	rxr->head = rxr->cur = rxcur;
@@ -858,6 +870,15 @@ do_nm_ring(struct nm_targ *t, int ring_nr)
 		wait_ns(t->g->emu_delay);
 	}
 #endif /* WITH_CLFLUSHOPT */
+}
+
+static void
+do_nm_tx_ring(struct nm_targ *t, int ring_nr)
+{
+	struct nm_msg m = {.txring = NETMAP_TXRING(t->nmd->nifp, ring_nr),
+			   .targ = t};
+	if (t->g->writable)
+		t->g->writable(&m);
 }
 
 static int inline
@@ -955,7 +976,7 @@ netmap_worker(void *data)
 	}
 
 	/* allocate fd table */
-	t->fdtable = (int *)calloc(sizeof(*t->fdtable), DEFAULT_NFDS);
+	t->fdtable = (int *)calloc(DEFAULT_NFDS, sizeof(*t->fdtable));
 	if (!t->fdtable) {
 		perror("calloc");
 		goto quit;
@@ -974,9 +995,9 @@ netmap_worker(void *data)
 
 		D("have %u extra buffers from %u ring %p", n, next, any_ring);
 #ifdef NMLIB_EXTRA_SLOT
-		t->extra = (struct netmap_slot *)calloc(sizeof(*t->extra), n);
+		t->extra = (struct netmap_slot *)calloc(n, sizeof(*t->extra));
 #else
-		t->extra = (uint32_t *)calloc(sizeof(*t->extra), n);
+		t->extra = (uint32_t *)calloc(n, sizeof(*t->extra));
 #endif
 		if (!t->extra) {
 			perror("calloc");
@@ -1035,6 +1056,25 @@ netmap_worker(void *data)
 #endif /* linux */
 	}
 
+	/*
+	 * register connected sockets
+	 */
+	if (g->dev_type == DEV_NETMAP) {
+		u_int i;
+		for (i = 0; i < t->g->cfdnum; i++) {
+			struct nmreq_pst_fd_reg fdr;
+
+			fdr.fd = t->g->cfds[i];
+			hdr.nr_body = (uintptr_t)&fdr;
+			if (ioctl(t->fd, NIOCCTRL, &hdr)) {
+				perror("ioctl");
+				D("error i %d fd %d", i, t->g->cfds[i]);
+			} else {
+				D("registered %d fd %d", i, t->g->cfds[i]);
+			}
+		}
+	}
+
 	while (!t->cancel) {
 		struct nm_msg msg;
 
@@ -1046,7 +1086,7 @@ netmap_worker(void *data)
 			int n;
 
 			pfd[0].fd = t->fd;
-			pfd[0].events = POLLIN;
+			pfd[0].events = t->g->pollevents;
 			/* XXX make safer... */
 			for (i = 0; i < t->g->fdnum; i++) {
 				pfd[i+1].fd = t->g->fds[i];
@@ -1112,12 +1152,15 @@ close_pfds:
 			}
 
 			/* check the netmap fd */
-			if (!(pfd[0].revents & POLLIN)) {
-				continue;
+			if (pfd[0].revents & POLLIN) {
+				for (i = first_ring; i <= last_ring; i++) {
+					do_nm_rx_ring(t, i);
+				}
 			}
-
-			for (i = first_ring; i <= last_ring; i++) {
-				do_nm_ring(t, i);
+			if (pfd[0].revents & POLLOUT) {
+				for (i = first_ring; i <= last_ring; i++) {
+					do_nm_tx_ring(t, i);
+				}
 			}
 		} else if (g->dev_type == DEV_SOCKET) {
 			int i, nfd, epfd = t->fd;
@@ -1196,13 +1239,6 @@ do_mmap(int fd, size_t len)
 }
 
 
-struct netmap_events {
-	int (*data)(struct nm_msg *);
-	int (*read)(struct nm_msg *);
-	void (*connection)(struct nm_msg *);
-	int (*thread)(struct nm_targ *targ);
-};
-
 /*
  * Highest level abstraction mainly for PASTE
  *
@@ -1214,14 +1250,17 @@ struct netmap_events {
  * fdnum: number of file descriptors in fds.
  */
 static void
-netmap_eventloop(const char *name, char *ifname, void **ret, int *error, int *fds, int fdnum,
-	struct netmap_events *e, struct nm_garg *args, void *garg_private)
+netmap_eventloop(const char *name, char *ifname, void **ret, int *error,
+	int *fds, int fdnum, int *cfds, int cfdnum,
+	struct nm_garg *args, void *garg_private)
 {
 	struct nm_garg *g = (struct nm_garg *)calloc(1, sizeof(*g));
 	int i;
 	struct nmreq_header hdr;
 	struct nmctx ctx;
+#ifndef NOLIBNETMAP
 	const char *namep = name;
+#endif
 
 	*error = 0;
 	if (!g) {
@@ -1241,16 +1280,20 @@ netmap_eventloop(const char *name, char *ifname, void **ret, int *error, int *fd
 	g->ring_objsize = B(args, ring_objsize, RING_OBJSIZE/4,
 				RING_OBJSIZE*2, RING_OBJSIZE);
 #undef B
-	g->targ_opaque_len = args ? args->targ_opaque_len : 0;
-	g->nmr_config = args ? args->nmr_config : NULL;
+	g->targ_opaque_len = args->targ_opaque_len;
+	g->nmr_config = args->nmr_config;
 	g->extmem = args->extmem;
 	g->td_body = netmap_worker;
-	g->connection = e->connection;
-	g->data = e->data;
-	g->read = e->read;
-	g->thread = e->thread;
+	g->connection = args->connection;
+	g->data = args->data;
+	g->read = args->read;
+	g->thread = args->thread;
+	g->writable = args->writable;
 	g->fds = fds;
 	g->fdnum = fdnum;
+	g->cfds = cfds;
+	g->cfdnum = cfdnum;
+	g->pollevents = args->pollevents ? args->pollevents : POLLIN;
 #ifdef __FreeBSD__
 	g->polltimeo_ts = args->polltimeo_ts;
 #endif /* FreeBSD */
@@ -1266,15 +1309,25 @@ netmap_eventloop(const char *name, char *ifname, void **ret, int *error, int *fd
 			return;
 		}
 	}
+	for (i = 0; i < cfdnum; i++) {
+		if (do_setsockopt(cfds[i]) < 0) {
+			perror("setsockopt");
+			*error = -EFAULT;
+			return;
+		}
+	}
 
 	signal(SIGPIPE, SIG_IGN);
 
 	/* Ensure correct name. Suffix may be added in nm_start() later */
 	bzero(&ctx, sizeof(ctx));
+	bzero(&hdr, sizeof(hdr));
+#ifndef NOLIBNETMAP
 	if (nmreq_header_decode(&namep, &hdr, &ctx) < 0) {
 		*error = -EINVAL;
 		return;
 	}
+#endif
 
 	strncpy(g->ifname, name, sizeof(g->ifname) - 1);
 	D("name %s g->ifname %s ifname %s", name, g->ifname, ifname);
@@ -1303,7 +1356,7 @@ netmap_eventloop(const char *name, char *ifname, void **ret, int *error, int *fd
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 #endif
 const u_int DEFAULT_MTU = 1520; // maximum option space
-static int
+static inline int
 nm_write(struct netmap_ring *ring, const char *data,
 		size_t len, int off0, int fd)
 {

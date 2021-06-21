@@ -102,19 +102,24 @@ rollup(struct netmap_kring *kring, u_int from, u_int to, u_int *n)
 	return i;
 }
 
+static inline struct netmap_pst_adapter *
+topna(struct netmap_adapter *na)
+{
+	return (struct netmap_pst_adapter *)na;
+}
+
+static inline struct netmap_vp_adapter *
+tovpna(struct netmap_adapter *na)
+{
+	return (struct netmap_vp_adapter *)na;
+}
+
 struct netmap_adapter *
 pst_na(const struct netmap_adapter *port)
 {
 	const struct netmap_vp_adapter *vpna =
 		(const struct netmap_vp_adapter *)port;
-
 	return likely(vpna) ? &vpna->na_bdg->bdg_ports[0]->up : NULL;
-}
-
-static inline struct netmap_pst_adapter *
-topna(struct netmap_adapter *na)
-{
-	return (struct netmap_pst_adapter *)na;
 }
 
 static inline int
@@ -210,7 +215,7 @@ static int
 pst_extra_noref(struct netmap_adapter *na)
 {
 	struct netmap_adapter *port;
-	struct nm_bridge *b = ((struct netmap_vp_adapter *)na)->na_bdg;
+	struct nm_bridge *b = tovpna(na)->na_bdg;
 	int i, j;
 
 	for_bdg_ports(i, b) {
@@ -280,7 +285,7 @@ pst_extra_deq(struct netmap_kring *kring, struct netmap_slot *slot)
 				kring->na->name, kring->ring_id);
 	}
 	if (unlikely(!(BETWEEN(slot, slots, slots + pool->num)))) {
-		PST_DBG("%s kring %u buf_idx %u not in the extra pool",
+		PST_DBG_LIM("%s kring %u buf_idx %u not in the extra pool",
 				kring->na->name, kring->ring_id, slot->buf_idx);
 		return;
 	}
@@ -447,19 +452,16 @@ static void
 pst_poststack(struct netmap_kring *kring)
 {
 	struct netmap_adapter *na = kring->na, *rxna;
-	struct nm_bridge *b = ((struct netmap_vp_adapter *)na)->na_bdg;
+	struct nm_bridge *b = tovpna(na)->na_bdg;
 	struct pst_fdt *ft = pst_get_fdt(kring);
 	uint32_t *nonfree = ft->tmp;
 	u_int lim_rx, howmany, nrings;
 	struct netmap_kring *rxr;
 	int j, want, sent = 0, nonfree_num = 0;
 
-	//if (na->na_flags & NAF_BDG_MAYSLEEP)
-	//	BDG_RLOCK(b);
-	//else if (!BDG_RTRYLOCK(b))
-	//	return;
-	if (!BDG_RTRYLOCK(b))
+	if (!BDG_RTRYLOCK(b)) {
 		return;
+	}
 
 	if (is_host(na)) {
 		want = kring->rhead - kring->nr_hwcur;
@@ -523,9 +525,6 @@ pst_poststack(struct netmap_kring *kring)
 			struct pst_fdt_q *fq = ft->fde + fd;
 			uint32_t next = fq->fq_head;
 
-			if (unlikely(next == NM_FDT_NULL)) {
-				PST_DBG("fd %d next NULL", fd);
-			}
 			while (next != NM_FDT_NULL && likely(howmany)) {
 				struct netmap_slot tmp = { next };
 				struct netmap_slot *ts, *rs;
@@ -560,10 +559,6 @@ pst_poststack(struct netmap_kring *kring)
 					nonfree[nonfree_num++] = j;
 				}
 				pst_swap_reset(ts, rs);
-				/* reclaimed slot may have adjusted offset */
-				if (nm_get_offset(kring, ts) != sizeof(*cb)) {
-					nm_write_offset(kring, ts, sizeof(*cb));
-				}
 				if (nmcb_rstate(cb) == MB_FTREF) {
 					nmcb_wstate(cb, MB_NOREF);
 					pst_extra_deq(nmcb_kring(cb), ts);
@@ -809,7 +804,9 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 	    || unlikely(kring && kring->na->na_private == na->na_private)
 #endif /* __FreeBSD__ */
 	    ) {
-		PST_DBG("cb %p %d len %u", cb, nmcb_rstate(cb), MBUF_LEN(m));
+		PST_DBG_LIM("cb %p %s len %u", cb,
+		    nmcb_rstate(cb) == MB_QUEUED ? "MB_QUEUED" : "!MB_STACK",
+		    MBUF_LEN(m));
 #ifdef linux
 		if (unlikely(nmcb_rstate(cb) == MB_QUEUED)) {
 			nmcb_wstate(NMCB_EXT(m, 0, bufsize), MB_NOREF);
@@ -1378,7 +1375,6 @@ unlock_return:
 static int
 netmap_pst_reg(struct netmap_adapter *na, int onoff)
 {
-	struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter *)na;
 	int err;
 
 	if (onoff) {
@@ -1391,7 +1387,7 @@ netmap_pst_reg(struct netmap_adapter *na, int onoff)
 			return err;
 	}
 	if (!onoff) {
-		struct nm_bridge *b = vpna->na_bdg;
+		struct nm_bridge *b = tovpna(na)->na_bdg;
 		int i;
 		struct netmap_pst_adapter *pna;
 
@@ -1479,7 +1475,7 @@ vp_reg:
 static inline int
 pst_bdg_valid(struct netmap_adapter *na)
 {
-	struct nm_bridge *b = ((struct netmap_vp_adapter *)na)->na_bdg;
+	struct nm_bridge *b = tovpna(na)->na_bdg;
 
 	if (unlikely(b == NULL)) {
 		return 0;
@@ -1570,11 +1566,10 @@ netmap_pst_rxsync(struct netmap_kring *kring, int flags)
 static void
 netmap_pst_dtor(struct netmap_adapter *na)
 {
-	struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter*)na;
-	struct nm_bridge *b = vpna->na_bdg;
+	struct nm_bridge *b = tovpna(na)->na_bdg;
 
 	if (b) {
-		netmap_bdg_detach_common(b, vpna->bdg_port, -1);
+		netmap_bdg_detach_common(b, tovpna(na)->bdg_port, -1);
 	}
 	if (na->ifp != NULL && !nm_iszombie(na)) {
 		NM_DETACH_NA(na->ifp);
@@ -1662,7 +1657,6 @@ netmap_pst_vp_create(struct nmreq_header *hdr, struct ifnet *ifp,
 
 	/* XXX should we check extra bufs? */
 	na->num_rx_desc = req->nr_rx_slots;
-	na->na_flags |= NAF_BDG_MAYSLEEP;
 	if (ifp)
 		na->na_flags |= NAF_NATIVE;
 	na->nm_txsync = netmap_pst_txsync;

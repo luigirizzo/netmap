@@ -1205,7 +1205,7 @@ nm_os_pst_upcall(NM_SOCK_T *sk)
 		 * We might have leftover for the previous connection with
 		 * the same fd value. Overwrite it if this is new connection.
 		 */
-		pst_fdtable_add(cb, kring);
+		pst_fdt_add(cb, kring);
 		/* see comment in pst_transmit() */
 #ifdef PST_MB_RECYCLE
 		if (unlikely(nmcb_rstate(cb) == MB_QUEUED)) {
@@ -1425,7 +1425,7 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 		err = kernel_sendpage(sk->sk_socket, page, poff, len, flags);
 	if (unlikely(err < 0)) {
 		/* XXX check if it is enough to assume EAGAIN only */
-		PST_DBG("error %d in sendpage() slot %ld",
+		PST_DBG_LIM("error %d in sendpage() slot %ld",
 				err, slot - kring->ring->slot);
 		nmcb_invalidate(cb);
 		return -EAGAIN;
