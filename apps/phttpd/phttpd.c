@@ -48,6 +48,10 @@
 #ifdef WITH_CLFLUSHOPT
 #define _mm_clflush(p) _mm_clflushopt(p)
 #endif
+#ifdef WITH_LEVELDB
+#include <leveldb/db.h>
+#include <leveldb/slice.h>
+#endif /* WITH_LEVELDB */
 
 //#define MYHZ	2400000000
 #ifdef MYHZ
@@ -76,6 +80,8 @@ user_clock_gettime(struct timespec *ts)
 #define EXTMEMFILE	"netmap_mem"
 #define BPLUSFILE	"bplus"
 #define DATAFILE	"dumb"
+#define LEVELDBFILE    "leveldb"
+#define LEVELDBMEMFILE "leveldb_mem"
 
 #define NETMAP_BUF_SIZE	2048
 #define GET_LEN		4 // the request look like GET /3
@@ -92,11 +98,11 @@ user_clock_gettime(struct timespec *ts)
 #define DF_KVS		0x8
 #define DF_MMAP		0x10
 #define DF_PMEM		0x20
+#define DF_LEVELDB     0x40
 
 #define CLSIZ	64 /* XXX */
 
 struct dbctx {
-	int type;
 	int flags;
 	size_t size;
 	size_t pgsiz;
@@ -104,6 +110,9 @@ struct dbctx {
 	int	fd;
 	char *paddr;
 	void *vp; // gfile_t
+#ifdef WITH_LEVELDB
+	leveldb::DB *leveldb;
+#endif /* WITH_LEVELDB */
 	size_t cur;
 };
 
@@ -115,7 +124,6 @@ struct phttpd_global {
 	int httplen;
 	int msglen;
 	struct {
-		int	type;
 		int	flags;
 		size_t	size;
 		char	*dir; // directory path for data, metadata ane ppool
@@ -134,8 +142,6 @@ get_aligned(size_t len, size_t align)
 	size_t d = len & (align - 1);
 	return d ? len + align - d : len;
 }
-
-enum { DT_NONE=0, DT_DUMB};
 
 #if 0
 static u_int stat_nfds;
@@ -502,6 +508,18 @@ phttpd_req(char *rxbuf, int len, struct nm_msg *m, int *no_ok,
 			m->slot->flags |= NS_BUF_CHANGED;
 			*extra = tmp;
 			extra->flags &= ~NS_BUF_CHANGED;
+#ifdef WITH_LEVELDB
+		} else if (db->leveldb) {
+			leveldb::Slice skey((char *)&key, sizeof(key));
+			leveldb::Slice sval((char *)&rxbuf, thisclen);
+			leveldb::Status status;
+			leveldb::WriteOptions write_options;
+			write_options.sync = true;
+			status = db->leveldb->Put(write_options, skey, sval);
+			if (!status.ok()) {
+				D("leveldb write error");
+			}
+#endif /* WITH_LEVELDB */
 		} else if (db->paddr) {
 			copy_and_log(db->paddr, &db->cur, dbsiz, datap,
 			    thisclen, is_pm(db) ? 0 : db->pgsiz,
@@ -644,20 +662,56 @@ phttpd_read(struct nm_msg *m)
 }
 
 static int
-init_db(struct dbctx *db, int i, const char *dir, int type, int flags, size_t size)
+init_db(struct dbctx *db, int i, const char *dir, int flags, size_t size)
 {
 	int fd = 0;
 	char path[64];
 
-	bzero(db, sizeof(*db));
-	if (type == DT_NONE)
+	if (!dir)
 		return 0;
-	db->type = type;
+	bzero(db, sizeof(*db));
 	db->flags = flags;
 	db->size = size;
 	db->pgsiz = getpagesize();
 
-	ND("map %p", map);
+#ifdef WITH_LEVELDB
+	if (db->flags & DF_LEVELDB) {
+		leveldb::Status status;
+		leveldb::Options options;
+		char mpath[64];
+		std::string val;
+
+		options.create_if_missing = true;
+		// 16GB
+		options.write_buffer_size = 16384000000;
+		options.nvm_buffer_size = 16384000000;
+		options.reuse_logs = true;
+		snprintf(path, sizeof(path), "%s/%s%d", dir, LEVELDBFILE, i);
+		snprintf(mpath, sizeof(mpath), "%s/%s%d", dir, LEVELDBMEMFILE, i);
+		status = leveldb::DB::Open(options, path, mpath, &db->leveldb);
+		if (!status.ok()) {
+			D("error to open leveldb %s", path);
+			return -1;
+		}
+		D("done Open LevelDB dbfile %s memfile %s", path, mpath);
+
+		leveldb::WriteOptions write_options;
+		write_options.sync = false;
+		status = db->leveldb->Put(write_options, "100", "test");
+		if (!status.ok()) {
+			D("leveldb write error");
+		}
+		status = db->leveldb->Get(leveldb::ReadOptions(), "100", &val);
+		if (!status.ok()) {
+			D("leveldb read error");
+		}
+		status = db->leveldb->Delete(leveldb::WriteOptions(), "100");
+		if (!status.ok()) {
+			D("leveldb write error");
+		}
+		D("leveldb test done (error reported if any)");
+	}
+#endif
 #ifdef WITH_BPLUS
 	/* need B+tree ? */
 	if (db->flags & DF_BPLUS) {
@@ -702,7 +756,7 @@ phttpd_thread(struct nm_targ *targ)
 		(struct phttpd_global *)nmg->garg_private;
 
 	if (init_db((struct dbctx *)targ->opaque, targ->me, g->dba.dir,
-		    g->dba.type, g->dba.flags, g->dba.size / nmg->nthreads)) {
+		    g->dba.flags, g->dba.size / nmg->nthreads)) {
 		D("error on init_db");
 		return ENOMEM;
 	}
@@ -768,7 +822,7 @@ main(int argc, char **argv)
 	pg.msglen = 64;
 
 	while ((ch = getopt(argc, argv,
-			    "P:l:b:md:Di:cC:a:p:x:L:BkFe:h")) != -1) {
+			    "P:l:b:md:Di:cC:a:p:x:L:BkFe:hN")) != -1) {
 		switch (ch) {
 		default:
 			D("bad option %c %s", ch, optarg);
@@ -788,7 +842,6 @@ main(int argc, char **argv)
 			break;
 		case 'd': /* directory of data store */
 			{
-			pg.dba.type = DT_DUMB;
 			pg.dba.dir = optarg;
 			if (optarg[strlen(optarg) - 1] == '/')
 				optarg[strlen(optarg) - 1] = '\0';
@@ -841,6 +894,11 @@ main(int argc, char **argv)
 			pg.dba.flags |= DF_KVS;
 			break;
 #endif /* WITH_BPLUS */
+#ifdef WITH_LEVELDB
+		case 'N':
+			pg.dba.flags |= DF_LEVELDB;
+			break;
+#endif /* WITH_LEVELDB */
 #ifdef WITH_NOFLUSH
 		case 'F': // just to tell the script to use phttpd-f
 			break;
@@ -870,14 +928,18 @@ main(int argc, char **argv)
 		usage();
 	else if (pg.dba.flags & DF_PASTE && strlen(pg.ifname) == 0)
 		usage();
-	else if (pg.dba.type == DT_NONE && pg.dba.flags)
-		usage();
 #ifdef WITH_BPLUS
 	else if (pg.dba.flags & DF_BPLUS && !(pg.dba.flags & DF_MMAP))
 		usage();
 	else if (pg.dba.flags & DF_KVS && pg.httplen)
 		usage();
 #endif /* WITH_BPLUS */
+#ifdef WITH_LEVELDB
+	else if (pg.dba.flags & DF_LEVELDB) {
+		if (pg.dba.flags & (DF_BPLUS|DF_PASTE|DF_MMAP|DF_FDSYNC))
+			usage();
+	}
+#endif /* WITH_LEVELDB */
 
 #ifdef __FreeBSD__
 	/* kevent requires struct timespec for timeout */

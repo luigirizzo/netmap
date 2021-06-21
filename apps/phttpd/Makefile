@@ -1,6 +1,7 @@
 #CFLAGS += -Werror -Wall -O2 -g -fsanitize=address
 CFLAGS += -Werror -Wall -O2 -g
 NMLIB = ../../libnetmap/libnetmap.a
+LSMLIB = ../../../lsm_nvm
 NOCFLAGS := $(CFLAGS)
 NOCFLAGS += -DNOLIBNETMAP -DLIBNETMAP_NOTHREADSAFE
 CC = g++
@@ -13,17 +14,20 @@ endif
 NOLDFLAGS := $(LDFLAGS)
 LDFLAGS += $(NMLIB)
 #CFLAGS += -I/usr/local/include -I../libsqlite/include
-OBJS = phttpd-b.o phttpd-k.o phttpd-f.o bplus_support.o bplus_impl.o client.o
+OBJS = phttpd-b.o phttpd-k.o phttpd-f.o bplus_support.o bplus_impl.o client.o phttpd-l.o
 SPATH ?= -I../../sys/ -I../include -I../../libnetmap -DNETMAP_WITH_LIBS
 BOPT = -DWITH_BPLUS -I./
 FOPT = -DWITH_NOFLUSH
 OOPT = -DWITH_CLFLUSHOPT -mclflushopt
 
+LOPT = -DWITH_LEVELDB -I$(LSMLIB)/include
+LLDOPT = $(LSMLIB)/out-static/libleveldb.a -lnuma
+
 #
 # compile phttpd-o only if your CPU supports clflushopt
 #
-#PROG = phttpd phttpd-b phttpd-o phttpd-f
 PROG = phttpd phttpd-b phttpd-f client nophttpd
+ALLPROG = $(PROG) phttpd-l phttpd-o
 
 all: $(PROG)
 
@@ -38,10 +42,10 @@ nophttpd: phttpd.c nmlib.h
 phttpd: phttpd.c nmlib.h
 	$(CC) $(CFLAGS) $(OPT) $(SOPT) $(SPATH) phttpd.c -o phttpd $(EXTRA_CFLAGS) $(LDFLAGS)
 
-#phttpd-o: phttpd-o.o
-#	$(CC) $(CFLAGS) -o phttpd-o phttpd-o.o $(LDFLAGS) $(EXTRA_CFLAGS)
-#phttpd-o.o: phttpd.c nmlib.h
-#	$(CC) $(CFLAGS) $(OPT) $(SOPT) $(OOPT) $(SPATH) -c phttpd.c -o phttpd-o.o $(EXTRA_CFLAGS)
+phttpd-o: phttpd-o.o
+	$(CC) $(CFLAGS) -o phttpd-o phttpd-o.o $(LDFLAGS) $(EXTRA_CFLAGS)
+phttpd-o.o: phttpd.c nmlib.h
+	$(CC) $(CFLAGS) $(OPT) $(SOPT) $(OOPT) $(SPATH) -c phttpd.c -o phttpd-o.o $(EXTRA_CFLAGS)
 
 phttpd-f: phttpd-f.o
 	$(CC) $(CFLAGS) -o phttpd-f phttpd-f.o $(LDFLAGS) $(EXTRA_CFLAGS)
@@ -58,5 +62,9 @@ bplus_support.o: bplus_support.c
 	$(CC) $(CFLAGS) $(BOPT) -c bplus_support.c
 client: client.c nmlib.h
 	$(CC) $(CFLAGS) $(SPATH) client.c -o client $(EXTRA_CFLAGS) $(LDFLAGS)
+phttpd-l: phttpd-l.o
+	$(CC) $(CFLAGS) -o phttpd-l phttpd-l.o $(LDFLAGS) $(EXTRA_CFLAGS) $(LLDOPT)
+phttpd-l.o: phttpd.c nmlib.h
+	$(CC) $(CFLAGS) $(OPT) $(SOPT) $(LOPT) $(SPATH) -c phttpd.c -o phttpd-l.o $(EXTRA_CFLAGS)
 clean:
-	-@rm -f $(PROG) $(OBJS)
+	-@rm -f $(ALLPROG) $(OBJS)

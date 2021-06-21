@@ -1352,20 +1352,17 @@ netmap_eventloop(const char *name, char *ifname, void **ret, int *error,
  * is written after `off0` bytes. This is useful when the caller writes
  * an app-level header beforehand
  */
-#ifndef min
-#define min(a, b) (((a) < (b)) ? (a) : (b))
-#endif
 const u_int DEFAULT_MTU = 1520; // maximum option space
 static inline int
 nm_write(struct netmap_ring *ring, const char *data,
-		size_t len, int off0, int fd)
+		size_t len, u_int off0, int fd)
 {
 	u_int const tail = ring->tail;
 	u_int cur = ring->cur;
 	size_t copied = 0;
 	const u_int space = nm_ring_space(ring);
 	size_t space_bytes;
-	const int off = IPV4TCP_HDRLEN;
+	const u_int off = IPV4TCP_HDRLEN;
 
 	//if (unlikely(off + off0 > DEFAULT_MTU)) {
 	//	D("total offset must be < %u", DEFAULT_MTU);
@@ -1382,8 +1379,10 @@ nm_write(struct netmap_ring *ring, const char *data,
 	while (likely(cur != tail) && copied < len) {
 		struct netmap_slot *slot = &ring->slot[cur];
 		char *p = NETMAP_BUF_OFFSET(ring, slot) + off + off0;
-		int l = min(DEFAULT_MTU - off0, len - copied);
+		int l = len - copied;
 
+		if (l > (int)(DEFAULT_MTU - off0))
+			l =  (int)(DEFAULT_MTU - off0);
 		if (data) {
 			nm_pkt_copy(data + copied, p, l);
 		}
