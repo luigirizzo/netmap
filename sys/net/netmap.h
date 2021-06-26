@@ -218,7 +218,6 @@ struct netmap_slot {
 	 * Set on all but the last slot of a multi-segment packet.
 	 * The 'len' field refers to the individual fragment.
 	 */
-#define NS_CSUM		0x0040
 
 #define NS_TXMON	0x0040
 	/* (monitor ports only) the packet comes from the TX
