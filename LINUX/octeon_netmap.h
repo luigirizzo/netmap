@@ -521,7 +521,7 @@ static void octeon_netmap_attach(struct octeon_ethernet *priv)
 	bzero(&na, sizeof(na));
 	na.na_flags = NAF_OFFSETS;
 	na.ifp = priv->netdev;
-	na.num_tx_desc = 128 * rx_rings;
+	na.num_tx_desc = 128;
 	na.num_rx_desc = 128;
 	na.nm_register = octeon_netmap_reg;
 	na.nm_txsync = octeon_netmap_txsync;
