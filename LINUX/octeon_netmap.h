@@ -277,6 +277,8 @@ static int octeon_netmap_txsync(struct netmap_kring *kring, int flags)
 		return 0;
 	}
 
+	rmb(); /* Force memory reads to complete */
+
 	/* First part: process new packets to send */
 	nm_i = kring->nr_hwcur;
 	for (n = 0; nm_i != head; n++) {
@@ -351,6 +353,8 @@ static int octeon_netmap_txsync(struct netmap_kring *kring, int flags)
 		kring->nr_hwtail = nm_i;
 	}
 
+	wmb(); /* Force memory writes to complete */
+
 	/* Enable interrupt if the ring is still full */
 	if (nm_kr_txempty(kring)) {
 		union cvmx_ciu_timx ciu_timx;
@@ -389,6 +393,8 @@ static int octeon_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 	if (!netif_carrier_ok(ifp))
 		return 0;
+
+	rmb(); /* Force memory reads to complete */
 
 	if (head > lim)
 		return netmap_ring_reinit(kring);
@@ -511,6 +517,7 @@ static int octeon_netmap_rxsync(struct netmap_kring *kring, int flags)
 		nm_i = nm_next(nm_i, lim);
 	}
 	kring->nr_hwcur = head;
+	wmb(); /* Force memory writes to complete */
 
 	return 0;
 ring_reset:
