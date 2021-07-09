@@ -351,6 +351,20 @@ static int octeon_netmap_txsync(struct netmap_kring *kring, int flags)
 		kring->nr_hwtail = nm_i;
 	}
 
+	/* Enable interrupt if the ring is still full */
+	if (nm_kr_txempty(kring)) {
+		union cvmx_ciu_timx ciu_timx;
+
+		ciu_timx.u64 = cvmx_read_csr(CVMX_CIU_TIMX(1));
+		if (ciu_timx.u64 == 0) {
+
+			ciu_timx.u64 = 0;
+			ciu_timx.s.one_shot = 1;
+			ciu_timx.s.len = cvm_oct_tx_poll_interval;
+			cvmx_write_csr(CVMX_CIU_TIMX(1), ciu_timx.u64);
+		}
+	}
+
 	return 0;
 }
 

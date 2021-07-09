@@ -35,3 +35,19 @@ index c6344edfa6f4..006fbbd4e7aa 100644
  			cancel_delayed_work_sync(&priv->port_periodic_work);
  
  			cvm_oct_tx_shutdown_dev(dev);
+diff --git a/drivers/staging/octeon/ethernet-tx.c b/drivers/staging/octeon/ethernet-tx.c
+index 6bb915fffe35..0dc037acf654 100644
+--- a/octeon/ethernet-tx.c
++++ b/octeon/ethernet-tx.c
+@@ -827,6 +831,11 @@ static void cvm_oct_tx_do_cleanup(unsigned long arg)
+ 		if (cvm_oct_device[port]) {
+ 			struct net_device *dev = cvm_oct_device[port];
+ 
++#ifdef CONFIG_NETMAP
++			int netmap_rx_irq(struct net_device *, u_int, u_int *);
++			if (netmap_rx_irq(dev, 0, NULL))
++				continue;
++#endif /* DEV_NETMAP */
+ 			cvm_oct_free_tx_skbs(dev);
+ 		}
+ 	}
