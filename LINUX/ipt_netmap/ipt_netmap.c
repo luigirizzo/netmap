@@ -616,6 +616,7 @@ static int create_ifc_pipe(struct xt_nmring_info *info,
 	tx_kring = na->tx_rings[priv->netmap_priv->np_qfirst[NR_TX]];
 	rx_kring = tx_kring->pipe;
 	rx_kring->nm_sync = ipt_rxsync;
+	mbq_safe_init(&rx_kring->rx_queue);
 
 	return error;
 }

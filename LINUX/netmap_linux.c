@@ -2616,12 +2616,14 @@ EXPORT_SYMBOL(netmap_ioctl_legacy);
 EXPORT_SYMBOL(netmap_priv_delete);
 EXPORT_SYMBOL(netmap_generic_ringsize);
 EXPORT_SYMBOL(mbq_init);
+EXPORT_SYMBOL(mbq_safe_init);
 EXPORT_SYMBOL(mbq_safe_enqueue);
 EXPORT_SYMBOL(mbq_safe_purge);
 EXPORT_SYMBOL(mbq_enqueue);
 EXPORT_SYMBOL(mbq_dequeue);
 EXPORT_SYMBOL(mbq_purge);
 EXPORT_SYMBOL(mbq_fini);
+EXPORT_SYMBOL(mbq_safe_fini);
 #endif
 
 MODULE_AUTHOR("http://info.iet.unipi.it/~luigi/netmap/");
