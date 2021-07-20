@@ -1421,7 +1421,7 @@ nmr_body_dump_register(void *b)
 		break;
 	}
 	printf("]\n");
-	printf("flags:     %lx [", r->nr_flags);
+	printf("flags:     %" PRIx64 " [", r->nr_flags);
 #define pflag(f)                                                               \
 	if (r->nr_flags & NR_##f) {                                            \
 		printf("%s" #f, flags++ ? ", " : "");                          \
@@ -1515,7 +1515,7 @@ do_register_flags()
 	}
 	if (n)
 		curr_register.nr_flags = flags;
-	output("flags=%lx", curr_register.nr_flags);
+	output("flags=%" PRIx64, curr_register.nr_flags);
 }
 
 struct cmd_def register_commands[] = {
