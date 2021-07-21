@@ -35,6 +35,7 @@ struct oct_nm_adapter {
 	struct netmap_hw_adapter up;
 	int base;		/* Group base */
 	int fau;		/* Fetch and Add register to keep track of transmitted packet */
+	unsigned long irqs;	/* Bitmap used to keep track enabled interrupts */
 };
 
 /* Bitmap used to keep track of available groups */
@@ -44,30 +45,35 @@ static void
 octeon_netmap_irq_enable(struct netmap_adapter *na, int queue, int onoff)
 {
 	struct oct_nm_adapter *ona = (struct oct_nm_adapter *)na;
-	struct netmap_kring *kring = NMR(na, NR_RX)[0];
+	struct netmap_kring *kring = NMR(na, NR_RX)[queue];
 	union cvmx_pow_wq_int wq_int;
 	union cvmx_pow_wq_int_thrx int_thr;
 	int group = ona->base + queue;
 
-	nm_prdis("%s: IRQ %s", na->name, onoff ? "ON" : "OFF");
-
-	mtx_lock(&kring->q_lock);
-	if (onoff) {
+	if (onoff && ((ona->irqs & BIT(group)) == 0)) {
 		/* Enable */
+		nm_prdis("%u: %s-%d[%d]: IRQ ON (0x%08x)", get_cpu(), na->name, queue, group, ona->irqs);
+		mtx_lock(&kring->q_lock);
 		int_thr.u64 = 0;
 		int_thr.s.iq_thr = 1;
 		cvmx_write_csr(CVMX_POW_WQ_INT_THRX(group), int_thr.u64);
-	} else {
-		/* Disable */
+		set_bit(group, &ona->irqs);
+		mtx_unlock(&kring->q_lock);
+	} else if (!onoff && (ona->irqs & BIT(group))) {
+		/* Disable and clear */
+		nm_prdis("%u: %s-%d[%d]: IRQ OFF (0x%08x)", get_cpu(), na->name, queue, group, ona->irqs);
+		mtx_lock(&kring->q_lock);
 		int_thr.u64 = 0;
 		int_thr.s.iq_thr = 0;
 		cvmx_write_csr(CVMX_POW_WQ_INT_THRX(group), int_thr.u64);
-		/* Clear */
 		wq_int.u64 = 0;
 		wq_int.s.wq_int = 1 << group;
 		cvmx_write_csr(CVMX_POW_WQ_INT, wq_int.u64);
+		clear_bit(group, &ona->irqs);
+		mtx_unlock(&kring->q_lock);
 	}
-	mtx_unlock(&kring->q_lock);
+
+	nm_prdis("%d: %s-%d[%d]: IRQs 0x%08x", get_cpu(), na->name, queue, group, ona->irqs);
 }
 
 static irqreturn_t octeon_netmap_do_interrupt(int cpl, void *data)
