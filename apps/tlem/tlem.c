@@ -153,6 +153,7 @@ prod()
 #include <unistd.h>
 #include <signal.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <libnetmap.h>
 
 
@@ -796,7 +797,7 @@ struct arp_table_entry {
 void
 arp_table_entry_dump(int idx, struct arp_table_entry *e)
 {
-    ED("%d: next %lu addr %02x:%02x:%02x:%02x:%02x:%02x",
+    ED("%d: next %" PRIu64 " addr %02x:%02x:%02x:%02x:%02x:%02x",
             idx, e->next_req,
             (uint8_t)~e->ether_addr[0],
             (uint8_t)~e->ether_addr[1],
@@ -2512,7 +2513,7 @@ skip_args:
 	}
 #ifdef WITH_MAX_LAG
         if (invdopt['d']->arg[i] != NULL) {
-            unsigned long max_lag = parse_time(invdopt[(int)'d']->arg[i]);
+            uint64_t max_lag = parse_time(invdopt[(int)'d']->arg[i]);
             if (max_lag == U_PARSE_ERR) {
                 err++;
             } else {
