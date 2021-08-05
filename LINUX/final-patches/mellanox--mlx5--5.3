@@ -140,7 +140,7 @@ index a6dceb6..a3cb81d 100644
  
  	netdev_err(sq->netdev,
 diff --git a/mlx5/drivers/net/ethernet/mellanox/mlx5/core/en_main.c b/mlx5/drivers/net/ethernet/mellanox/mlx5/core/en_main.c
-index 47260b9..0c0e90a 100644
+index 47260b9..25857eb 100644
 --- a/mlx5/drivers/net/ethernet/mellanox/mlx5/core/en_main.c
 +++ b/mlx5/drivers/net/ethernet/mellanox/mlx5/core/en_main.c
 @@ -84,8 +84,21 @@
@@ -165,18 +165,7 @@ index 47260b9..0c0e90a 100644
  	bool striding_rq_umr = MLX5_CAP_GEN(mdev, striding_rq) &&
  		MLX5_CAP_GEN(mdev, umr_ptr_rlky) &&
  		MLX5_CAP_ETH(mdev, reg_umr_sq);
-@@ -824,6 +837,10 @@ static int mlx5e_alloc_rq(struct mlx5e_channel *c,
- 		rq->dim_obj.dim.mode = DIM_CQ_PERIOD_MODE_START_FROM_EQE;
- 	}
- 
-+#ifdef DEV_NETMAP
-+	mlx5e_netmap_configure_rx_ring(rq, rq->ix);
-+#endif /* DEV_NETMAP */
-+
- 	return 0;
- 
- err_free_by_rq_type:
-@@ -1051,6 +1068,12 @@ int mlx5e_wait_for_min_rx_wqes(struct mlx5e_rq *rq, int wait_time)
+@@ -1051,6 +1064,12 @@ int mlx5e_wait_for_min_rx_wqes(struct mlx5e_rq *rq, int wait_time)
  {
  	unsigned long exp_time = jiffies + msecs_to_jiffies(wait_time);
  
@@ -189,7 +178,7 @@ index 47260b9..0c0e90a 100644
  	u16 min_wqes = mlx5_min_rx_wqes(rq->wq_type, mlx5e_rqwq_get_size(rq));
  
  	do {
-@@ -1115,6 +1138,10 @@ void mlx5e_free_rx_descs(struct mlx5e_rq *rq)
+@@ -1115,6 +1134,10 @@ void mlx5e_free_rx_descs(struct mlx5e_rq *rq)
  
  		while (!mlx5_wq_cyc_is_empty(wq)) {
  			wqe_ix = mlx5_wq_cyc_get_tail(wq);
@@ -200,6 +189,17 @@ index 47260b9..0c0e90a 100644
  			rq->dealloc_wqe(rq, wqe_ix);
  			mlx5_wq_cyc_pop(wq);
  		}
+@@ -1248,6 +1271,10 @@ int mlx5e_open_rq(struct mlx5e_channel *c, struct mlx5e_params *params,
+ 	if (MLX5E_GET_PFLAG(params, MLX5E_PFLAG_SKB_XMIT_MORE))
+ 		__set_bit(MLX5E_RQ_STATE_SKB_XMIT_MORE, &c->rq.state);
+ 
++#ifdef DEV_NETMAP
++	mlx5e_netmap_configure_rx_ring(rq, rq->ix);
++#endif /* DEV_NETMAP */
++
+ 	return 0;
+ 
+ err_destroy_rq:
 @@ -1261,6 +1288,9 @@ err_dealloc_rq:
  
  void mlx5e_activate_rq(struct mlx5e_rq *rq)
