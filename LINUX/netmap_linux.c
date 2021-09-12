@@ -576,7 +576,8 @@ linux_generic_rx_handler_common(struct mbuf *m)
 		m->dev->type == ARPHRD_IPGRE ||
 		m->dev->type == ARPHRD_IP6GRE ||
 		m->dev->type == ARPHRD_TUNNEL ||
-		m->dev->type == ARPHRD_TUNNEL6)
+		m->dev->type == ARPHRD_TUNNEL6 ||
+		m->dev->type == ARPHRD_RAWIP)
 	{
 		update_eth_hdr(m->dev, m);
 	}
