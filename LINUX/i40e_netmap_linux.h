@@ -555,6 +555,7 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 				 >> I40E_RXD_QW1_STATUS_SHIFT;
 		        uint16_t slot_flags = 0;
 			struct netmap_slot *slot;
+			unsigned int size;
 			uint64_t paddr;
 
 			if (likely(complete)) {
@@ -562,15 +563,31 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 				complete = 0;
 			}
 
-			if ((staterr & (1<<I40E_RX_DESC_STATUS_DD_SHIFT)) == 0) {
-				break;
+			if (unlikely(i40e_rx_is_programming_status(qword))) {
+				/* Clean programming status and skip over nic and ring
+				 * slots. To shelter the application from
+				 * this we would need to rotate the
+				 * kernel-owned segments of the netmap and nic
+				 * rings.  For now, we just set len=0 in the
+				 * skipped slots and handle this in applications.
+				 * Notes that when the i40e is cleaning programming
+				 * status the size is zero anyway.
+				 */
+				i40e_clean_programming_status(rxr, curr->raw.qword[0], qword);
+				complete = 1;
+				ring->slot[nm_i].len = 0;
+				nm_i = nm_next(nm_i, lim);
+				nic_i = nm_next(nic_i, lim);
+				continue;
 			}
-			slot = ring->slot + nm_i;
-			slot->len = ((qword & I40E_RXD_QW1_LENGTH_PBUF_MASK)
-			    >> I40E_RXD_QW1_LENGTH_PBUF_SHIFT) - crclen;
 
-			if (!slot->len)
+			size = ((qword & I40E_RXD_QW1_LENGTH_PBUF_MASK)
+			    >> I40E_RXD_QW1_LENGTH_PBUF_SHIFT);
+			if (!size)
 				break;
+
+			slot = ring->slot + nm_i;
+			slot->len = size - crclen;
 
 			if (unlikely((staterr & (1<<I40E_RX_DESC_STATUS_EOF_SHIFT)) == 0 )) {
 				slot_flags = NS_MOREFRAG;
