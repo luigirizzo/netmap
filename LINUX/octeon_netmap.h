@@ -108,13 +108,13 @@ static void octeon_netmap_submit_kernel(struct cvmx_wqe *work)
  *    - packets are sent to groups 0..15 based on 5-tuple hash
  *    e.g. 1-core device receive_group_order=0
  *         tag_mask = ~((1 << receive_group_order) - 1) = 0xFFFF
- *         group = 5-tupe-hash AND 0xFFFF = 0
+ *         group = 5-tuple-hash AND ~0xFFFF = 0
  *    e.g. 2-core device receive_group_order=1
  *         tag_mask = ~((1 << receive_group_order) - 1) = 0xFFFE
- *         group = 5-tupe-hash AND 0xFFFE = 0 or 1
+ *         group = 5-tuple-hash AND ~0xFFFE = 0 or 1
  *    e.g. 4-core device receive_group_order=2
  *         tag_mask = ~((1 << receive_group_order) - 1) = 0xFFFC
- *         group = 5-tupe-hash AND 0xFFFC = 0,1,2 or 3
+ *         group = 5-tuple-hash AND ~0xFFFC = 0,1,2 or 3
  * pow_receive_groups is a bitmap of which groups are in use by the native driver
  *    e.g. receive_group_order == 0 then pow_receive_groups = 0x8000 (bit 15)
  *    e.g. receive_group_order == 1 then pow_receive_groups = 0x0003 (bits 0 and 1)
