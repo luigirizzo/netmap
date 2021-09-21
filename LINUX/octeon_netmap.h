@@ -91,12 +91,48 @@ static irqreturn_t octeon_netmap_do_interrupt(int cpl, void *data)
 static void octeon_netmap_submit_kernel(struct cvmx_wqe *work)
 {
 	uint16_t hash = work->word1.tag & 0xFFFF;
-	uint64_t group = hash % hweight_long(pow_receive_groups);
+	uint16_t group = receive_group_order ? hash % hweight_long(pow_receive_groups) : pow_receive_group;
 
 	cvmx_pow_work_submit(work, work->word1.tag, work->word1.tag_type,
 			     cvmx_wqe_get_qos(work), group);
 }
 
+/* Enable the port to send packets to a core group
+ * assigned per netmap ring.
+ *
+ * The native driver is configured by module parameters to assign
+ * packets to a core group in one of two ways;
+ * a. receive_group_order == 0
+ *    - all packets sent to group pow_receive_group (usually 15)
+ * b. receive_group_order == 1..4
+ *    - packets are sent to groups 0..15 based on 5-tuple hash
+ *    e.g. 1-core device receive_group_order=0
+ *         tag_mask = ~((1 << receive_group_order) - 1) = 0xFFFF
+ *         group = 5-tupe-hash AND 0xFFFF = 0
+ *    e.g. 2-core device receive_group_order=1
+ *         tag_mask = ~((1 << receive_group_order) - 1) = 0xFFFE
+ *         group = 5-tupe-hash AND 0xFFFE = 0 or 1
+ *    e.g. 4-core device receive_group_order=2
+ *         tag_mask = ~((1 << receive_group_order) - 1) = 0xFFFC
+ *         group = 5-tupe-hash AND 0xFFFC = 0,1,2 or 3
+ * pow_receive_groups is a bitmap of which groups are in use by the native driver
+ *    e.g. receive_group_order == 0 then pow_receive_groups = 0x8000 (bit 15)
+ *    e.g. receive_group_order == 1 then pow_receive_groups = 0x0003 (bits 0 and 1)
+ *    e.g. receive_group_order == 2 then pow_receive_groups = 0x000F (bits 0,1,2 and 3)
+ * NOTE: the native driver groups are global to all interfaces
+ *
+ * The netmap driver allocates a core group per rx_ring per interface.
+ * The number of rx_rings = bitmap_weight(&pow_receive_groups, BITS_PER_LONG);
+ * The native driver groups are avoided using netmap_receive_groups which is
+ * a bitmap of all used groups including the native groups (pow_receive_groups)
+ *    e.g. pow_receive_groups = 0x0003 rx_rings=2
+ *         GRP0 = native driver (core0)
+ *         GRP1 = native driver (core1)
+ *         GRP2 = netmap:eth0-0/R
+ *         GRP3 = netmap:eth0-1/R
+ *         GRP4 = netmap:eth1-0/R
+ *         GRP5 = netmap:eth1-1/R
+ */
 static int octeon_netmap_enable_port(struct netmap_adapter *na)
 {
 	struct oct_nm_adapter *ona = (struct oct_nm_adapter *)na;
@@ -105,7 +141,6 @@ static int octeon_netmap_enable_port(struct netmap_adapter *na)
 	union cvmx_pip_prt_tagx pip_prt_tagx;
 	union cvmx_pip_prt_cfgx pip_prt_cfgx;
 	int port = priv->port;
-	int tag_mask = ((1 << get_count_order(na->num_rx_rings)) - 1) ? : 1;
 	int i;
 
 	nm_prdis("%s: Enable Port %d", ifp->name, port);
@@ -113,7 +148,8 @@ static int octeon_netmap_enable_port(struct netmap_adapter *na)
 	/* Select a contiguous block of groups for the rings */
 	ona->base = -1;
 	for (i = 0; i < 16; i++) {
-		if ((netmap_receive_groups & (tag_mask << i)) == 0) {
+		int bitmap = (1 << na->num_rx_rings) - 1;
+		if ((netmap_receive_groups & (bitmap << i)) == 0) {
 			ona->base = i;
 			break;
 		}
@@ -163,7 +199,7 @@ static int octeon_netmap_enable_port(struct netmap_adapter *na)
 	/* Configure port to use netmap receive group(s) */
 	pip_prt_tagx.u64 = cvmx_read_csr(CVMX_PIP_PRT_TAGX(port));
 	pip_prt_tagx.s.grptagbase = ona->base;
-	pip_prt_tagx.s.grptagmask = ~tag_mask;
+	pip_prt_tagx.s.grptagmask = ~((1 << get_count_order(na->num_rx_rings)) - 1);
 	pip_prt_tagx.s.grp = ona->base;
 	cvmx_write_csr(CVMX_PIP_PRT_TAGX(port), pip_prt_tagx.u64);
 
@@ -175,6 +211,8 @@ static int octeon_netmap_enable_port(struct netmap_adapter *na)
 	return 0;
 }
 
+/* Set the port to send packets to the native driver core groups
+ */
 static int octeon_netmap_disable_port(struct netmap_adapter *na)
 {
 	const int coreid = cvmx_get_core_num();
