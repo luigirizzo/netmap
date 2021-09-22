@@ -563,7 +563,7 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 				complete = 0;
 			}
 
-			if (unlikely(i40e_rx_is_programming_status(qword))) {
+			if (unlikely(qword & I40E_RXD_QW1_LENGTH_SPH_MASK)) {
 				/* Clean programming status and skip over nic and ring
 				 * slots. To shelter the application from
 				 * this we would need to rotate the
@@ -573,7 +573,11 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 				 * Notes that when the i40e is cleaning programming
 				 * status the size is zero anyway.
 				 */
+#ifdef I40E_CLEAN_PROGRAMMING_STATE_ACCEPT_QWORD
 				i40e_clean_programming_status(rxr, curr->raw.qword[0], qword);
+#else
+				i40e_clean_programming_status(rxr, curr, qword);
+#endif
 				complete = 1;
 				ring->slot[nm_i].len = 0;
 				nm_i = nm_next(nm_i, lim);

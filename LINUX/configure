@@ -2275,6 +2275,17 @@ EOF
 		return test_and_set_bit(1, &pf->state);
 	}
 EOF
+
+   add_test 'define I40E_CLEAN_PROGRAMMING_STATE_ACCEPT_QWORD' <<EOF
+	#include "i40e/i40e.h"
+	#include "i40e/i40e_txrx_common.h"
+	#pragma GCC diagnostic error "-Wint-conversion"
+
+	void
+	dummy(struct i40e_ring *rx_ring, union i40e_rx_desc *rx_desc, u64 qw) {
+		(void)!i40e_clean_programming_status(rx_ring, rx_desc, qw);
+	}
+EOF
   fi # i40e
 
   if drv enabled igb; then
