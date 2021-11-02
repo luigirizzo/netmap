@@ -1,0 +1,115 @@
+diff --git a/i40e/i40e_main.c b/i40e/i40e_main.c
+index e04b540cedc8..26d4d4edb438 100644
+--- a/i40e/i40e_main.c
++++ b/i40e/i40e_main.c
+@@ -98,6 +98,10 @@ MODULE_DESCRIPTION("Intel(R) Ethernet Connection XL710 Network Driver");
+ MODULE_LICENSE("GPL v2");
+ 
+ static struct workqueue_struct *i40e_wq;
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#define NETMAP_I40E_MAIN
++#include <i40e_netmap_linux.h>
++#endif
+ 
+ /**
+  * i40e_allocate_dma_mem_d - OS specific memory alloc for shared code
+@@ -3255,6 +3259,10 @@ static int i40e_configure_tx_ring(struct i40e_ring *ring)
+ 	/* cache tail off for easier writes later */
+ 	ring->tail = hw->hw_addr + I40E_QTX_TAIL(pf_q);
+ 
++#ifdef DEV_NETMAP
++	i40e_netmap_configure_tx_ring(ring);
++#endif /* DEV_NETMAP */
++
+ 	return 0;
+ }
+ 
+@@ -3356,6 +3364,10 @@ static int i40e_configure_rx_ring(struct i40e_ring *ring)
+ 	/* set the prefena field to 1 because the manual says to */
+ 	rx_ctx.prefena = 1;
+ 
++#ifdef DEV_NETMAP
++	i40e_netmap_preconfigure_rx_ring(ring, &rx_ctx);
++#endif /* DEV_NETMAP */
++
+ 	/* clear the context in the HMC */
+ 	err = i40e_clear_lan_rx_queue_context(hw, pf_q);
+ 	if (err) {
+@@ -3386,6 +3398,11 @@ static int i40e_configure_rx_ring(struct i40e_ring *ring)
+ 	ring->tail = hw->hw_addr + I40E_QRX_TAIL(pf_q);
+ 	writel(0, ring->tail);
+ 
++#ifdef DEV_NETMAP
++	if (i40e_netmap_configure_rx_ring(ring))
++		return 0;
++#endif /* DEV_NETMAP */
++
+ 	if (ring->xsk_pool) {
+ 		xsk_pool_set_rxq_info(ring->xsk_pool, &ring->xdp_rxq);
+ 		ok = i40e_alloc_rx_buffers_zc(ring, I40E_DESC_UNUSED(ring));
+@@ -13772,6 +13789,11 @@ int i40e_vsi_release(struct i40e_vsi *vsi)
+ 		return -ENODEV;
+ 	}
+ 
++#ifdef DEV_NETMAP
++	if (vsi->netdev_registered)
++		netmap_detach(vsi->netdev);
++#endif
++
+ 	uplink_seid = vsi->uplink_seid;
+ 	if (vsi->type != I40E_VSI_SRIOV) {
+ 		if (vsi->netdev_registered) {
+@@ -14137,6 +14159,12 @@ struct i40e_vsi *i40e_vsi_setup(struct i40e_pf *pf, u8 type,
+ 	    (vsi->type == I40E_VSI_VMDQ2)) {
+ 		ret = i40e_vsi_config_rss(vsi);
+ 	}
++
++#ifdef DEV_NETMAP
++	if (vsi->netdev_registered)
++		i40e_netmap_attach(vsi);
++#endif
++
+ 	return vsi;
+ 
+ err_rings:
+diff --git a/i40e/i40e_txrx.c b/i40e/i40e_txrx.c
+index 10a83e5385c7..1fcf408e2ef3 100644
+--- a/i40e/i40e_txrx.c
++++ b/i40e/i40e_txrx.c
+@@ -10,6 +10,10 @@
+ #include "i40e_txrx_common.h"
+ #include "i40e_xsk.h"
+ 
++#if defined(CONFIG_NETMAP) || defined (CONFIG_NETMAP_MODULE)
++#include <i40e_netmap_linux.h>
++#endif /* DEV_NETMAP */
++
+ #define I40E_TXD_CMD (I40E_TX_DESC_CMD_EOP | I40E_TX_DESC_CMD_RS)
+ /**
+  * i40e_fdir - Generate a Flow Director descriptor based on fdata
+@@ -938,6 +942,11 @@ static bool i40e_clean_tx_irq(struct i40e_vsi *vsi,
+ 	unsigned int total_bytes = 0, total_packets = 0;
+ 	unsigned int budget = vsi->work_limit;
+ 
++#ifdef DEV_NETMAP
++	if (netmap_tx_irq(tx_ring->netdev, tx_ring->queue_index) != NM_IRQ_PASS)
++		return true;
++#endif /* DEV_NETMAP */
++
+ 	tx_buf = &tx_ring->tx_bi[i];
+ 	tx_desc = I40E_TX_DESC(tx_ring, i);
+ 	i -= tx_ring->count;
+@@ -2448,6 +2457,13 @@ static int i40e_clean_rx_irq(struct i40e_ring *rx_ring, int budget)
+ 	struct xdp_buff xdp;
+ 	int xdp_res = 0;
+ 
++#ifdef DEV_NETMAP
++	int dummy;
++	if (rx_ring->netdev &&
++	    netmap_rx_irq(rx_ring->netdev, rx_ring->queue_index, &dummy) != NM_IRQ_PASS)
++		return 1;
++#endif /* DEV_NETMAP */
++
+ #if (PAGE_SIZE < 8192)
+ 	frame_sz = i40e_rx_frame_truesize(rx_ring, 0);
+ #endif
