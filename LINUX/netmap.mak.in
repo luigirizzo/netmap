@@ -63,9 +63,8 @@ distclean-$(1):
 endef
 
 define external_driver
-build-$(1): get-$(1)
-	if [ -d $(1) ] && [ -e Module.symvers ]; then cp Module.symvers $(1); fi
-	+$($(1)@build)
+build-$(1): get-$(1) netmap.ko
+	+KBUILD_EXTRA_SYMBOLS=@BUILDDIR@/Module.symvers; export KBUILD_EXTRA_SYMBOLS; $($(1)@build)
 clean-$(1):
 	-$($(1)@clean)
 install-$(1): install-netmap

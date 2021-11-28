@@ -368,6 +368,7 @@ int mlx5e_netmap_rxsync(struct netmap_kring *kring, int flags) {
   u_int nm_i = 0; /* index into the netmap ring */
   u_int const lim = kring->nkr_num_slots - 1;
   u_int const head = kring->rhead;
+  u_int const stop_i = nm_prev(head, lim); /* stop reclaiming here */
   uint16_t slot_flags = 0;
 
   /* device-specific */
@@ -394,20 +395,22 @@ int mlx5e_netmap_rxsync(struct netmap_kring *kring, int flags) {
 
   /*
    * first part: reclaim buffers that userspace has released:
-   *  (from kring->nr_hwcur to slot before ring->head)
+   *  (from kring->nr_hwcur to second last [*] slot before ring->head)
    * and make the buffers available for reception.
    * As usual nm_i is the index in the netmap ring.
+   * [*] IMPORTANT: we must leave one free slot in the ring
+   * to avoid ring empty/full confusion in userspace.
    */
   nm_i = kring->nr_hwcur;
 
-  if (nm_i != head) {
+  if (nm_i != stop_i) {
     struct mlx5_wq_cyc *wq = &rq->wqe.wq;
     struct mlx5e_rx_wqe_cyc *wqe = mlx5_wq_cyc_get_wqe(wq, mlx5_wq_cyc_get_head(wq));
     struct netmap_slot *slot;
     uint64_t paddr;
     void *addr;
 
-    while (nm_i != head && !mlx5_wq_cyc_is_full(wq)) {
+    while (nm_i != stop_i && !mlx5_wq_cyc_is_full(wq)) {
 
       slot = &ring->slot[nm_i];
       addr = PNMB(na, slot, &paddr); /* find phys address */

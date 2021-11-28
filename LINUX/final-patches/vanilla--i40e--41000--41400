@@ -73,7 +73,7 @@ index e31adbc75f9c..64564a6a1301 100644
  
  err_rings:
 diff --git a/i40e/i40e_txrx.c b/i40e/i40e_txrx.c
-index e554aa6cf070..ec6957c8950a 100644
+index e554aa6cf070..c4882f93db78 100644
 --- a/i40e/i40e_txrx.c
 +++ b/i40e/i40e_txrx.c
 @@ -32,6 +32,10 @@
@@ -92,22 +92,24 @@ index e554aa6cf070..ec6957c8950a 100644
  	unsigned int budget = vsi->work_limit;
  
 +#ifdef DEV_NETMAP
-+	if (netmap_tx_irq(tx_ring->netdev, tx_ring->queue_index) != NM_IRQ_PASS)
++	if (tx_ring->netdev && netmap_tx_irq(tx_ring->netdev, tx_ring->queue_index) != NM_IRQ_PASS)
 +		return true;
 +#endif /* DEV_NETMAP */
 +
  	tx_buf = &tx_ring->tx_bi[i];
  	tx_desc = I40E_TX_DESC(tx_ring, i);
  	i -= tx_ring->count;
-@@ -2135,6 +2144,13 @@ static int i40e_clean_rx_irq(struct i40e_ring *rx_ring, int budget)
+@@ -2135,6 +2144,15 @@ static int i40e_clean_rx_irq(struct i40e_ring *rx_ring, int budget)
  	bool failure = false, xdp_xmit = false;
  	struct xdp_buff xdp;
  
 +#ifdef DEV_NETMAP
-+	int dummy;
-+	if (rx_ring->netdev &&
-+	    netmap_rx_irq(rx_ring->netdev, rx_ring->queue_index, &dummy) != NM_IRQ_PASS)
-+		return 1;
++	if (rx_ring->netdev) {
++		int dummy;
++		if (rx_ring->netdev &&
++		    netmap_rx_irq(rx_ring->netdev, rx_ring->queue_index, &dummy) != NM_IRQ_PASS)
++			return 1;
++	}
 +#endif /* DEV_NETMAP */
 +
  	xdp.rxq = &rx_ring->xdp_rxq;

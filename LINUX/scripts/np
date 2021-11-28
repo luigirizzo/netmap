@@ -378,7 +378,7 @@ function build-prep()
 	(
 		cd $dst
 		last=compiler-gcc.h
-		for i in $(seq 10); do
+		for i in $(seq 11); do
 			[ -e include/linux/compiler-gcc$i.h ] ||
 				ln -s $last include/linux/compiler-gcc$i.h
 			last=compiler-gcc$i.h
@@ -449,7 +449,7 @@ function check-patch()
 
 	while scripts/vers -b $v1 $v2 -L; do
 		# cache lookup
-		local cache=$PWD/cache/$v1/$dtype-$driver${driver_version+:$driver_version}
+		local cache=$PWD/cache/$v1/$dtype-$driver${driver_version:+:$driver_version}
 		mkdir -p $cache
 		local cpatch=$cache/patch
 		local cnmcommit=$cache/nmcommit

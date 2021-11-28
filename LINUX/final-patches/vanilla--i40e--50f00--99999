@@ -1,8 +1,8 @@
 diff --git a/i40e/i40e_main.c b/i40e/i40e_main.c
-index 1337686bd099..71244892b7a8 100644
+index e04b540cedc8..26d4d4edb438 100644
 --- a/i40e/i40e_main.c
 +++ b/i40e/i40e_main.c
-@@ -95,6 +95,10 @@ MODULE_DESCRIPTION("Intel(R) Ethernet Connection XL710 Network Driver");
+@@ -98,6 +98,10 @@ MODULE_DESCRIPTION("Intel(R) Ethernet Connection XL710 Network Driver");
  MODULE_LICENSE("GPL v2");
  
  static struct workqueue_struct *i40e_wq;
@@ -13,7 +13,7 @@ index 1337686bd099..71244892b7a8 100644
  
  /**
   * i40e_allocate_dma_mem_d - OS specific memory alloc for shared code
-@@ -3254,6 +3258,10 @@ static int i40e_configure_tx_ring(struct i40e_ring *ring)
+@@ -3255,6 +3259,10 @@ static int i40e_configure_tx_ring(struct i40e_ring *ring)
  	/* cache tail off for easier writes later */
  	ring->tail = hw->hw_addr + I40E_QTX_TAIL(pf_q);
  
@@ -24,7 +24,7 @@ index 1337686bd099..71244892b7a8 100644
  	return 0;
  }
  
-@@ -3344,6 +3352,10 @@ static int i40e_configure_rx_ring(struct i40e_ring *ring)
+@@ -3356,6 +3364,10 @@ static int i40e_configure_rx_ring(struct i40e_ring *ring)
  	/* set the prefena field to 1 because the manual says to */
  	rx_ctx.prefena = 1;
  
@@ -35,7 +35,7 @@ index 1337686bd099..71244892b7a8 100644
  	/* clear the context in the HMC */
  	err = i40e_clear_lan_rx_queue_context(hw, pf_q);
  	if (err) {
-@@ -3372,6 +3384,11 @@ static int i40e_configure_rx_ring(struct i40e_ring *ring)
+@@ -3386,6 +3398,11 @@ static int i40e_configure_rx_ring(struct i40e_ring *ring)
  	ring->tail = hw->hw_addr + I40E_QRX_TAIL(pf_q);
  	writel(0, ring->tail);
  
@@ -47,7 +47,7 @@ index 1337686bd099..71244892b7a8 100644
  	if (ring->xsk_pool) {
  		xsk_pool_set_rxq_info(ring->xsk_pool, &ring->xdp_rxq);
  		ok = i40e_alloc_rx_buffers_zc(ring, I40E_DESC_UNUSED(ring));
-@@ -13281,6 +13298,11 @@ int i40e_vsi_release(struct i40e_vsi *vsi)
+@@ -13772,6 +13789,11 @@ int i40e_vsi_release(struct i40e_vsi *vsi)
  		return -ENODEV;
  	}
  
@@ -59,7 +59,7 @@ index 1337686bd099..71244892b7a8 100644
  	uplink_seid = vsi->uplink_seid;
  	if (vsi->type != I40E_VSI_SRIOV) {
  		if (vsi->netdev_registered) {
-@@ -13646,6 +13668,12 @@ struct i40e_vsi *i40e_vsi_setup(struct i40e_pf *pf, u8 type,
+@@ -14137,6 +14159,12 @@ struct i40e_vsi *i40e_vsi_setup(struct i40e_pf *pf, u8 type,
  	    (vsi->type == I40E_VSI_VMDQ2)) {
  		ret = i40e_vsi_config_rss(vsi);
  	}
@@ -73,7 +73,7 @@ index 1337686bd099..71244892b7a8 100644
  
  err_rings:
 diff --git a/i40e/i40e_txrx.c b/i40e/i40e_txrx.c
-index 3f5825fa67c9..53d7ae1922c8 100644
+index 10a83e5385c7..1fcf408e2ef3 100644
 --- a/i40e/i40e_txrx.c
 +++ b/i40e/i40e_txrx.c
 @@ -10,6 +10,10 @@
@@ -87,7 +87,7 @@ index 3f5825fa67c9..53d7ae1922c8 100644
  #define I40E_TXD_CMD (I40E_TX_DESC_CMD_EOP | I40E_TX_DESC_CMD_RS)
  /**
   * i40e_fdir - Generate a Flow Director descriptor based on fdata
-@@ -782,6 +786,11 @@ static bool i40e_clean_tx_irq(struct i40e_vsi *vsi,
+@@ -938,6 +942,11 @@ static bool i40e_clean_tx_irq(struct i40e_vsi *vsi,
  	unsigned int total_bytes = 0, total_packets = 0;
  	unsigned int budget = vsi->work_limit;
  
@@ -99,9 +99,9 @@ index 3f5825fa67c9..53d7ae1922c8 100644
  	tx_buf = &tx_ring->tx_bi[i];
  	tx_desc = I40E_TX_DESC(tx_ring, i);
  	i -= tx_ring->count;
-@@ -2340,6 +2349,13 @@ static int i40e_clean_rx_irq(struct i40e_ring *rx_ring, int budget)
- 	bool failure = false;
+@@ -2448,6 +2457,13 @@ static int i40e_clean_rx_irq(struct i40e_ring *rx_ring, int budget)
  	struct xdp_buff xdp;
+ 	int xdp_res = 0;
  
 +#ifdef DEV_NETMAP
 +	int dummy;
@@ -111,5 +111,5 @@ index 3f5825fa67c9..53d7ae1922c8 100644
 +#endif /* DEV_NETMAP */
 +
  #if (PAGE_SIZE < 8192)
- 	xdp.frame_sz = i40e_rx_frame_truesize(rx_ring, 0);
+ 	frame_sz = i40e_rx_frame_truesize(rx_ring, 0);
  #endif

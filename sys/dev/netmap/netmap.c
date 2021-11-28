@@ -994,10 +994,12 @@ netmap_mem_restore(struct netmap_adapter *na)
 static void
 netmap_mem_drop(struct netmap_adapter *na)
 {
-	/* if the native allocator had been overridden on regif,
-	 * restore it now and drop the temporary one
-	 */
-	if (netmap_mem_deref(na->nm_mem, na)) {
+	netmap_mem_deref(na->nm_mem, na);
+
+	if (na->active_fds <= 0) {
+		/* if the native allocator had been overridden on regif,
+		 * restore it now and drop the temporary one
+		 */
 		netmap_mem_restore(na);
 	}
 }
@@ -4251,12 +4253,16 @@ netmap_hw_krings_create(struct netmap_adapter *na)
 void
 netmap_detach(struct ifnet *ifp)
 {
-	struct netmap_adapter *na = NA(ifp);
-
-	if (!na)
-		return;
+	struct netmap_adapter *na;
 
 	NMG_LOCK();
+
+	if (!NM_NA_VALID(ifp)) {
+		NMG_UNLOCK();
+		return;
+	}
+
+	na = NA(ifp);
 	netmap_set_all_rings(na, NM_KR_LOCKED);
 	/*
 	 * if the netmap adapter is not native, somebody
