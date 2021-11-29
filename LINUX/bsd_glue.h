@@ -293,6 +293,14 @@ struct thread;
 #define copyin(_from, _to, _len)	(copy_from_user(_to, _from, _len) ? EFAULT : 0)
 #define copyout(_from, _to, _len)	(copy_to_user(_to, _from, _len) ? EFAULT : 0)
 
+#ifdef NETMAP_LINUX_HAVE_SET_RINGPARAM_4ARGS
+int linux_netmap_set_ringparam(struct net_device *, struct ethtool_ringparam *,
+							   struct kernel_ethtool_ringparam *kernel_ering,
+							   struct netlink_ext_ack *extack);
+#else
+int linux_netmap_set_ringparam(struct net_device *, struct ethtool_ringparam *);
+#endif
+
 /* na attach/detach routines */
 #ifdef NETMAP_LINUX_HAVE_AX25PTR
 /*
@@ -316,7 +324,6 @@ struct thread;
 /*
  * We hide behind the ethtool_ops
  */
-int linux_netmap_set_ringparam(struct net_device *, struct ethtool_ringparam *);
 struct netmap_linux_magic {
 	struct ethtool_ops eto;
 	const struct ethtool_ops *save_eto;
@@ -364,7 +371,6 @@ netdev_tx_t linux_netmap_start_xmit(struct sk_buff *, struct net_device *);
 int linux_netmap_change_mtu(struct net_device *dev, int new_mtu);
 
 /* prevent ring params change while in netmap mode */
-int linux_netmap_set_ringparam(struct net_device *, struct ethtool_ringparam *);
 #ifdef NETMAP_LINUX_HAVE_SET_CHANNELS
 int linux_netmap_set_channels(struct net_device *, struct ethtool_channels *);
 #endif

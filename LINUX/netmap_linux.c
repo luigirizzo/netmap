@@ -1424,9 +1424,17 @@ linux_netmap_change_mtu(struct net_device *dev, int new_mtu)
  *
  * Linux calls this while holding the rtnl_lock().
  */
+#ifdef NETMAP_LINUX_HAVE_SET_RINGPARAM_4ARGS
+int
+linux_netmap_set_ringparam(struct net_device *dev,
+	struct ethtool_ringparam *e,
+	struct kernel_ethtool_ringparam *kernel_ering,
+	struct netlink_ext_ack *extack)
+#else
 int
 linux_netmap_set_ringparam(struct net_device *dev,
 	struct ethtool_ringparam *e)
+#endif
 {
 #ifdef NETMAP_LINUX_HAVE_AX25PTR
 	return -EBUSY;
@@ -1436,7 +1444,11 @@ linux_netmap_set_ringparam(struct net_device *dev,
 	if (nm_netmap_on(na))
 		return -EBUSY;
 	if (na->magic.save_eto->set_ringparam)
+#ifdef NETMAP_LINUX_HAVE_SET_RINGPARAM_4ARGS
+		return na->magic.save_eto->set_ringparam(dev, e, kernel_ering, extack);
+#else
 		return na->magic.save_eto->set_ringparam(dev, e);
+#endif
 	return -EOPNOTSUPP;
 #endif /* NETMAP_LINUX_HAVE_AX25PTR */
 }
