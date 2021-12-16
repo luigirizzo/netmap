@@ -514,10 +514,12 @@ static int octeon_netmap_rxsync(struct netmap_kring *kring, int flags)
 			addr = NMB(na, &ring->slot[nm_i]);
 			length = work->word1.len;
 #ifdef ATL_CHANGE
-			if (priv->imode == CVMX_HELPER_INTERFACE_MODE_SGMII && cvmx_helper_port_is_bcm_tagged (priv->port)) {
+			/* Some ATL products have a switch port pretending to be an ethernet port */
+			if (priv->switch_eth) {
 				/* Copy the packet - overwrite the broadcom tag with the ethernet header*/
-				memcpy (addr + offset, cvmx_phys_to_ptr (work->packet_ptr.s.addr) + BCM_TAG_LEN, length - BCM_TAG_LEN);
+				memcpy (addr + offset, cvmx_phys_to_ptr (work->packet_ptr.s.addr) + BCM_TAG_LEN + VLAN_HLEN, length - BCM_TAG_LEN - VLAN_HLEN);
 				memcpy (addr + offset, cvmx_phys_to_ptr (work->packet_ptr.s.addr), ETH_ALEN * 2);
+				length -= (BCM_TAG_LEN + VLAN_HLEN);
 			}
 			else
 #endif /* ATL_CHANGE */
