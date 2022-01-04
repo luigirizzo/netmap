@@ -1295,9 +1295,9 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 
 	pst_get_extra_ref(nmcb_kring(cb));
 	err = sosend(soa->so, NULL, NULL, m, NULL, flags, curthread);
-	if (unlikely(err < 0)) {
-		PST_DBG("sosend error %d", err);
-		nmcb_invalidate(cb);
+	if (unlikely(err != 0)) {
+		PST_DBG_LIM("sosend error %d", err);
+		return -err;
 	}
 
 	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {

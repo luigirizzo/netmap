@@ -1425,10 +1425,9 @@ nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
 		err = kernel_sendpage(sk->sk_socket, page, poff, len, flags);
 	if (unlikely(err < 0)) {
 		/* XXX check if it is enough to assume EAGAIN only */
-		PST_DBG_LIM("error %d in sendpage() slot %ld",
-				err, slot - kring->ring->slot);
-		nmcb_invalidate(cb);
-		return -EAGAIN;
+		PST_DBG_LIM("error %d in sendpage() slot %ld fd %d",
+				err, slot - kring->ring->slot, soa->fd);
+		return err;
 	}
 
 	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {
