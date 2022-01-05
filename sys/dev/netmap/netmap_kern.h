@@ -1199,7 +1199,6 @@ struct netmap_pipe_adapter {
 #endif /* WITH_PIPES */
 
 #ifdef WITH_PASTE
-#define CONFIG_NETMAP_DEBUG
 
 #ifdef CONFIG_NETMAP_DEBUG
 #define	PST_DBG(format, ...)					\

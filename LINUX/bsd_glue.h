@@ -609,8 +609,8 @@ intr_restore(u_int intr)
 /* NMCB() is only valid for mbuf populated by nm_os_build_mbuf() */
 #define NMCB(_m)		((struct nmcb *)(_m)->head)
 #define NMCB_EXT(_m, _i, _bs) \
-	NMCB_BUF(page_address(skb_frag_page(&skb_shinfo((_m))->frags[_i])) + \
-		 _bs * (skb_frag_off(&skb_shinfo((_m))->frags[_i]) / _bs))
+	NMCB_BUF(page_address(skb_frag_page(&skb_shinfo(_m)->frags[_i])) + \
+		 _bs * (skb_frag_off(&skb_shinfo(_m)->frags[_i]) / _bs))
 #define NMCB_BUF(_buf)		((struct nmcb *)(_buf))
 #define m_length(_m, _x)	(_m)->len
 

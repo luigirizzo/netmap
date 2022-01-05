@@ -830,15 +830,16 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 	doff = nm_pst_getdoff(slot);
 	hole = (int)doff - MBUF_HDRLEN(m);
 
-	PST_DBG_LIM("hole %d poff %u doff %u hlen %u mlen %u mclen %u slen %u",
-		hole, poff, doff, MBUF_HDRLEN(m), MBUF_LEN(m), mlen, slot->len);
-
 	if (!hole) {
 		/* bring headers in */
 		memcpy(nmb + poff, MBUF_DATA(m), doff);
 	} else {
 		caddr_t p = nmb + poff + doff;
 
+		PST_DBG_LIM("hole %d poff %u doff %u hlen %u mlen %u "
+			    "mclen %u slen %u",
+			hole, poff, doff, MBUF_HDRLEN(m), MBUF_LEN(m),
+			mlen, slot->len);
 		// buffers can overlap
 		memcpy(p - hole, p, MBUF_LEN(m) - MBUF_HDRLEN(m));
 		nm_os_pst_mbuf_extadj(m, 0, -hole);
