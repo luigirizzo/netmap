@@ -1199,8 +1199,6 @@ struct netmap_pipe_adapter {
 #endif /* WITH_PIPES */
 
 #ifdef WITH_PASTE
-
-#ifdef CONFIG_NETMAP_DEBUG
 #define	PST_DBG(format, ...)					\
 	do {							\
 		if (netmap_debug & NM_DEBUG_PST) {		\
@@ -1213,10 +1211,6 @@ struct netmap_pipe_adapter {
 			nm_prlim(1, format, ##__VA_ARGS__);	\
 		}						\
 	} while (0)
-#else
-#define PST_DBG(format, ...)
-#define PST_DBG_LIM(format, ...)
-#endif /* CONFIG_NETMAP_DEBUG */
 
 #ifdef __FreeBSD__
 #define MBUF_L3_OFST(m)	(m)->m_pkthdr.l2hlen
