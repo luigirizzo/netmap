@@ -43,14 +43,6 @@ int normalize = 1;
 #define fallocate(a, b, c, d)	posix_fallocate(a, c, d)
 #endif
 
-#ifdef __FreeBSD__
-static inline void *
-mempcpy(void *dest, const void *src, size_t n)
-{
-	return memcpy(dest, src, n) + n;
-}
-#endif /* __FreeBSD__ */
-
 enum dev_type { DEV_NONE, DEV_NETMAP, DEV_SOCKET };
 enum { TD_TYPE_SENDER = 1, TD_TYPE_RECEIVER, TD_TYPE_OTHER, TD_TYPE_DUMMY };
 

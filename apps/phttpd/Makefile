@@ -4,12 +4,14 @@ NMLIB = ../../libnetmap/libnetmap.a
 LSMLIB = ../../../lsm_nvm
 NOCFLAGS := $(CFLAGS)
 NOCFLAGS += -DNOLIBNETMAP -DLIBNETMAP_NOTHREADSAFE
-CC = g++
 
 LDFLAGS += -lpthread -lm
 UNAME := $(shell uname)
 ifeq ($(UNAME), Linux)
 LDFLAGS += -lbsd
+CC = g++
+else
+CC = clang
 endif
 NOLDFLAGS := $(LDFLAGS)
 LDFLAGS += $(NMLIB)
