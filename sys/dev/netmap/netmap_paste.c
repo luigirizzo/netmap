@@ -74,14 +74,6 @@ pst_swap(struct netmap_slot *s, struct netmap_slot *d)
 	d->flags |= NS_BUF_CHANGED;
 }
 
-static inline void
-pst_swap_reset(struct netmap_slot *s, struct netmap_slot *d)
-{
-	pst_swap(s, d);
-	s->len = 0;
-	//nm_pst_reset_fddoff(s);
-}
-
 static inline u_int
 rollup(struct netmap_kring *kring, u_int from, u_int to, u_int *n)
 {
@@ -332,7 +324,7 @@ pst_extra_enq(struct netmap_kring *kring, struct netmap_slot *slot)
 	EXTRA_APPEND(busy, pool, xtra, slots, pos);
 
 	cb = NMCB_SLT(na, slot);
-	pst_swap_reset(slot, &xtra->slot);
+	pst_swap(slot, &xtra->slot);
 	if (unlikely(nmcb_kring(cb) != kring)) {
 		panic(" ");
 	}
@@ -558,7 +550,7 @@ pst_poststack(struct netmap_kring *kring)
 				if (nmcb_rstate(cb) == MB_TXREF) {
 					nonfree[nonfree_num++] = j;
 				}
-				pst_swap_reset(ts, rs);
+				pst_swap(ts, rs);
 				if (nmcb_rstate(cb) == MB_FTREF) {
 					nmcb_wstate(cb, MB_NOREF);
 					pst_extra_deq(nmcb_kring(cb), ts);
