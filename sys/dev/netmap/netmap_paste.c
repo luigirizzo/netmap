@@ -178,31 +178,6 @@ pst_peek_extra_ref(struct netmap_kring *kring)
 	return kring->extra->refcount;
 }
 
-#if 0
-int
-pst_slot_in_extra(struct netmap_slot *slot, struct netmap_kring *kring)
-{
-	struct pst_extra_pool *p = kring->extra;
-	struct pst_extra_slot *slots = p->slots;
-	uintptr_t us = (uintptr_t)slot;
-
-	if (us >= (uintptr_t)slots && us < (uintptr_t)(slots + p->num))
-		return 1;
-	return 0;
-}
-
-int
-pst_slot_in_kring(struct netmap_slot *slot, struct netmap_kring *kring)
-{
-	struct netmap_ring *ring = kring->ring;
-
-	if ((uintptr_t)slot >= (uintptr_t)ring->slot &&
-	    (uintptr_t)slot < (uintptr_t)(ring->slot + kring->nkr_num_slots))
-		return 1;
-	return 0;
-}
-#endif /* 0 */
-
 static int
 pst_extra_noref(struct netmap_adapter *na)
 {
