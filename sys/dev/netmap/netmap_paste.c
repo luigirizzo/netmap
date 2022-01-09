@@ -212,8 +212,9 @@ pst_extra_noref(struct netmap_adapter *na)
 }
 
 #define NM_EXT_NULL	((uint16_t)~0)
-#define EXTRA_APPEND(name, pool, xtra, slots, pos) \
+#define EXTRA_APPEND(name, pool, xtra, slots) \
 	do {							\
+		u_int pos = xtra - slots;			\
 		xtra->next = NM_EXT_NULL;			\
 		if (pool->name == NM_EXT_NULL)			\
 			pool->name = pos;			\
@@ -224,14 +225,12 @@ pst_extra_noref(struct netmap_adapter *na)
 	} while (0)						\
 
 #define BETWEEN(x, l, h) \
-	((uintptr_t)(x) >= (uintptr_t)(l) && (uintptr_t)(x) < (uintptr_t)(h))
-
+	((uintptr_t)(x) >= (uintptr_t)(l) && (uintptr_t)(x) < (uintptr_t)(l+h))
 void
 pst_extra_deq(struct netmap_kring *kring, struct netmap_slot *slot)
 {
 	struct pst_extra_pool *pool;
 	struct pst_extra_slot *slots, *xtra;
-	u_int pos;
 
 	/* XXX raising mbuf might have been orphaned */
 	if (unlikely(kring == NULL)) {
@@ -243,23 +242,20 @@ pst_extra_deq(struct netmap_kring *kring, struct netmap_slot *slot)
 	/* nothing to do if I am on the ring */
 	if (likely(kring->nr_mode == NKR_NETMAP_ON)) {
 		struct netmap_ring *r = kring->ring;
-
-		if (BETWEEN(slot, r->slot, r->slot + kring->nkr_num_slots)) {
+		if (BETWEEN(slot, r->slot, kring->nkr_num_slots)) {
 			return;
 		}
 	} else {
 		PST_DBG("%s kring %u not ON",
 				kring->na->name, kring->ring_id);
 	}
-	if (unlikely(!(BETWEEN(slot, slots, slots + pool->num)))) {
+	if (unlikely(!(BETWEEN(slot, slots, pool->num)))) {
 		PST_DBG_LIM("%s kring %u buf_idx %u not in the extra pool",
 				kring->na->name, kring->ring_id, slot->buf_idx);
 		return;
 	}
 
 	xtra = (struct pst_extra_slot *)slot;
-	pos = xtra - slots;
-
 	/* remove from busy list */
 	if (xtra->next == NM_EXT_NULL)
 		pool->busy_tail = xtra->prev; // might be NM_EXT_NULL
@@ -270,7 +266,7 @@ pst_extra_deq(struct netmap_kring *kring, struct netmap_slot *slot)
 	else
 		slots[xtra->prev].next = xtra->next; // might be NM_EXT_NULL
 	/* append to free list */
-	EXTRA_APPEND(free, pool, xtra, slots, pos);
+	EXTRA_APPEND(free, pool, xtra, slots);
 }
 #undef BETWEEN
 
@@ -280,15 +276,12 @@ pst_extra_enq(struct netmap_kring *kring, struct netmap_slot *slot)
 	struct netmap_adapter *na = kring->na;
 	struct pst_extra_pool *pool = kring->extra;
 	struct pst_extra_slot *slots = pool->slots, *xtra;
-	u_int pos;
 	struct nmcb *cb;
 
 	if (unlikely(pool->free_tail == NM_EXT_NULL))
 		return EBUSY;
 
-	pos = pool->free_tail;
-	xtra = &slots[pos];
-
+	xtra = &slots[pool->free_tail];
 	/* remove from free list */
 	pool->free_tail = xtra->prev;
 	if (unlikely(pool->free_tail == NM_EXT_NULL)) // I'm the last one
@@ -296,7 +289,7 @@ pst_extra_enq(struct netmap_kring *kring, struct netmap_slot *slot)
 	else
 		slots[xtra->prev].next = NM_EXT_NULL;
 	/* append to busy list */
-	EXTRA_APPEND(busy, pool, xtra, slots, pos);
+	EXTRA_APPEND(busy, pool, xtra, slots);
 
 	cb = NMCB_SLT(na, slot);
 	pst_swap(slot, &xtra->slot);
