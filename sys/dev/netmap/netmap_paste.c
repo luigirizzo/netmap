@@ -923,7 +923,6 @@ pst_mbufpool_free(struct netmap_adapter *na)
 
 	for (i = 0; i < nma_get_nrings(na, NR_TX); i++) {
 		struct netmap_kring *kring = NMR(na, NR_TX)[i];
-
 		if (kring->tx_pool == NULL)
 			continue;
 		if (kring->tx_pool[1]) {
@@ -1418,7 +1417,8 @@ pst_bdg_valid(struct netmap_adapter *na)
 	if (unlikely(b == NULL)) {
 		return 0;
 	} else if (unlikely(b->bdg_active_ports < 3)) {
-		PST_DBG("active ports %d", b->bdg_active_ports);
+		if (netmap_verbose)
+			nm_prinf("active ports %d", b->bdg_active_ports);
 		return 0;
 	}
 	return 1;
