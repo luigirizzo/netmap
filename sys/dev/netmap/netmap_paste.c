@@ -233,22 +233,13 @@ pst_extra_deq(struct netmap_kring *kring, struct netmap_slot *slot)
 	struct pst_extra_slot *slots, *xtra;
 
 	/* XXX raising mbuf might have been orphaned */
-	if (unlikely(kring == NULL)) {
-		PST_DBG("no kring");
-		return;
+	if (netmap_debug) {
+		if (kring == NULL || kring->nr_mode != NKR_NETMAP_ON)
+			panic("kring NULL or off");
 	}
 	pool = kring->extra;
 	slots = pool->slots;
 	/* nothing to do if I am on the ring */
-	if (likely(kring->nr_mode == NKR_NETMAP_ON)) {
-		struct netmap_ring *r = kring->ring;
-		if (BETWEEN(slot, r->slot, kring->nkr_num_slots)) {
-			return;
-		}
-	} else {
-		PST_DBG("%s kring %u not ON",
-				kring->na->name, kring->ring_id);
-	}
 	if (unlikely(!(BETWEEN(slot, slots, pool->num)))) {
 		PST_DBG_LIM("%s kring %u buf_idx %u not in the extra pool",
 				kring->na->name, kring->ring_id, slot->buf_idx);
@@ -293,11 +284,11 @@ pst_extra_enq(struct netmap_kring *kring, struct netmap_slot *slot)
 
 	cb = NMCB_SLT(na, slot);
 	pst_swap(slot, &xtra->slot);
-	if (unlikely(nmcb_kring(cb) != kring)) {
-		panic(" ");
+	if (netmap_debug) {
+		if (nmcb_kring(cb) != kring)
+			panic(" ");
 	}
 	nmcbw(cb, nmcb_kring(cb), &xtra->slot);
-
 	return 0;
 }
 #undef EXTRA_APPEND
@@ -445,11 +436,8 @@ pst_poststack(struct netmap_kring *kring)
 
 	/* under lock */
 	mtx_lock(&rxr->q_lock);
+	/* no need to check rxr->nkr_stopped */
 
-	if (unlikely(rxr->nkr_stopped)) {
-		mtx_unlock(&rxr->q_lock);
-		goto runlock;
-	}
 	howmany = pst_kr_rxspace(rxr);
 	if (howmany < want) { // try to reclaim completed buffers
 		u_int n = 0;
@@ -465,7 +453,6 @@ pst_poststack(struct netmap_kring *kring)
 
 	if (is_host(na)) { // don't touch buffers, slightly faster
 		u_int k = kring->nr_hwcur, lim_tx = kring->nkr_num_slots - 1;
-
 		while (howmany--) {
 			struct netmap_slot *rs, *ts = &kring->ring->slot[k];
 			rs = &rxr->ring->slot[j];
@@ -480,7 +467,6 @@ pst_poststack(struct netmap_kring *kring)
 			int fd = ft->fds[n];
 			struct pst_fdt_q *fq = ft->fde + fd;
 			uint32_t next = fq->fq_head;
-
 			while (next != NM_FDT_NULL && likely(howmany)) {
 				struct netmap_slot tmp = { next };
 				struct netmap_slot *ts, *rs;
@@ -534,7 +520,6 @@ skip:
 		ft->npkts -= sent;
 		memmove(ft->fds, ft->fds + n, sizeof(ft->fds[0]) * ft->nfds);
 		pst_fdt_may_reset(kring);
-
 	}
 
 	rxr->nr_hwtail = j; // no update if !sent
@@ -552,8 +537,9 @@ unlock_kring:
 		if (unlikely(pst_extra_enq(nmcb_kring(cb), slot))) {
 			/* Don't reclaim on/after this positon */
 			rxr->nkr_hwlease = slot - rxr->ring->slot;
-			if (unlikely(rxr->nkr_hwlease > rxr->nkr_num_slots)) {
-				panic(" ");
+			if (netmap_debug) {
+				if (rxr->nkr_hwlease > rxr->nkr_num_slots)
+					panic(" ");
 			}
 			break;
 		}
@@ -579,7 +565,6 @@ pst_prestack(struct netmap_kring *kring)
 	for (k = kring->nkr_hwlease; k != rhead; k = nm_next(k, lim_tx)) {
 		struct netmap_slot *slot = &kring->ring->slot[k];
 		int err;
-
 		if (unlikely(slot->len == 0)) {
 			continue;
 		}
@@ -587,14 +572,16 @@ pst_prestack(struct netmap_kring *kring)
 		if (tx) {
 			const u_int offset = nm_get_offset(kring, slot);
 			const u_int pst_offset = nm_pst_getdoff(slot);
-
 			/* XXX how to inform -EINVAL */
 			if (unlikely(slot->len <  pst_offset)) {
-				PST_DBG("data offset %u too large", offset);
+				if (netmap_verbose)
+					nm_prinf("data offset %u too large",
+						 offset);
 				break;
 			} else if (unlikely(offset < sizeof(struct nmcb))) {
-				PST_DBG("offset must be at least %lu",
-					sizeof(struct nmcb));
+				if (netmap_verbose)
+					nm_prinf("offset must be at least %lu",
+						 sizeof(struct nmcb));
 				break;
 			}
 			err = nm_os_pst_tx(kring, slot);
@@ -686,7 +673,6 @@ csum_transmit(struct netmap_adapter *na, struct mbuf *m)
 		struct nm_iphdr *iph;
 		char *th;
 		uint16_t *check;
-
 		mbuf_proto_headers(m);
 		iph = (struct nm_iphdr *)MBUF_L3_HEADER(m);
 		th = MBUF_L4_HEADER(m);
@@ -786,13 +772,16 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 	if (!hole) {
 		/* bring headers in */
 		memcpy(nmb + poff, MBUF_DATA(m), doff);
+		if (netmap_verbose)
+			nm_prlim(1,"zerocopy: off %u len %u",
+			    poff + doff, slot->len);
 	} else {
 		caddr_t p = nmb + poff + doff;
-
-		PST_DBG_LIM("hole %d poff %u doff %u hlen %u mlen %u "
+		if (netmap_verbose)
+			nm_prlim(1, "hole %d poff %u doff %u hlen %u mlen %u "
 			    "mclen %u slen %u",
-			hole, poff, doff, MBUF_HDRLEN(m), MBUF_LEN(m),
-			mlen, slot->len);
+			    hole, poff, doff, MBUF_HDRLEN(m), MBUF_LEN(m),
+			    mlen, slot->len);
 		// buffers can overlap
 		memcpy(p - hole, p, MBUF_LEN(m) - MBUF_HDRLEN(m));
 		nm_os_pst_mbuf_extadj(m, 0, -hole);
@@ -809,7 +798,6 @@ netmap_pst_transmit(struct ifnet *ifp, struct mbuf *m)
 		struct nm_tcphdr *tcph;
 		uint16_t *check;
 		int len;
-
 		mbuf_proto_headers(m);
 		iph = (struct nm_iphdr *)(nmb + poff + MBUF_L3_OFST(m));
 		tcph = (struct nm_tcphdr *)(nmb + poff + MBUF_L4_OFST(m));
@@ -847,7 +835,7 @@ pst_extra_free_kring(struct netmap_kring *kring)
 	extra = kring->extra;
 	if (extra->busy != NM_EXT_NULL) {
 		PST_DBG("%s kr %u busy %u",
-				kring->na->name, kring->ring_id, extra->busy);
+			kring->na->name, kring->ring_id, extra->busy);
 	}
 	kring->extra = NULL;
 	extra->num = 0;
@@ -1002,7 +990,7 @@ pst_kwait(void *data)
 		}
 		if (!s)
 			break;
-		pause("netmap-pst-kwait-pause", 1000);
+		pause("netmap-pst-kwait-pause", 2000);
 	}
 	if (netmap_verbose)
 		nm_prinf("%s deleting priv", pna->up.up.name);
@@ -1141,7 +1129,6 @@ netmap_pst_bwrap_intr_notify(struct netmap_kring *kring, int flags) {
 		//u_int me = kring - NMR(hwna, t), last;
 		u_int me = kring->ring_id, last;
 		struct netmap_kring *mk;
-
 		last = nma_get_nrings(mna, t);
 		mk = NMR(mna, t)[last > me ? me : me % last];
 		mk->nm_notify(mk, 0);
@@ -1354,11 +1341,9 @@ netmap_pst_reg(struct netmap_adapter *na, int onoff)
 				na->name, na->active_fds, pna->num_so_adapters);
 		if (!pna->kwaittdp &&
 		    (pna->num_so_adapters > 0 || !pst_extra_noref(na))) {
-			struct netmap_priv_d *kpriv;
 			struct netmap_if *nifp;
 			enum txrx t;
-
-			kpriv = netmap_priv_new();
+			struct netmap_priv_d *kpriv = netmap_priv_new();
 			kpriv->np_na = na;
 			/* revert krings_put() - this also survives
 			 * mem_rings_delete */
@@ -1403,7 +1388,6 @@ del_kpriv:
 			struct nmreq_header hdr;
 			struct nmreq_port_hdr req;
 			int err;
-
 			if (i == 0)
 				continue;
 			s = b->bdg_ports[i];
@@ -1495,7 +1479,6 @@ netmap_pst_rxsync(struct netmap_kring *kring, int flags)
 		last = na->num_rx_rings;
 		for (j = first; j < last; j += kring->na->num_rx_rings) {
 			struct netmap_kring *hwk, *bk, *hk;
-
 			hwk = NMR(hwna, NR_RX)[j];
 			bk = NMR(na, NR_TX)[j];
 			hk = NMR(hwna, NR_RX)[last + (j % hostnr)];
