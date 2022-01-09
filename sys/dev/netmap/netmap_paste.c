@@ -1434,9 +1434,6 @@ netmap_pst_txsync(struct netmap_kring *kring, int flags)
 	if (unlikely(!pst_bdg_valid(na))) {
 		done = head;
 		return 0;
-	} else if (unlikely(kring->nr_mode == NKR_NETMAP_OFF)) {
-		PST_DBG("na %s kring %d OFF", na->name, kring->ring_id);
-		return 0;
 	}
 	done = pst_prestack(kring);
 
@@ -1453,9 +1450,6 @@ netmap_pst_rxsync(struct netmap_kring *kring, int flags)
 	int i, err;
 	u_int intr;
 
-	if (unlikely(!pst_bdg_valid(kring->na))) {
-		return 0;
-	}
 	err = netmap_vp_rxsync_locked(kring, flags); // reclaim buffers
 	if (err)
 		return err;
