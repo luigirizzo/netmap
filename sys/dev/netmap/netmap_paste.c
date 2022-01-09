@@ -361,7 +361,6 @@ pst_fdt_add(struct nmcb *cb, struct netmap_kring *kring)
 	} else {
 		struct netmap_slot tmp = { fde->fq_tail };
 		struct nmcb *prev = NMCB_SLT(kring->na, &tmp);
-
 		prev->next = fde->fq_tail = slot->buf_idx;
 	}
 	ft->npkts++;
@@ -380,10 +379,8 @@ pst_fdt_may_reset(struct netmap_kring *kring)
 		ft->nfds = 0;
 	} else if (ft->nfds == 0 && ft->npkts > 0) {
 		int i;
-
 		for (i = 0; i < NM_PST_FD_MAX; i++) {
 			struct pst_fdt_q *fde = ft->fde + i;
-
 			if (unlikely(fde->fq_head != NM_FDT_NULL)) {
 				fde->fq_head = fde->fq_tail = NM_FDT_NULL;
 				if (--ft->npkts == 0)
@@ -478,7 +475,6 @@ pst_poststack(struct netmap_kring *kring)
 
 		while (howmany--) {
 			struct netmap_slot *rs, *ts = &kring->ring->slot[k];
-
 			rs = &rxr->ring->slot[j];
 			pst_swap(ts, rs);
 			k = nm_next(k, lim_tx);
@@ -509,17 +505,16 @@ pst_poststack(struct netmap_kring *kring)
 				ts = nmcb_slot(cb);
 				if (unlikely(ts == NULL)) {
 					PST_DBG("null ts nxt %u fd %d bufi "
-						   "%u valid %d cb %p ft %d",
-						   next, fd, tmp.buf_idx,
-						   nmcb_valid(cb), cb,
-						   nmcb_rstate(cb) == MB_FTREF);
+					    "%u valid %d cb %p ft %d",
+					    next, fd, tmp.buf_idx,
+					    nmcb_valid(cb), cb,
+					    nmcb_rstate(cb) == MB_FTREF);
 					goto skip;
 				} else if (unlikely(cb != NMB(na, ts))) {
 					PST_DBG("fd %d cb %p != nmb %p "
-						   "len %d state %d", fd, cb,
-						   NMB(na, nmcb_slot(cb)),
-						   ts->len,
-						   nmcb_rstate(cb) == MB_FTREF);
+					    "len %d state %d", fd, cb,
+					    NMB(na, nmcb_slot(cb)), ts->len,
+					    nmcb_rstate(cb) == MB_FTREF);
 				}
 
 				if (nmcb_rstate(cb) == MB_TXREF) {
@@ -561,14 +556,12 @@ unlock_kring:
 	for (j = 0; j < nonfree_num; j++) {
 		struct netmap_slot *slot = &rxr->ring->slot[nonfree[j]];
 		struct nmcb *cb = NMCB_SLT(rxna, slot);
-
 		if (unlikely(pst_extra_enq(nmcb_kring(cb), slot))) {
 			/* Don't reclaim on/after this positon */
-			u_long nm_i = slot - rxr->ring->slot;
-			if (unlikely(nm_i > rxr->nkr_num_slots)) {
+			rxr->nkr_hwlease = slot - rxr->ring->slot;
+			if (unlikely(rxr->nkr_hwlease > rxr->nkr_num_slots)) {
 				panic(" ");
 			}
-			rxr->nkr_hwlease = nm_i;
 			break;
 		}
 	}
