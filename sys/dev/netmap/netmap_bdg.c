@@ -119,6 +119,11 @@ netmap_bdg_name(struct netmap_vp_adapter *vp)
 	return b->bdg_basename;
 }
 
+static int
+nm_bdg_reqtype_attach(uint16_t type)
+{
+	return type == NETMAP_REQ_VALE_ATTACH || type == NETMAP_REQ_PST_ATTACH;
+}
 
 #ifndef CONFIG_NET_NS
 /*
@@ -354,7 +359,7 @@ netmap_vp_bdg_ctl(struct nmreq_header *hdr, struct netmap_adapter *na)
 	struct netmap_vp_adapter *vpna = (struct netmap_vp_adapter *)na;
 	struct nm_bridge *b = vpna->na_bdg;
 
-	if (hdr->nr_reqtype == NETMAP_REQ_VALE_ATTACH) {
+	if (nm_bdg_reqtype_attach(hdr->nr_reqtype)) {
 		return 0; /* nothing to do */
 	}
 	if (b) {
@@ -484,6 +489,8 @@ netmap_get_bdg_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 		case NETMAP_REQ_VALE_DETACH:
 		case NETMAP_REQ_VALE_POLLING_ENABLE:
 		case NETMAP_REQ_VALE_POLLING_DISABLE:
+		case NETMAP_REQ_PST_ATTACH:
+		case NETMAP_REQ_PST_DETACH:
 			break; /* ok */
 		default:
 			error = EINVAL;
@@ -503,7 +510,7 @@ netmap_get_bdg_na(struct nmreq_header *hdr, struct netmap_adapter **na,
 			goto out;
 		vpna = hw->na_vp;
 		hostna = hw->na_hostvp;
-		if (hdr->nr_reqtype == NETMAP_REQ_VALE_ATTACH) {
+		if (nm_bdg_reqtype_attach(hdr->nr_reqtype)) {
 			/* Check if we need to skip the host rings. */
 			struct nmreq_vale_attach *areq =
 				(struct nmreq_vale_attach *)(uintptr_t)hdr->nr_body;
@@ -580,11 +587,27 @@ netmap_bdg_attach(struct nmreq_header *hdr, void *auth_token)
 	if (error) { /* no device */
 		goto unlock_exit;
 	}
+	if (na) {
+		goto found;
+	}
 
-	if (na == NULL) { /* VALE prefix missing */
+	/* check for existing one */
+	error = netmap_get_pst_na(hdr, &na, nmd, 0);
+	if (na) {
+		error = EBUSY;
+		goto unref_exit;
+	}
+	error = netmap_get_pst_na(hdr, &na,
+				nmd, 1 /* create if not exists */);
+	if (error) { /* no device */
+		goto unlock_exit;
+	}
+
+	if (na == NULL) { /* any prefix missing */
 		error = EINVAL;
 		goto unlock_exit;
 	}
+found:
 
 	if (NETMAP_OWNED_BY_ANY(na)) {
 		error = EBUSY;
@@ -658,7 +681,14 @@ netmap_bdg_detach_locked(struct nmreq_header *hdr, void *auth_token)
 	error = netmap_get_vale_na(hdr, &na, NULL, 0 /* don't create */);
 	if (error) { /* no device, or another bridge or user owns the device */
 		goto error_exit;
+	} else if (na != NULL) {
+		goto found;
 	}
+	error = netmap_get_pst_na(hdr, &na, NULL, 0 /* don't create */);
+	if (error) { /* no device, or another bridge or user owns the device */
+		goto error_exit;
+	}
+found:
 
 	if (na == NULL) { /* VALE prefix missing */
 		error = EINVAL;
@@ -1094,7 +1124,7 @@ netmap_vp_reg(struct netmap_adapter *na, int onoff)
 /* rxsync code used by VALE ports nm_rxsync callback and also
  * internally by the brwap
  */
-static int
+int
 netmap_vp_rxsync_locked(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
@@ -1667,7 +1697,7 @@ netmap_bwrap_bdg_ctl(struct nmreq_header *hdr, struct netmap_adapter *na)
 	struct netmap_bwrap_adapter *bna = (struct netmap_bwrap_adapter*)na;
 	int error = 0;
 
-	if (hdr->nr_reqtype == NETMAP_REQ_VALE_ATTACH) {
+	if (nm_bdg_reqtype_attach(hdr->nr_reqtype)) {
 		struct nmreq_vale_attach *req =
 			(struct nmreq_vale_attach *)(uintptr_t)hdr->nr_body;
 		if (req->reg.nr_ringid != 0 ||

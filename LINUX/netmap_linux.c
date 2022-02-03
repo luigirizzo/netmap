@@ -42,6 +42,13 @@
 #ifdef NETMAP_LINUX_HAVE_SCHED_MM
 #include <linux/sched/mm.h>
 #endif /* NETMAP_LINUX_HAVE_SCHED_MM */
+#ifdef WITH_PASTE
+#include <linux/file.h> // sockfd_put()/fput()
+#include <linux/tcp.h>
+#include <net/tcp.h>
+#include <net/sock.h> // sock_owned_by_user
+#include <net/netmap_paste.h>
+#endif /* WITH_PASTE */
 
 #include "netmap_linux_config.h"
 
@@ -1082,6 +1089,396 @@ nm_os_generic_set_features(struct netmap_generic_adapter *gna)
 	gna->txqdisc = netmap_generic_txqdisc;
 }
 #endif /* WITH_GENERIC */
+
+#ifdef WITH_PASTE
+
+netdev_tx_t
+linux_pst_start_xmit(struct sk_buff *skb, struct net_device *dev)
+{
+	netmap_pst_transmit(dev, skb);
+	return (NETDEV_TX_OK);
+}
+
+/* We have no way to track subsequent fragments, but such fragments
+ * are always sent after queueing.
+ * XXX !zerocopy_success might need to be handled explicitly
+ * zerocopy_success is false when MB_TXREF and the slot is not on-ring.
+ */
+void
+nm_os_pst_mbuf_data_dtor(struct ubuf_info *uarg, bool zerocopy_success)
+{
+	struct nm_ubuf_info *u = (struct nm_ubuf_info *)uarg;
+	return pst_mbuf_data_dtor(container_of(u, struct nmcb, ui));
+}
+
+static void
+nm_os_pst_mbuf_destructor(struct sk_buff *skb)
+{
+	struct nmcb *cb = NMCB(skb);
+
+	if (likely(nmcb_valid(cb)))
+		nm_os_set_mbuf_data_destructor(skb, &cb->ui,
+				nm_os_pst_mbuf_data_dtor);
+	else
+		panic("invalid cb in our mbuf destructor");
+}
+
+void
+nm_os_set_mbuf_data_destructor(struct mbuf *m,
+	struct nm_ubuf_info *ui, void *cb)
+{
+	ui->ubuf.callback = cb;
+	if (cb != NULL) {
+#ifdef NETMAP_LINUX_SKB_ZCOPY_SET_3ARGS
+		bool ref = true;
+		skb_zcopy_set(m, (struct ubuf_info *)ui, &ref);
+#else
+		skb_zcopy_set(m, (struct ubuf_info *)ui);
+#endif
+	} else {
+		skb_zcopy_clear(m, 1);
+	}
+}
+
+/*
+ * The socket is locked when it is detached from us.
+ */
+void
+nm_os_pst_upcall(NM_SOCK_T *sk)
+{
+	struct sk_buff_head *queue = &sk->sk_receive_queue;
+	struct sk_buff *m;
+	struct netmap_kring *kring = NULL;
+
+	rcu_read_lock();
+	if (unlikely(pst_so(sk) == NULL))
+		panic(" ");
+	/* OOO segment(s) might have been enqueued in the same rxsync round */
+	while ((m = skb_peek(queue)) != NULL) {
+		struct nmcb *cb = NMCB(m);
+		struct netmap_slot *slot;
+		int queued = 0;
+
+		if (unlikely(!nmcb_valid(cb))) {
+			panic("invalid cb");
+		}
+		if (!kring) {
+			kring = nmcb_kring(cb);
+			/* XXX this happens when stack goes away.
+			 * We need better workaround */
+			if (unlikely(!kring)) {
+				PST_DBG("WARNING: no kring");
+				SET_MBUF_DESTRUCTOR(m, NULL);
+				nm_os_set_mbuf_data_destructor(m, &cb->ui, NULL);
+				__skb_unlink(m, queue);
+				__kfree_skb(m);
+				continue;
+			}
+			mtx_lock(&kring->q_lock);
+		} else if (unlikely(nmcb_kring(cb) != kring)) {
+			panic("different krings");
+		}
+		/* append this buffer to the scratchpad */
+		slot = nmcb_slot(cb);
+		if (unlikely(slot == NULL)) {
+			PST_DBG("m %p no slot", m);
+			continue;
+		}
+		/* too expensive */
+#if 0
+		if (!pst_slot_in_extra(slot, kring) &&
+		    !pst_slot_in_kring(slot, kring)) {
+			PST_DBG("invalid slot");
+			continue;
+		}
+#endif /* 0 */
+		if (unlikely(m->sk == NULL || pst_so(m->sk) == NULL)) {
+			PST_DBG("m->sk %p soa %p",
+					m->sk, m->sk ? pst_so(m->sk) : NULL);
+			continue;
+		}
+		nm_pst_setfd(slot, pst_so(sk)->fd);
+		nm_pst_setdoff(slot, (uint16_t)
+			       skb_headroom(m) - nm_get_offset(kring, slot));
+		slot->len = skb_headlen(m) + nm_pst_getdoff(slot);
+		/*
+		 * We might have leftover for the previous connection with
+		 * the same fd value. Overwrite it if this is new connection.
+		 */
+		pst_fdt_add(cb, kring);
+		/* see comment in pst_transmit() */
+#ifdef PST_MB_RECYCLE
+		if (unlikely(nmcb_rstate(cb) == MB_QUEUED)) {
+			queued = 1;
+		}
+#endif
+
+		nmcb_wstate(cb, MB_FTREF);
+
+		/* XXX use new sk_eat_skb() > 5.1 */
+		__skb_unlink(m, queue);
+#ifdef PST_MB_RECYCLE
+		if (likely(!queued)) {
+			skb_orphan(m);
+		} else
+#endif
+			__kfree_skb(m);
+	}
+	if (kring)
+		mtx_unlock(&kring->q_lock);
+	rcu_read_unlock();
+}
+
+NM_SOCK_T *
+nm_os_sock_fget(int fd, void **f)
+{
+	int err;
+	struct socket *sock = sockfd_lookup(fd, &err);
+
+	return sock ? sock->sk : NULL;
+}
+
+void
+nm_os_sock_fput(NM_SOCK_T *sk, void *dummy)
+{
+	sockfd_put(sk->sk_socket);
+}
+
+int
+nm_os_pst_sbdrain(struct netmap_adapter *na, NM_SOCK_T *sk)
+{
+	struct mbuf *m;
+
+	/* XXX All the packets must be originated from netmap */
+	m = skb_peek(&sk->sk_receive_queue);
+	if (!m) {
+		return 0;
+	}
+	else if (!nmcb_valid(NMCB(m))) {
+		return 0;
+	}
+	/* No need for BDG_RLOCK() - we don't move packets to pst na */
+	nm_os_pst_upcall(sk);
+	return 0;
+}
+
+int
+nm_os_pst_mbuf_extadj(struct mbuf *m, int i, int off)
+{
+	if (unlikely(skb_shinfo(m)->nr_frags <= i))
+		return -1;
+	skb_frag_off_add(&skb_shinfo(m)->frags[i], off);
+	return 0;
+}
+
+int
+nm_os_sock_dead(NM_SOCK_T *so)
+{
+	return !!sock_flag(so, SOCK_DEAD);
+}
+
+static inline int
+nm_os_mbuf_valid(struct mbuf *m)
+{
+	return likely(*(int *)(&m->users) != 0);
+}
+
+static struct mbuf *
+nm_os_build_mbuf(struct netmap_kring *kring, char *buf, u_int len)
+{
+	struct netmap_adapter *na = kring->na;
+	struct mbuf *m;
+	struct page *page;
+	const int alen = NETMAP_BUF_SIZE(na) - sizeof(struct nmcb);
+	const u_int offset = nm_get_offset(kring, nmcb_slot(NMCB_BUF(buf)));
+
+#ifdef PST_MB_RECYCLE
+	m = kring->tx_pool[1];
+	if (m) {
+		struct skb_shared_info *shinfo;
+
+		/* XXX maybe build_skb_around with some overheads */
+		*m = *kring->tx_pool[0];
+		m->head = m->data = buf;
+		skb_reset_tail_pointer(m);
+		shinfo = skb_shinfo(m);
+		bzero(shinfo, offsetof(struct skb_shared_info, dataref));
+		*(int *)(&shinfo->dataref) = 1;
+		//shinfo->tx_flags |= SKBTX_DEV_ZEROCOPY;
+	} else
+#endif
+	{
+		m = build_skb(buf, alen);
+		m->dev = na->ifp;
+	}
+	if (unlikely(!m))
+		return NULL;
+#ifdef PST_MB_RECYCLE
+	else if (unlikely(!nm_os_mbuf_valid(kring->tx_pool[0]))) {
+		*kring->tx_pool[0] = *m;
+	}
+#endif
+	page = virt_to_page(buf);
+	page_ref_add(page, 1); // survive __kfree_skb()
+	skb_reserve(m, offset); // m->data and tail
+	skb_put(m, len - offset); // advance m->tail and m->len
+	return m;
+}
+
+int
+nm_os_pst_rx(struct netmap_kring *kring, struct netmap_slot *slot)
+{
+	struct netmap_adapter *na = kring->na;
+	char *p = NMB(na, slot);
+	struct nmcb *cb = NMCB_BUF(p);
+	struct mbuf *m;
+	int ret = 0;
+
+	m = nm_os_build_mbuf(kring, p, nm_get_offset(kring, slot) + slot->len);
+	if (unlikely(!m))
+		return 0; // drop and skip
+
+	pst_get_extra_ref(nmcb_kring(cb));
+
+	nmcb_wstate(cb, MB_STACK);
+	nm_pst_setfd(slot, 0);
+	m->protocol = eth_type_trans(m, m->dev);
+	/* have orphan() set data_destructor */
+	SET_MBUF_DESTRUCTOR(m, nm_os_pst_mbuf_destructor);
+	netif_receive_skb_core(m);
+
+	/* setting data destructor is safe only after skb_orphan_frag()
+	 * in __netif_receive_skb_core().
+	 */
+	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {
+		nmcb_wstate(cb, MB_QUEUED);
+		if (pst_extra_enq(kring, slot))
+			ret = -EBUSY;
+	}
+#ifdef PST_MB_RECYCLE
+	/* XXX avoid refcount_read... */
+	if (nmcb_rstate(cb) == MB_FTREF && likely(!skb_shared(m))) {
+		/* we can recycle this mbuf (see nm_os_pst_data_ready) */
+		struct ubuf_info *uarg = skb_shinfo(m)->destructor_arg;
+
+		if (likely(uarg->callback))
+			uarg->callback(uarg, true);
+		kring->tx_pool[1] = m;
+	} else
+		kring->tx_pool[1] = NULL;
+#endif
+	return ret;
+}
+
+int
+nm_os_pst_tx(struct netmap_kring *kring, struct netmap_slot *slot)
+{
+	struct netmap_adapter *na = kring->na;
+	struct pst_so_adapter *soa;
+	struct nmcb *cb;
+	struct page *page;
+	u_int poff, len;
+	NM_SOCK_T *sk;
+	void *nmb;
+	int err, pageref = 0;
+	const u_int pst_offset = nm_pst_getdoff(slot);
+	const int flags = MSG_DONTWAIT;
+
+	nmb = NMB(na, slot);
+	soa = pst_soa_from_fd(na, nm_pst_getfd(slot));
+	if (unlikely(!soa)) {
+		PST_DBG("no soa of fd %d", nm_pst_getfd(slot));
+		return 0;
+	}
+	sk = soa->so;
+
+	page = virt_to_page(nmb);
+	get_page(page); // survive __kfree_skb()
+	pageref = page_ref_count(page);
+	cb = NMCB_BUF(nmb);
+	poff = nmb - page_to_virt(page)
+		+ nm_get_offset(kring, slot) + pst_offset;
+	len = slot->len - pst_offset;
+	nmcb_wstate(cb, MB_STACK);
+
+	if (unlikely(!sk)) {
+		PST_DBG("NULL sk");
+		nmcb_invalidate(cb);
+		return 0;
+	} else if (unlikely(!sk->sk_socket)) {
+		PST_DBG("NULL sk->sk_socket");
+		nmcb_invalidate(cb);
+		return 0;
+	}
+
+#ifdef NETMAP_LINUX_HAVE_KERNEL_SENDPAGE_LOCKED
+	/*
+	 * We don't really own lock. But since we only actively receive packets,
+	 * the RX path never tries to lock the socket.
+	 * If the kernel is configured to detect incorrect locking, disable
+	 * paste_optim_sendpage.
+	 */
+	if (paste_optim_sendpage)
+		err = kernel_sendpage_locked(sk, page, poff, len, flags);
+	else
+#endif /* NETMAP_LINUX_HAVE_KERNEL_SENDPAGE_LOCKED */
+		err = kernel_sendpage(sk->sk_socket, page, poff, len, flags);
+	if (unlikely(err < 0)) {
+		/* XXX check if it is enough to assume EAGAIN only */
+		PST_DBG_LIM("error %d in sendpage() slot %ld fd %d",
+				err, slot - kring->ring->slot, soa->fd);
+		return err;
+	}
+
+	if (unlikely(nmcb_rstate(cb) == MB_STACK)) {
+		/* The stack might have just dropped a page reference (e.g.,
+		 * linearized in skb_checksum_help() in __dev_queue_xmit().
+		 */
+		if (unlikely(pageref == page_ref_count(page))) {
+			PST_DBG("dropped frag ref (fd %d)", nm_pst_getfd(slot));
+			nmcb_invalidate(cb);
+			return 0;
+		}
+		nmcb_wstate(cb, MB_QUEUED);
+
+		if (likely(pst_extra_enq(kring, slot)))
+			return -EBUSY;
+	} /* usually MB_TXREF (TCP) or MB_NOREF (UDP) */
+	return 0;
+}
+
+/* Since tcp_sock_set_nodelay locks socket by itself. Since we don't
+ * need push_pending_frames, just set the flag manually.
+ */
+int
+nm_os_set_nodelay(NM_SOCK_T *so)
+{
+	tcp_sk(so)->nonagle |= TCP_NAGLE_OFF|TCP_NAGLE_PUSH;
+	return 0; // FreeBSD returns status
+}
+
+int
+nm_os_kthread_add(void *f, void *arg, void *proc, struct thread **tdptr,
+		int flags, int pages, const char *fmt)
+{
+	*tdptr = (struct thread *)kthread_create(f, arg, "netmap-pst-kwait");
+	wake_up_process((struct task_struct *)*tdptr);
+	return 0;
+}
+
+int
+nm_os_hwcsum_ok(struct netmap_adapter *na)
+{
+	return na->ifp->features & NETIF_F_CSUM_MASK;
+}
+
+int
+nm_os_so_connected(NM_SOCK_T *so)
+{
+	return so->sk_socket->state == SS_CONNECTED;
+}
+
+#endif /* WITH_PASTE */
 
 /* Use ethtool to find the current NIC rings lengths, so that the netmap
    rings can have the same lengths. */

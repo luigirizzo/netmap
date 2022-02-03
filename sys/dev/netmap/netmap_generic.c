@@ -989,7 +989,7 @@ generic_netmap_rxsync(struct netmap_kring *kring, int flags)
 		do {
 			struct netmap_slot *slot = ring->slot + nm_i;
 			uint64_t nm_offset = nm_get_offset(kring, slot);
-			void *nmaddr = NMB(na, slot);
+			char *nmaddr = NMB(na, slot);
 
 			if (nmaddr == NETMAP_BUF_BASE(na)) { /* Bad buffer */
 				m_freem(m);
