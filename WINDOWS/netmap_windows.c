@@ -940,7 +940,7 @@ nm_os_ifnet_mtu(struct ifnet *ifp)
 void
 generic_timer_handler(struct hrtimer *t)
 {
-	DbgPrint("unimplemented generic_timer_handler %p\n", t);
+	DbgPrint("unimplemented generic_timer_handler\n", t);
 #if 0
 	struct nm_generic_mit *mit =
 		container_of(t, struct nm_generic_mit, mit_timer);
@@ -968,7 +968,7 @@ generic_timer_handler(struct hrtimer *t)
 void nm_os_mitigation_init(struct nm_generic_mit *mit, int idx,
 struct netmap_adapter *na)
 {
-	DbgPrint("unimplemented generic_timer_handler %p\n");
+	DbgPrint("unimplemented generic_timer_handler\n");
 	//KeInitializeDpc(&mit->mit_timer.deferred_proc, &generic_timer_handler, NULL);
 	//KeInitializeTimer(&mit->mit_timer.timer);
 	//hrtimer_init(&mit->mit_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
@@ -980,7 +980,7 @@ struct netmap_adapter *na)
 
 void nm_os_mitigation_start(struct nm_generic_mit *mit)
 {
-	DbgPrint("unimplemented generic_timer_handler %p\n");
+	DbgPrint("unimplemented generic_timer_handler\n");
 	//LARGE_INTEGER test;
 	//KeSetTimerEx(&mit->mit_timer.timer, test, 1000, &mit->mit_timer.deferred_proc);
 	//mit->mit_timer.active = TRUE;
@@ -990,13 +990,13 @@ void nm_os_mitigation_start(struct nm_generic_mit *mit)
 
 void nm_os_mitigation_restart(struct nm_generic_mit *mit)
 {
-	DbgPrint("unimplemented nm_os_mitigation_start %p\n");
+	DbgPrint("unimplemented nm_os_mitigation_start\n");
 	//hrtimer_forward_now(&mit->mit_timer, ktime_set(0, netmap_generic_mit));
 }
 
 int nm_os_mitigation_active(struct nm_generic_mit *mit)
 {
-	DbgPrint("unimplemented nm_os_mitigation_active %p\n");
+	DbgPrint("unimplemented nm_os_mitigation_active\n");
 	return 0;
 	//return mit->mit_timer.active;
 	//return hrtimer_active(&mit->mit_timer);
