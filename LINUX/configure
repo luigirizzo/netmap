@@ -1731,6 +1731,15 @@ EOF
 	}
 EOF
 
+  add_test 'have FOLL_SPLIT' <<EOF
+	#include <linux/mm.h>
+
+	int
+	dummy(void) {
+		return FOLL_SPLIT;
+	}
+EOF
+
 # check for page_to_virt
   add_test 'have PAGE_TO_VIRT' <<EOF
   	#include <linux/mm.h>
