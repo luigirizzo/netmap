@@ -1254,7 +1254,11 @@ void nm_os_pst_mbuf_data_dtor(struct mbuf *);
 #else /* __FreeBSD__ */
 void nm_os_pst_upcall(NM_SOCK_T *);
 netdev_tx_t linux_pst_start_xmit(struct mbuf *, struct ifnet *);
+#if defined(NETMAP_LINUX_UBUF_INFO_CALLBACK_3ARGS)
+void nm_os_pst_mbuf_data_dtor(struct sk_buff *, struct ubuf_info *, bool);
+#else
 void nm_os_pst_mbuf_data_dtor(struct ubuf_info *, bool);
+#endif
 void nm_os_set_mbuf_data_destructor(struct mbuf *, struct nm_ubuf_info *, void *);
 #endif
 #define NMCB_SLT(_na, _slt)	NMCB_BUF(NMB(_na, (_slt)))

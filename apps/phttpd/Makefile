@@ -9,7 +9,7 @@ LDFLAGS += -lpthread -lm
 UNAME := $(shell uname)
 ifeq ($(UNAME), Linux)
 LDFLAGS += -lbsd
-CC = g++
+CC = gcc
 else
 CC = clang
 endif

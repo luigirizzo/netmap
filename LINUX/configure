@@ -1586,6 +1586,17 @@ EOF
 	}
 EOF
 
+  # arguments of callback of struct ubuf_info (either 2 (old) or 3)
+  add_test 'define UBUF_INFO_CALLBACK_3ARGS' <<EOF
+	#include <linux/skbuff.h>
+
+	void
+	dummy(struct ubuf_info *u)
+	{
+		u->callback(NULL, NULL, 1);
+	}
+EOF
+
 # check for third argument in qdisc enqueue callbacks
   add_test 'have QDISC_ENQUEUE_TOFREE' <<EOF
 	#include <net/sch_generic.h>
@@ -1796,13 +1807,12 @@ EOF
 
 # check for extack in Qdisc_ops init callback
   add_test 'have QDISC_EXTACK' <<EOF
-	#include <linux/netlink.h>
   	#include <net/sch_generic.h>
 
 	int
 	dummy(struct Qdisc_ops *ops, struct netlink_ext_ack *extack) {
 		return ops->init(NULL, NULL, extack);
-
+	}
 EOF
 
   # check for SO_TIMESTAMPING in sock

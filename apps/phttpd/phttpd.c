@@ -756,18 +756,20 @@ char *
 chkpath(char *dir, char *f, size_t size, int rm)
 {
 	int fd, mode = O_RDWR|O_CREAT;
-	char *path = calloc(1, strlen(dir) + strlen(f) + 2);
+	char *path;
 
-	if (path == NULL)
+	if (asprintf(&path, "%s/%s", dir, f) < 0) {
 		return NULL;
-	snprintf(path, sizeof(path), "%s/%s", dir, f);
+	}
 	if ((fd = open(path, mode, S_IRWXU)) < 0) {
 		perror("open");
+		free(path);
 		return NULL;
 	}
 	if (fallocate(fd, 0, 0, size)) {
 		D("fallocate %s failed size %lu", path, size);
 		close(fd);
+		free(path);
 		return NULL;
 	}
 	if (rm)
@@ -912,16 +914,19 @@ main(int argc, char **argv)
 #endif /* WITH_LEVELDB */
 
 	if (pg.dba.flags & DF_MMAP) {
-		/* checks space for metadata */
-		if (!chkpath(pg.dba.dir, DATAFILE, pg.dba.size, 1))
+		char *path = chkpath(pg.dba.dir, DATAFILE, pg.dba.size, 1);
+		/* early check for storage space */
+		if (!path) {
 			goto close_socket;
-		/* some space for extmem */
+		}
+		free(path);
+		/* allocate space for extmem */
 		if (pg.dba.flags & DF_PASTE) {
 			/* 32B metadata per netmap buffer */
 			u_int n = pg.dba.size / NETMAP_BUF_SIZE;
 			nmg.extmem_siz = pg.dba.size - 32 * n;
 			pg.dba.size -= nmg.extmem_siz;
-			nmg.extmem =chkpath(pg.dba.dir, EXTMEMFILE,
+			nmg.extmem = chkpath(pg.dba.dir, EXTMEMFILE,
 					nmg.extmem_siz, 0);
 			if (nmg.extmem == NULL)
 				goto close_socket;
