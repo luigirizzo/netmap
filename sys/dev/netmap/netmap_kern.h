@@ -60,6 +60,9 @@
 #if defined(CONFIG_NETMAP_SINK)
 #define WITH_SINK
 #endif
+#if defined(CONFIG_NETMAP_PASTE)
+#define WITH_PASTE
+#endif
 #if defined(CONFIG_NETMAP_NULL)
 #define WITH_NMNULL
 #endif
@@ -77,6 +80,7 @@
 #define WITH_MONITOR
 #define WITH_GENERIC
 #define WITH_EXTMEM
+#define WITH_PASTE
 #define WITH_NMNULL
 #endif
 
@@ -292,7 +296,6 @@ struct netmap_adapter;
 struct nm_bdg_fwd;
 struct nm_bridge;
 struct netmap_priv_d;
-struct nm_bdg_args;
 
 /* os-specific NM_SELINFO_T initialization/destruction functions */
 int nm_os_selinfo_init(NM_SELINFO_T *, const char *name);
@@ -595,6 +598,11 @@ struct netmap_kring {
 	int (*mon_notify)(struct netmap_kring *kring, int flags);
 
 #endif
+
+#ifdef WITH_PASTE
+	struct pst_extra_pool  *extra;
+#endif /* WITH_PASTE */
+
 }
 #ifdef _WIN32
 __declspec(align(64));
@@ -1190,6 +1198,204 @@ struct netmap_pipe_adapter {
 
 #endif /* WITH_PIPES */
 
+#ifdef WITH_PASTE
+#define	PST_DBG(format, ...)					\
+	do {							\
+		if (netmap_debug & NM_DEBUG_PST) {		\
+			nm_prinf(format, ##__VA_ARGS__);	\
+		}						\
+	} while (0)
+#define	PST_DBG_LIM(format, ...)				\
+	do {							\
+		if (netmap_debug & NM_DEBUG_PST) {		\
+			nm_prlim(1, format, ##__VA_ARGS__);	\
+		}						\
+	} while (0)
+
+#ifdef __FreeBSD__
+#define MBUF_L3_OFST(m)	(m)->m_pkthdr.l2hlen
+#define MBUF_L4_OFST(m)	(MBUF_L3_OFST(m) + (m)->m_pkthdr.l3hlen)
+#define MBUF_L3_HEADER(m)	mtodo((m), MBUF_L3_OFST(m))
+#define MBUF_L4_HEADER(m)	mtodo((m), MBUF_L4_OFST(m))
+#define MBUF_HASNEXT(m)		(m->m_next != NULL)
+#define MBUF_FLATTEN(m)		// XXX
+#define MBUF_DATA(m)		(m)->m_data
+#define MBUF_HDRLEN(m)	((m)->m_flags & M_PKTHDR ? (m)->m_len : 0)
+#define MBUF_CSUM_DONE(m)
+
+#define NM_SOCK_T struct socket
+#define SAVE_SOUPCALL(so, soa)
+#define RESTORE_SOUPCALL(so, soa)    soupcall_clear(so, SO_RCV)
+#define SAVE_SODTOR(so, soa)	(soa)->save_sodtor = (so)->so_dtor
+#define RESTORE_SODTOR(so, soa)	(so)->so_dtor = (soa)->save_sodtor /* no lock */
+#define SET_SOUPCALL(so, f)	soupcall_set(so, SO_RCV, f, NULL)
+#define SET_SODTOR(so, f)	sodtor_set(so, f)
+
+struct nm_ubuf_info {
+	void *ctx;
+	void *desc;
+};
+
+#define nm_os_sock_set_nocoalesce(_sb)	(_sb)->sb_flags |= SB_NOCOALESCE
+int nm_os_pst_upcall(NM_SOCK_T *, void *, int);
+void nm_os_pst_mbuf_data_dtor(struct mbuf *);
+#include <sys/socketvar.h> /* struct socket */
+#define NMCB(_m) ((struct nmcb *)M_START(_m))
+#define NMCB_BUF(_buf) ((struct nmcb *)(_buf))
+#define NMCB_EXT(_m, _i, _bufsiz) \
+	NMCB_BUF((_m)->m_ext.ext_buf)
+
+#define nmcb_kring(cb)	((struct netmap_kring *)(cb)->ui.ctx)
+#define nmcb_slot(cb)	((struct netmap_slot *)(cb)->ui.desc)
+#define nmcbw(cb, kring, slot)	do {\
+	(cb)->ui.ctx = (kring);\
+	(cb)->ui.desc = (slot);\
+} while (0)
+#else /* __FreeBSD__ */
+void nm_os_pst_upcall(NM_SOCK_T *);
+netdev_tx_t linux_pst_start_xmit(struct mbuf *, struct ifnet *);
+void nm_os_pst_mbuf_data_dtor(struct ubuf_info *, bool);
+void nm_os_set_mbuf_data_destructor(struct mbuf *, struct nm_ubuf_info *, void *);
+#endif
+#define NMCB_SLT(_na, _slt)	NMCB_BUF(NMB(_na, (_slt)))
+
+#define PST_MB_RECYCLE
+struct pst_extra_pool;
+
+/* to be embedded in the buf */
+/* struct skb_shared_info takes 320 byte so far.
+ * Just for the case we would keep occupancy to 1600 Byte before this
+ * We have budget of 40 byte for each of msghdr and cb
+ * after 1520 data+headroom
+ */
+enum {
+	MB_STACK=1,
+	MB_QUEUED,
+	MB_TXREF,
+	MB_FTREF,
+	MB_NOREF,
+};
+
+struct nmcb {
+	struct nm_ubuf_info ui; /* ctx keeps kring and desc keeps slot */
+#define MB_MAGIC	0x12345600	/* XXX do better */
+#define MB_MAGIC_MASK	0xffffff00	/* XXX do better */
+	uint32_t flags;
+	uint32_t next;
+	uint32_t cmd;
+	uint32_t off;
+} __attribute__((__packed__)); /* 32 byte */
+
+static inline void
+nmcb_wstate(struct nmcb *cb, u_int newstate)
+{
+	cb->flags = (MB_MAGIC | newstate);
+}
+
+static inline void
+nmcb_invalidate(struct nmcb *cb)
+{
+	cb->flags = 0;
+}
+
+static inline int
+nmcb_valid(struct nmcb *cb)
+{
+	return ((cb->flags & MB_MAGIC_MASK) == MB_MAGIC);
+}
+
+static inline int
+nmcb_rstate(struct nmcb *cb)
+{
+	return likely(nmcb_valid(cb)) ?
+		(cb->flags & ~MB_MAGIC_MASK) : 0;
+}
+
+struct pst_so_adapter {
+	NM_SOCK_T *so;
+	int32_t fd;
+	/* 32 bit hole */
+	struct netmap_adapter *na;
+#ifdef linux
+	void (*save_soupcall)(NM_SOCK_T *);
+	void (*save_sodtor)(NM_SOCK_T *);
+#else
+	int (*save_soupcall)(NM_SOCK_T *, void *, int);
+	void (*save_sodtor)(NM_SOCK_T *);
+#endif
+};
+
+struct netmap_pst_adapter {
+	struct netmap_vp_adapter up;
+	int (*save_reg)(struct netmap_adapter *na, int onoff);
+#ifdef linux
+	struct net_device_ops stack_ndo;
+#endif /* linux */
+	struct pst_so_adapter **so_adapters;
+#define DEFAULT_SK_ADAPTERS	65535
+	u_int so_adapters_max;
+	u_int num_so_adapters;
+	NM_LOCK_T so_adapters_lock;
+#ifdef __FreeBSD__
+	void *eventso[128];
+	struct thread *kwaittdp;
+#else
+	struct thread *kwaittdp;
+#endif
+	struct netmap_priv_d *kpriv;
+};
+
+#ifdef __FreeBSD__
+static inline struct pst_so_adapter *
+pst_so(NM_SOCK_T *so)
+{
+	return (struct pst_so_adapter *)so->so_emuldata;
+}
+
+static inline void
+pst_wso(struct pst_so_adapter *soa, NM_SOCK_T *so)
+{
+	so->so_emuldata = (void *)soa;
+}
+
+#else
+/* bsd_glue.h for Linux */
+#endif /* __FreeBSD__ */
+
+struct netmap_adapter *pst_na(const struct netmap_adapter *slave);
+int netmap_pst_register_fd(struct netmap_adapter *na, int fd);
+struct pst_so_adapter * pst_soa_from_fd(struct netmap_adapter *, int);
+int pst_extra_enq(struct netmap_kring *, struct netmap_slot *);
+void pst_extra_deq(struct netmap_kring *, struct netmap_slot *);
+void pst_fdt_add(struct nmcb *, struct netmap_kring *);
+int netmap_pst_transmit(struct ifnet *, struct mbuf *);
+void pst_mbuf_data_dtor(struct nmcb *);
+void pst_get_extra_ref(struct netmap_kring *);
+void pst_put_extra_ref(struct netmap_kring *);
+u_int pst_peek_extra_ref(struct netmap_kring *);
+extern int paste_usrrcv;
+extern int paste_optim_sendpage;
+int netmap_get_pst_na(struct nmreq_header *hdr, struct netmap_adapter **na,
+		struct netmap_mem_d *nmd, int create);
+/*
+ * non-static functions used by netmap_linux.c
+ */
+int nm_os_sock_dead(NM_SOCK_T *);
+NM_SOCK_T *nm_os_sock_fget(int, void **);
+void nm_os_sock_fput(NM_SOCK_T *, void *);
+int nm_os_pst_sbdrain(struct netmap_adapter *, NM_SOCK_T *);
+int nm_os_pst_mbuf_extadj(struct mbuf *, int, int);
+int nm_os_pst_rx(struct netmap_kring *, struct netmap_slot *);
+int nm_os_pst_tx(struct netmap_kring *, struct netmap_slot *);
+int nm_os_set_nodelay(NM_SOCK_T *);
+int nm_os_kthread_add(void *, void *, void *, struct thread **, int, int, const char *);
+int nm_os_hwcsum_ok(struct netmap_adapter *);
+int nm_os_so_connected(NM_SOCK_T *);
+
+#else /* !WITH_PASTE */
+#define	netmap_get_pst_na(_1, _2, _3, _4)	0
+#endif /* !WITH_PASTE */
+
 #ifdef WITH_NMNULL
 struct netmap_null_adapter {
 	struct netmap_adapter up;
@@ -1681,6 +1887,7 @@ enum {                                  /* debug flags */
 	NM_DEBUG_MEM = 0x4000,		/* verbose memory allocations/deallocations */
 	NM_DEBUG_VALE = 0x8000,		/* debug messages from memory allocators */
 	NM_DEBUG_BDG = NM_DEBUG_VALE,
+	NM_DEBUG_PST = 0x10000,
 };
 
 extern int netmap_txsync_retry;
