@@ -148,6 +148,9 @@ struct net_device_ops {
 			NM_SET_PAGE_COUNT(&(page)[i_], 1);\
 	} while (0)
 #endif /* HAVE_SPLIT_PAGE */
+#ifndef NETMAP_LINUX_HAVE_FOLL_SPLIT
+#define FOLL_SPLIT	FOLL_SPLIT_PMD
+#endif
 
 #if !defined(NETMAP_LINUX_HAVE_NNITD) && !defined(netdev_notifier_info_to_dev)
 #define netdev_notifier_info_to_dev(ptr)	(ptr)
