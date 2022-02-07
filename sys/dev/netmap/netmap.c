@@ -2654,7 +2654,7 @@ netmap_do_regif(struct netmap_priv_d *priv, struct netmap_adapter *na,
 	 */
 	netmap_update_hostrings_mode(na);
 
-	if (nm_kring_pending(priv)) {
+	if (na->active_fds == 0 || nm_kring_pending(priv)) {
 		/* Some kring is switching mode, tell the adapter to
 		 * react on this. */
 		netmap_set_all_rings(na, NM_KR_LOCKED);
