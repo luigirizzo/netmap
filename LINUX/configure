@@ -112,7 +112,7 @@ subsys enable null
 subsys enable ptnetmap
 
 # available drivers
-driver_avail="stmmac r8169.c virtio_net.c forcedeth.c veth.c \
+driver_avail="stmmac r8169.c virtio_net.c forcedeth.c veth.c mvneta.c \
 	e1000 e1000e igb ixgbe ixgbevf i40e vmxnet3 mlx5"
 # enabled drivers (bitfield)
 driver=
@@ -1882,6 +1882,24 @@ EOF
   	}
 EOF
   fi # r8169.c
+
+  # mvneta
+  if drv enabled mvneta.c; then
+
+    add_file_exists_check mvneta.c true "drv_source_error mvneta.c"
+
+    #
+    # Unfortunately the LINUX/configure script cannot handle
+    # a case when the driver has local headers, but is in
+    # a directory with a different name. Work this situation
+    # around by copying mvneta_bm.h directly from sources.
+    #
+    mvneta_bm_path=$(find $src/drivers/ -name "mvneta_bm.h" -print -quit)
+    if [ ! -z "$mvneta_bm_path" ]; then
+      cp $mvneta_bm_path $SRCDIR
+    fi
+
+  fi # mvneta.c
 
   # ixgbe
   if drv enabled ixgbe; then

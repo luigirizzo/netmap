@@ -1,0 +1,160 @@
+diff --git a/mvneta.c b/mvneta.c
+index b4ed7d39..02d1975f 100644
+--- a/mvneta.c
++++ b/mvneta.c
+@@ -449,6 +449,10 @@ struct mvneta_port {
+ 
+ 	u32 indir[MVNETA_RSS_LU_TABLE_SIZE];
+ 
++#if defined(DEV_NETMAP) || defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++	bool netmap_mode;
++#endif /* DEV_NETMAP */
++
+ 	/* Flags for special SoC configurations */
+ 	bool neta_armada3700;
+ 	u16 rx_offset_correction;
+@@ -618,6 +622,11 @@ struct mvneta_rx_queue {
+ 	int first_to_refill;
+ 	u32 refill_num;
+ 
++#if defined(DEV_NETMAP) || defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++	/* Number of descriptors used */
++	int desc_used;
++#endif /* DEV_NETMAP */
++
+ 	/* pointer to uncomplete skb buffer */
+ 	struct sk_buff *skb;
+ 	int left_size;
+@@ -645,6 +654,10 @@ static int global_port_id;
+ #define MVNETA_DRIVER_NAME "mvneta"
+ #define MVNETA_DRIVER_VERSION "1.0"
+ 
++#if defined(DEV_NETMAP) || defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#include <if_mvneta_netmap.h>
++#endif /* !DEV_NETMAP */
++
+ /* Utility/helper methods */
+ 
+ /* Write helper method */
+@@ -1884,6 +1897,10 @@ static void mvneta_rxq_drop_pkts(struct mvneta_port *pp,
+ 		return;
+ 	}
+ 
++#ifdef DEV_NETMAP
++	if (pp->netmap_mode)
++		return;
++#endif /* DEV_NETMAP */
+ 	for (i = 0; i < rxq->size; i++) {
+ 		struct mvneta_rx_desc *rx_desc = rxq->descs + i;
+ 		void *data = rxq->buf_virt_addr[i];
+@@ -1932,6 +1949,14 @@ static int mvneta_rx_swbm(struct napi_struct *napi,
+ 	u32 rcvd_pkts = 0;
+ 	u32 rcvd_bytes = 0;
+ 
++#ifdef DEV_NETMAP
++	if (pp->netmap_mode) {
++		u_int dummy = 0;
++		int nm_irq = netmap_rx_irq(pp->dev, rxq->id, &dummy);
++		return (nm_irq != NM_IRQ_PASS) ? budget : 1;
++	}
++#endif /* DEV_NETMAP */
++
+ 	/* Get number of received packets */
+ 	rx_todo = mvneta_rxq_busy_desc_num_get(pp, rxq);
+ 	rx_proc = 0;
+@@ -2760,6 +2785,8 @@ static int mvneta_poll(struct napi_struct *napi, int budget)
+ 	int rx_queue;
+ 	struct mvneta_port *pp = netdev_priv(napi->dev);
+ 	struct mvneta_pcpu_port *port = this_cpu_ptr(pp->ports);
++	int bit;
++	u32 tx_mask = MVNETA_TX_INTR_MASK(txq_number);
+ 
+ 	if (!netif_running(pp->dev)) {
+ 		napi_complete(napi);
+@@ -2780,6 +2807,14 @@ static int mvneta_poll(struct napi_struct *napi, int budget)
+ 
+ 	/* Release Tx descriptors */
+ 	if (cause_rx_tx & MVNETA_TX_INTR_MASK_ALL) {
++#ifdef DEV_NETMAP
++		if (pp->netmap_mode) {
++			for_each_set_bit(bit, (long unsigned int *)&cause_rx_tx, 8) {
++				netmap_tx_irq(pp->dev, bit);
++			}
++		}
++		tx_mask = ~cause_rx_tx & MVNETA_TX_INTR_MASK_ALL;
++#endif /* DEV_NETMAP */
+ 		mvneta_tx_done_gbe(pp, (cause_rx_tx & MVNETA_TX_INTR_MASK_ALL));
+ 		cause_rx_tx &= ~MVNETA_TX_INTR_MASK_ALL;
+ 	}
+@@ -2812,7 +2847,11 @@ static int mvneta_poll(struct napi_struct *napi, int budget)
+ 			local_irq_save(flags);
+ 			mvreg_write(pp, MVNETA_INTR_NEW_MASK,
+ 				    MVNETA_RX_INTR_MASK(rxq_number) |
++#ifdef DEV_NETMAP
++				    tx_mask |
++#else
+ 				    MVNETA_TX_INTR_MASK(txq_number) |
++#endif /* DEV_NETMAP */
+ 				    MVNETA_MISCINTR_INTR_MASK);
+ 			local_irq_restore(flags);
+ 		} else {
+@@ -2834,6 +2873,12 @@ static int mvneta_rxq_fill(struct mvneta_port *pp, struct mvneta_rx_queue *rxq,
+ {
+ 	int i;
+ 
++#ifdef DEV_NETMAP
++	if (pp->netmap_mode) {
++		mvneta_netmap_rxq_init_buffers(pp, rxq, num);
++		return num;
++	}
++#endif /* DEV_NETMAP */
+ 	for (i = 0; i < num; i++) {
+ 		memset(rxq->descs + i, 0, sizeof(struct mvneta_rx_desc));
+ 		if (mvneta_rx_refill(pp, rxq->descs + i, rxq,
+@@ -3142,7 +3187,10 @@ static int mvneta_setup_txqs(struct mvneta_port *pp)
+ 			return err;
+ 		}
+ 	}
+-
++#ifdef DEV_NETMAP
++	if (pp->netmap_mode)
++		mvneta_netmap_txq_init_buffers(pp);
++#endif /* DEV_NETMAP */
+ 	return 0;
+ }
+ 
+@@ -3234,6 +3282,13 @@ static int mvneta_change_mtu(struct net_device *dev, int mtu)
+ 	struct mvneta_port *pp = netdev_priv(dev);
+ 	int ret;
+ 
++#ifdef DEV_NETMAP
++	if (pp->netmap_mode) {
++		netdev_err(dev, "MTU can not be modified for port configured to Netmap mode\n");
++		return -EPERM;
++	}
++#endif /* DEV_NETMAP */
++
+ 	if (!IS_ALIGNED(MVNETA_RX_PKT_SIZE(mtu), 8)) {
+ 		netdev_info(dev, "Illegal MTU value %d, rounding to %d\n",
+ 			    mtu, ALIGN(MVNETA_RX_PKT_SIZE(mtu), 8));
+@@ -4619,6 +4674,10 @@ static int mvneta_probe(struct platform_device *pdev)
+ 
+ 	platform_set_drvdata(pdev, pp->dev);
+ 
++#ifdef DEV_NETMAP
++	mvneta_netmap_attach(pp);
++#endif /* DEV_NETMAP */
++
+ 	return 0;
+ 
+ err_netdev:
+@@ -4653,6 +4712,9 @@ static int mvneta_remove(struct platform_device *pdev)
+ 	struct mvneta_port *pp = netdev_priv(dev);
+ 
+ 	unregister_netdev(dev);
++#ifdef DEV_NETMAP
++	netmap_detach(dev);
++#endif /* DEV_NETMAP */
+ 	clk_disable_unprepare(pp->clk_bus);
+ 	clk_disable_unprepare(pp->clk);
+ 	free_percpu(pp->ports);

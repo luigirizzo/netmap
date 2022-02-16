@@ -37,6 +37,14 @@ define KernelPackage/r8169-netmap
   FILES=$(wildcard $(PKG_BUILD_DIR)/LINUX/r8169-netmap.ko)
 endef
 
+define KernelPackage/mvneta-netmap
+  TITLE:=Netmap enabled mvneta driver
+  SECTION:=kernel
+  SUBMENU:=Other modules
+  DEPENDS:= +kmod-netmap
+  FILES=$(wildcard $(PKG_BUILD_DIR)/LINUX/mvneta-netmap.ko)
+endef
+
 define KernelPackage/e1000-netmap
   TITLE:=Netmap enabled e1000 driver
   SECTION:=kernel
