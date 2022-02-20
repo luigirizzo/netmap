@@ -83,7 +83,6 @@ e1000e@prepare := $(if $(filter $(e1000e@v),3.8.4),@SRCDIR@/intel-fix.sh e1000e,
 ixgbevf@prepare := $(if $(filter $(ixgbevf@v),4.7.1 4.8.1 4.9.3 4.10.2 4.11.1),@SRCDIR@/intel-fix.sh ixgbevf,)
 ixgbe@prepare := $(if $(filter $(ixgbe@v),5.8.1 5.9.4 5.10.2 5.11.3),@SRCDIR@/intel-fix.sh ixgbe,)
 i40e@prepare := $(if $(filter $(i40e@v),2.12.6 2.14.13 2.15.9),@SRCDIR@/intel-fix.sh i40e,)
-ice@prepare := $(if $(filter $(ice@v),2.12.6 2.14.13 2.15.9),@SRCDIR@/intel-fix.sh ice,)
 
 # some additional, driver-specific configuration
 stmmac@conf := CONFIG_STMMAC_ETH
@@ -94,7 +93,7 @@ $(eval $(call default,ixgbevf,4.3.2))
 $(eval $(call default,e1000e,3.4.0.2))
 $(eval $(call default,igb,5.3.5.20))
 $(eval $(call default,i40e,2.4.6))
-$(eval $(call default,ice,2.4.6))
+$(eval $(call default,ice,1.7.16))
 
 # only define the drivers that are selected after the --(no-)ext-drivers= processing (variable E_DRIVERS)
 $(foreach d,$(filter ixgbe ixgbevf e1000e igb ice i40e,$(E_DRIVERS)),$(eval $(call intel_driver,$d,$($(d)@v))))

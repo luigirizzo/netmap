@@ -75,23 +75,22 @@ index a98dd4c..8b64fcc 100644
  	$(MAKE) -C lttng
  endif
 diff --git a/ice/ice_base.c b/ice/ice_base.c
-index 9f2320f..a3c304c 100644
+index 9f2320f..6e0adf4 100644
 --- a/ice/ice_base.c
 +++ b/ice/ice_base.c
-@@ -6,6 +6,12 @@
+@@ -6,6 +6,11 @@
  #include "ice_dcb_lib.h"
  #include "ice_virtchnl_pf.h"
  
 +#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
-+#define SAMAN
-+#define NETMAP_ICE_MAIN
++#define NETMAP_ICE_BASE
 +#include <ice_netmap_linux.h>
 +#endif
 +
  /**
   * __ice_vsi_get_qs_contig - Assign a contiguous chunk of queues to VSI
   * @qs_cfg: gathered variables needed for PF->VSI queues assignment
-@@ -448,6 +454,10 @@ static int ice_setup_rx_ctx(struct ice_ring *ring)
+@@ -448,6 +453,10 @@ static int ice_setup_rx_ctx(struct ice_ring *ring)
  	/* Rx queue threshold in units of 64 */
  	rlan_ctx.lrxqthresh = 1;
  
@@ -102,7 +101,7 @@ index 9f2320f..a3c304c 100644
  	/* Enable Flexible Descriptors in the queue context which
  	 * allows this driver to select a specific receive descriptor format
  	 * increasing context priority to pick up profile ID; default is 0x01;
-@@ -601,6 +611,11 @@ int ice_vsi_cfg_rxq(struct ice_ring *ring)
+@@ -601,6 +610,11 @@ int ice_vsi_cfg_rxq(struct ice_ring *ring)
  		return 0;
  	}
  #endif /* HAVE_AF_XDP_ZC_SUPPORT */
@@ -114,7 +113,7 @@ index 9f2320f..a3c304c 100644
  
  	ice_alloc_rx_bufs(ring, num_bufs);
  
-@@ -871,6 +886,11 @@ ice_vsi_cfg_txq(struct ice_vsi *vsi, struct ice_ring *ring,
+@@ -871,6 +885,11 @@ ice_vsi_cfg_txq(struct ice_vsi *vsi, struct ice_ring *ring,
  	txq = &qg_buf->txqs[0];
  	if (pf_q == le16_to_cpu(txq->txq_id))
  		ring->txq_teid = le32_to_cpu(txq->q_teid);
@@ -127,7 +126,7 @@ index 9f2320f..a3c304c 100644
  	return 0;
  }
 diff --git a/ice/ice_lib.c b/ice/ice_lib.c
-index 8899720..03bfcff 100644
+index 8899720..99687fe 100644
 --- a/ice/ice_lib.c
 +++ b/ice/ice_lib.c
 @@ -9,6 +9,12 @@
@@ -135,7 +134,7 @@ index 8899720..03bfcff 100644
  #include "ice_vsi_vlan_ops.h"
  
 +#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
-+#define NETMAP_ICE_MAIN
++#define NETMAP_ICE_LIB
 +#include <ice_netmap_linux.h>
 +#endif
 +

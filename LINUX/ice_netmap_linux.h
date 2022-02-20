@@ -2,9 +2,6 @@
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
 
-int ice_netmap_txsync(struct netmap_kring *kring, int flags);
-int ice_netmap_rxsync(struct netmap_kring *kring, int flags);
-
 extern int ix_crcstrip;
 
 #ifdef NETMAP_LINUX_ICE_PTR_ARRAY
@@ -20,204 +17,7 @@ extern int ix_crcstrip;
 #define NM_ICE_STATE(pf)		((pf)->state)
 #endif
 
-#ifdef NETMAP_ICE_MAIN
-
-#ifdef SAMAN
-#define ice_driver_name netmap_ice_driver_name
-char ice_driver_name[] = "ice" NETMAP_LINUX_DRIVER_SUFFIX;
-/*
- * device-specific sysctl variables:
- *
- * ix_crcstrip: 0: NIC keeps CRC in rx frames (default), 1: NIC strips it.
- *	During regular operations the CRC is stripped, but on some
- *	hardware reception of frames not multiple of 64 is slower,
- *	so using crcstrip=0 helps in benchmarks.
- *      The driver by default strips CRCs and we do not override it.
- *
- */
-SYSCTL_DECL(_dev_netmap);
-int ix_crcstrip = 1;
-SYSCTL_INT(_dev_netmap, OID_AUTO, ix_crcstrip,
-		CTLFLAG_RW, &ix_crcstrip, 1, "NIC strips CRC on rx frames");
-#endif
-
-static void
-ice_netmap_configure_tx_ring(struct ice_ring *ring)
-{
-	struct netmap_adapter *na;
-
-	if (!ring->netdev) {
-		// XXX it this possible?
-		return;
-	}
-
-	na = NA(ring->netdev);
-	netmap_reset(na, NR_TX, ring->q_index, 0);
-}
-
-static void
-ice_netmap_preconfigure_rx_ring(struct ice_ring *ring,
-		struct ice_rlan_ctx *rx_ctx)
-{
-	struct netmap_adapter *na;
-	struct netmap_kring *kring;
-
-	if (!ring->netdev) {
-		// XXX it this possible?
-		return;
-	}
-
-	na = NA(ring->netdev);
-
-	if (netmap_reset(na, NR_RX, ring->q_index, 0) == NULL)
-		return;	// not in native netmap mode
-
-	kring = na->rx_rings[ring->q_index];
-	rx_ctx->dbuf = kring->hwbuf_len >> ICE_RLAN_CTX_DBUF_S;
-}
-
-static int
-ice_netmap_configure_rx_ring(struct ice_ring *ring)
-{
-	struct netmap_adapter *na;
-	struct netmap_slot *slot;
-	struct netmap_kring *kring;
-	int lim, i, ring_nr;
-
-	if (!ring->netdev) {
-		// XXX it this possible?
-		return 0;
-	}
-
-	na = NA(ring->netdev);
-	ring_nr = ring->q_index;
-
-	slot = netmap_reset(na, NR_RX, ring_nr, 0);
-	if (!slot)
-		return 0;	// not in native netmap mode
-
-	kring = na->rx_rings[ring_nr];
-	lim = na->num_rx_desc - 1 - nm_kr_rxspace(kring);
-
-	for (i = 0; i < lim; i++) {
-		int si = netmap_idx_n2k(kring, i);
-		uint64_t paddr;
-		union ice_32b_rx_flex_desc *rx = ICE_RX_DESC(ring, i);
-		PNMB_O(kring, slot + si, &paddr);
-
-		rx->read.pkt_addr = htole64(paddr);
-		rx->read.hdr_addr = 0;
-	}
-	ring->next_to_clean = 0;
-	wmb();
-	writel(lim, ring->tail);
-	return 1;
-}
-
-/*
- * Register/unregister. We are already under netmap lock.
- * Only called on the first register or the last unregister.
- */
-static int
-ice_netmap_reg(struct netmap_adapter *na, int onoff)
-{
-	struct ifnet *ifp = na->ifp;
-	struct ice_netdev_priv *np = netdev_priv(ifp);
-	struct ice_vsi  *vsi = np->vsi;
-	struct ice_pf   *pf = (struct ice_pf *)vsi->back;
-	bool was_running;
-
-	while (test_and_set_bit(ICE_CFG_BUSY, NM_ICE_STATE(pf)))
-			usleep_range(1000, 2000);
-
-	if ( (was_running = netif_running(vsi->netdev)) )
-		ice_down(vsi);
-
-	//set_crcstrip(&adapter->hw, onoff);
-	/* enable or disable flags and callbacks in na and ifp */
-	if (onoff) {
-		nm_set_native_flags(na);
-	} else {
-		nm_clear_native_flags(na);
-	}
-	if (was_running) {
-		ice_up(vsi);
-	}
-	//set_crcstrip(&adapter->hw, onoff); // XXX why twice ?
-
-	clear_bit(ICE_CFG_BUSY, NM_ICE_STATE(pf));
-
-	return 0;
-}
-
-static int
-ice_netmap_bufcfg(struct netmap_kring *kring, uint64_t target)
-{
-	uint64_t incr;
-
-	kring->buf_align = 0;
-
-	if (kring->tx == NR_TX) {
-		kring->hwbuf_len = target;
-		return 0;
-	}
-
-	incr = 1UL << ICE_RLAN_CTX_DBUF_S;
-	target &= ~(incr - 1);
-	if (target < 1024UL || target > 16384UL - incr)
-		return EINVAL;
-
-	kring->hwbuf_len = target;
-
-	return 0;
-}
-
-static int
-ice_netmap_config(struct netmap_adapter *na, struct nm_config_info *info)
-{
-	int ret = netmap_rings_config_get(na, info);
-
-	if (ret) {
-		return ret;
-	}
-
-	info->rx_buf_maxsize = NETMAP_BUF_SIZE(na);
-
-	return 0;
-}
-
-/*
- * The attach routine, called near the end of ice_attach(),
- * fills the parameters for netmap_attach() and calls it.
- * It cannot fail, in the worst case (such as no memory)
- * netmap mode will be disabled and the driver will only
- * operate in standard mode.
- */
-static void
-ice_netmap_attach(struct ice_vsi *vsi)
-{
-	struct netmap_adapter na;
-
-	bzero(&na, sizeof(na));
-
-	na.ifp = vsi->netdev;
-	na.pdev = &vsi->back->pdev->dev;
-	na.na_flags = NAF_MOREFRAG | NAF_OFFSETS;
-	na.num_tx_desc = NM_ICE_TX_RING(vsi, 0)->count;
-	na.num_rx_desc = NM_ICE_RX_RING(vsi, 0)->count;
-	na.num_tx_rings = vsi->num_txq;
-    na.num_rx_rings = vsi->num_rxq;
-	na.rx_buf_maxsize = vsi->rx_buf_len;
-	na.nm_txsync = ice_netmap_txsync;
-	na.nm_rxsync = ice_netmap_rxsync;
-	na.nm_register = ice_netmap_reg;
-	na.nm_config = ice_netmap_config;
-	na.nm_bufcfg = ice_netmap_bufcfg;
-	netmap_attach(&na);
-}
-
-#else /* NETMAP_ICE_MAIN */
-
+#ifdef NETMAP_ICE_LIB
 
 /*
  * Reconcile kernel and user view of the transmit ring.
@@ -397,7 +197,6 @@ ice_netmap_txsync(struct netmap_kring *kring, int flags)
 	return 0;
 }
 
-
 /*
  * Reconcile kernel and user view of the receive ring.
  * Same as for the txsync, this routine must be efficient.
@@ -566,6 +365,202 @@ ring_reset:
 	return netmap_ring_reinit(kring);
 }
 
-#endif /* NETMAP_ICE_MAIN */
+/*
+ * Register/unregister. We are already under netmap lock.
+ * Only called on the first register or the last unregister.
+ */
+static int
+ice_netmap_reg(struct netmap_adapter *na, int onoff)
+{
+	struct ifnet *ifp = na->ifp;
+	struct ice_netdev_priv *np = netdev_priv(ifp);
+	struct ice_vsi  *vsi = np->vsi;
+	struct ice_pf   *pf = (struct ice_pf *)vsi->back;
+	bool was_running;
+
+	while (test_and_set_bit(ICE_CFG_BUSY, NM_ICE_STATE(pf)))
+			usleep_range(1000, 2000);
+
+	if ( (was_running = netif_running(vsi->netdev)) )
+		ice_down(vsi);
+
+	//set_crcstrip(&adapter->hw, onoff);
+	/* enable or disable flags and callbacks in na and ifp */
+	if (onoff) {
+		nm_set_native_flags(na);
+	} else {
+		nm_clear_native_flags(na);
+	}
+	if (was_running) {
+		ice_up(vsi);
+	}
+	//set_crcstrip(&adapter->hw, onoff); // XXX why twice ?
+
+	clear_bit(ICE_CFG_BUSY, NM_ICE_STATE(pf));
+
+	return 0;
+}
+
+static int
+ice_netmap_bufcfg(struct netmap_kring *kring, uint64_t target)
+{
+	uint64_t incr;
+
+	kring->buf_align = 0;
+
+	if (kring->tx == NR_TX) {
+		kring->hwbuf_len = target;
+		return 0;
+	}
+
+	incr = 1UL << ICE_RLAN_CTX_DBUF_S;
+	target &= ~(incr - 1);
+	if (target < 1024UL || target > 16384UL - incr)
+		return EINVAL;
+
+	kring->hwbuf_len = target;
+
+	return 0;
+}
+
+static int
+ice_netmap_config(struct netmap_adapter *na, struct nm_config_info *info)
+{
+	int ret = netmap_rings_config_get(na, info);
+
+	if (ret) {
+		return ret;
+	}
+
+	info->rx_buf_maxsize = NETMAP_BUF_SIZE(na);
+
+	return 0;
+}
+
+/*
+ * The attach routine, called near the end of ice_attach(),
+ * fills the parameters for netmap_attach() and calls it.
+ * It cannot fail, in the worst case (such as no memory)
+ * netmap mode will be disabled and the driver will only
+ * operate in standard mode.
+ */
+static void
+ice_netmap_attach(struct ice_vsi *vsi)
+{
+	struct netmap_adapter na;
+
+	bzero(&na, sizeof(na));
+
+	na.ifp = vsi->netdev;
+	na.pdev = &vsi->back->pdev->dev;
+	na.na_flags = NAF_MOREFRAG | NAF_OFFSETS;
+	na.num_tx_desc = NM_ICE_TX_RING(vsi, 0)->count;
+	na.num_rx_desc = NM_ICE_RX_RING(vsi, 0)->count;
+	na.num_tx_rings = vsi->num_txq;
+    na.num_rx_rings = vsi->num_rxq;
+	na.rx_buf_maxsize = vsi->rx_buf_len;
+	na.nm_txsync = ice_netmap_txsync;
+	na.nm_rxsync = ice_netmap_rxsync;
+	na.nm_register = ice_netmap_reg;
+	na.nm_config = ice_netmap_config;
+	na.nm_bufcfg = ice_netmap_bufcfg;
+	netmap_attach(&na);
+}
+
+#endif // NETMAP_ICE_LIB
+
+#ifdef NETMAP_ICE_BASE
+
+#define ice_driver_name netmap_ice_driver_name
+char ice_driver_name[] = "ice" NETMAP_LINUX_DRIVER_SUFFIX;
+/*
+ * device-specific sysctl variables:
+ *
+ * ix_crcstrip: 0: NIC keeps CRC in rx frames (default), 1: NIC strips it.
+ *	During regular operations the CRC is stripped, but on some
+ *	hardware reception of frames not multiple of 64 is slower,
+ *	so using crcstrip=0 helps in benchmarks.
+ *      The driver by default strips CRCs and we do not override it.
+ *
+ */
+SYSCTL_DECL(_dev_netmap);
+int ix_crcstrip = 1;
+SYSCTL_INT(_dev_netmap, OID_AUTO, ix_crcstrip,
+		CTLFLAG_RW, &ix_crcstrip, 1, "NIC strips CRC on rx frames");
+
+static void
+ice_netmap_configure_tx_ring(struct ice_ring *ring)
+{
+	struct netmap_adapter *na;
+
+	if (!ring->netdev) {
+		// XXX it this possible?
+		return;
+	}
+
+	na = NA(ring->netdev);
+	netmap_reset(na, NR_TX, ring->q_index, 0);
+}
+
+static void
+ice_netmap_preconfigure_rx_ring(struct ice_ring *ring,
+		struct ice_rlan_ctx *rx_ctx)
+{
+	struct netmap_adapter *na;
+	struct netmap_kring *kring;
+
+	if (!ring->netdev) {
+		// XXX it this possible?
+		return;
+	}
+
+	na = NA(ring->netdev);
+
+	if (netmap_reset(na, NR_RX, ring->q_index, 0) == NULL)
+		return;	// not in native netmap mode
+
+	kring = na->rx_rings[ring->q_index];
+	rx_ctx->dbuf = kring->hwbuf_len >> ICE_RLAN_CTX_DBUF_S;
+}
+
+static int
+ice_netmap_configure_rx_ring(struct ice_ring *ring)
+{
+	struct netmap_adapter *na;
+	struct netmap_slot *slot;
+	struct netmap_kring *kring;
+	int lim, i, ring_nr;
+
+	if (!ring->netdev) {
+		// XXX it this possible?
+		return 0;
+	}
+
+	na = NA(ring->netdev);
+	ring_nr = ring->q_index;
+
+	slot = netmap_reset(na, NR_RX, ring_nr, 0);
+	if (!slot)
+		return 0;	// not in native netmap mode
+
+	kring = na->rx_rings[ring_nr];
+	lim = na->num_rx_desc - 1 - nm_kr_rxspace(kring);
+
+	for (i = 0; i < lim; i++) {
+		int si = netmap_idx_n2k(kring, i);
+		uint64_t paddr;
+		union ice_32b_rx_flex_desc *rx = ICE_RX_DESC(ring, i);
+		PNMB_O(kring, slot + si, &paddr);
+
+		rx->read.pkt_addr = htole64(paddr);
+		rx->read.hdr_addr = 0;
+	}
+	ring->next_to_clean = 0;
+	wmb();
+	writel(lim, ring->tail);
+	return 1;
+}
+
+#endif /* NETMAP_ICE_BASE */
 
 /* end of file */
