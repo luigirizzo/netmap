@@ -113,7 +113,7 @@ subsys enable ptnetmap
 
 # available drivers
 driver_avail="stmmac r8169.c virtio_net.c forcedeth.c veth.c \
-	e1000 e1000e igb ixgbe ixgbevf i40e vmxnet3 mlx5"
+	e1000 e1000e igb ixgbe ixgbevf ice i40e vmxnet3 mlx5"
 # enabled drivers (bitfield)
 driver=
 drv()
@@ -135,6 +135,7 @@ edrv enable igb
 edrv enable ixgbe
 edrv enable ixgbevf
 edrv enable i40e
+edrv enable ice
 edrv enable mlx5
 edrv enable virtio_net.c
 
@@ -2253,6 +2254,28 @@ EOF
 EOF
 
   fi # virtio-net
+
+  if drv enabled ice; then
+    add_test 'define ICE_PTR_ARRAY' <<EOF
+  	#include "ice/ice.h"
+
+  	struct ice_ring *
+  	dummy(struct ice_vsi *vsi) {
+  		return vsi->tx_rings[0];
+  	}
+EOF
+
+   add_test 'define ICE_PTR_STATE' <<EOF
+   	#include "ice/ice.h"
+	#include <linux/bitops.h>
+	#pragma GCC diagnostic error "-Wincompatible-pointer-types"
+
+	int
+	dummy(struct ice_pf *pf) {
+		return test_and_set_bit(1, &pf->state);
+	}
+EOF
+  fi # ice
 
   if drv enabled i40e; then
     add_test 'define I40E_PTR_ARRAY' <<EOF

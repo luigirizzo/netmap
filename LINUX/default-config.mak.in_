@@ -93,9 +93,10 @@ $(eval $(call default,ixgbevf,4.3.2))
 $(eval $(call default,e1000e,3.4.0.2))
 $(eval $(call default,igb,5.3.5.20))
 $(eval $(call default,i40e,2.4.6))
+$(eval $(call default,ice,1.7.16))
 
 # only define the drivers that are selected after the --(no-)ext-drivers= processing (variable E_DRIVERS)
-$(foreach d,$(filter ixgbe ixgbevf e1000e igb i40e,$(E_DRIVERS)),$(eval $(call intel_driver,$d,$($(d)@v))))
+$(foreach d,$(filter ixgbe ixgbevf e1000e igb ice i40e,$(E_DRIVERS)),$(eval $(call intel_driver,$d,$($(d)@v))))
 
 
 define mellanox_driver
