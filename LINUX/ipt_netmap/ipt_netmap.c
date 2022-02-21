@@ -32,6 +32,7 @@ MODULE_DESCRIPTION("A loadable kernel module that adds an NMRING target for ipta
 MODULE_VERSION("1");
 
 #define NF_INET_UNSET	NF_INET_NUMHOOKS
+#define IPT_NETMAP_MAX_MTU  (NETMAP_BUF_SIZE(na) - NETMAP_SLOT_HEADROOM - ETH_HLEN)
 
 struct ipt_netmap_priv {
 	struct netmap_priv_d *netmap_priv;
@@ -693,10 +694,10 @@ static unsigned int nmring_tg4(struct sk_buff *skb,
 #else
 		mtu = ip_skb_dst_mtu(skb->sk, skb);
 #endif
-		mtu = min(mtu, NETMAP_BUF_SIZE(na));
+		mtu = min(mtu, IPT_NETMAP_MAX_MTU);
 	}
 	else {
-		mtu = min_not_zero((unsigned int)skb_pagelen(skb), NETMAP_BUF_SIZE(na));
+		mtu = IPT_NETMAP_MAX_MTU;
 	}
 
 	skb->protocol = htons(ETH_P_IP);
@@ -718,12 +719,13 @@ static unsigned int nmring_tg4(struct sk_buff *skb,
 		return NF_STOLEN;
 	}
 	else if (skb->len > mtu) {
-		if ((iph->frag_off & htons(IP_DF)) == 0) {
+		if (skb_dst(skb) && (iph->frag_off & htons(IP_DF)) == 0) {
 			ip_do_fragment(priv->net, NULL, skb, copy_pkt_to_queue);
 		}
 		else if (unlikely(!skb->ignore_df ||
 				(IPCB(skb)->frag_max_size &&
-						IPCB(skb)->frag_max_size > mtu))) {
+						IPCB(skb)->frag_max_size > mtu) ||
+				!skb_dst(skb))) {
 			IP_INC_STATS(priv->net, IPSTATS_MIB_FRAGFAILS);
 			icmp_send(skb, ICMP_DEST_UNREACH, ICMP_FRAG_NEEDED,
 				  htonl(mtu));
@@ -789,10 +791,10 @@ static unsigned int nmring_tg6(struct sk_buff *skb,
 
 	if (skb_dst(skb)) {
 		mtu = ip6_skb_dst_mtu(skb);
-		mtu = min(mtu, NETMAP_BUF_SIZE(na));
+		mtu = min(mtu, IPT_NETMAP_MAX_MTU);
 	}
 	else {
-		mtu = min_not_zero((unsigned int)skb_pagelen(skb), NETMAP_BUF_SIZE(na));
+		mtu = IPT_NETMAP_MAX_MTU;
 	}
 
 	skb->protocol = htons(ETH_P_IPV6);
@@ -802,8 +804,14 @@ static unsigned int nmring_tg6(struct sk_buff *skb,
 			(skb_dst(skb) && dst_allfrag(skb_dst(skb))) ||
 			(IP6CB(skb)->frag_max_size &&
 					skb->len > IP6CB(skb)->frag_max_size)) {
-		ip6_fragment(priv->net, NULL, skb, copy_pkt_to_queue);
-		return NF_STOLEN;
+		if (skb_dst(skb)) {
+			ip6_fragment(priv->net, NULL, skb, copy_pkt_to_queue);
+			return NF_STOLEN;
+		}
+		else {
+			IP_INC_STATS(priv->net, IPSTATS_MIB_FRAGFAILS);
+			return NF_DROP;
+		}
 	}
 	else {
 		if (copy_pkt_to_queue(NULL, NULL, skb) != 0) {
