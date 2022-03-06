@@ -1828,7 +1828,8 @@ netmap_init_bridges(void)
 #ifdef CONFIG_NET_NS
 	return netmap_bns_register();
 #else
-	nm_bridges = netmap_init_bridges2(NM_BRIDGES);
+        nm_prerr("INIT BRIDGES %u", vale_max_bridges);
+	nm_bridges = netmap_init_bridges2(vale_max_bridges);
 	if (nm_bridges == NULL)
 		return ENOMEM;
 	return 0;
@@ -1841,6 +1842,6 @@ netmap_uninit_bridges(void)
 #ifdef CONFIG_NET_NS
 	netmap_bns_unregister();
 #else
-	netmap_uninit_bridges2(nm_bridges, NM_BRIDGES);
+	netmap_uninit_bridges2(nm_bridges, vale_max_bridges);
 #endif
 }
