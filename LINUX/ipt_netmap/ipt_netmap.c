@@ -916,7 +916,6 @@ static void __net_exit ipt_netmap_net_exit(struct net *net)
 		}
 	}
 #endif
-	return NULL;
 }
 
 static struct pernet_operations ipt_netmap_net_ops = {
