@@ -27,7 +27,7 @@
 .\"
 .\" $FreeBSD$
 .\"
-.Dd November 20, 2018
+.Dd October 3, 2020
 .Dt NETMAP 4
 .Os
 .Sh NAME
@@ -40,7 +40,7 @@
 is a framework for extremely fast and efficient packet I/O
 for userspace and kernel clients, and for Virtual Machines.
 It runs on
-.Fx
+.Fx ,
 Linux and some versions of Windows, and supports a variety of
 .Nm netmap ports ,
 including
@@ -655,7 +655,7 @@ In the example below, "netmap:foo" is any valid netmap port name.
 (default) all hardware ring pairs
 .It NR_REG_SW            "netmap:foo^"
 the ``host rings'', connecting to the host stack.
-.It NR_REG_NIC_SW        "netmap:foo+"
+.It NR_REG_NIC_SW        "netmap:foo*"
 all hardware rings and the host rings
 .It NR_REG_ONE_NIC       "netmap:foo-i"
 only the i-th hardware ring pair, where the number is in
@@ -694,7 +694,7 @@ or
 are called with a write event (POLLOUT/wfdset) or a full ring.
 .Pp
 When registering a virtual interface that is dynamically created to a
-.Xr vale 4
+.Nm VALE
 switch, we can specify the desired number of rings (1 by default,
 and currently up to 16) on it using nr_tx_rings and nr_rx_rings fields.
 .It Dv NIOCTXSYNC
@@ -828,7 +828,7 @@ On
 .Xr cxgbe 4 ,
 .Xr em 4 ,
 .Xr iflib 4
-(providing igb, em and lem),
+.Pq providing Xr igb 4 and Xr em 4 ,
 .Xr ixgbe 4 ,
 .Xr ixl 4 ,
 .Xr re 4 ,
@@ -861,8 +861,10 @@ The sysctl variable
 .Va dev.netmap.admode
 globally controls how netmap mode is implemented.
 .Sh SYSCTL VARIABLES AND MODULE PARAMETERS
-Some aspect of the operation of
+Some aspects of the operation of
 .Nm
+and
+.Nm VALE
 are controlled through sysctl variables on
 .Fx
 .Em ( dev.netmap.* )
@@ -883,15 +885,14 @@ Number of rings used for emulated netmap mode
 Ring size used for emulated netmap mode
 .It Va dev.netmap.generic_mit: 100000
 Controls interrupt moderation for emulated mode
-.It Va dev.netmap.mmap_unreg: 0
 .It Va dev.netmap.fwd: 0
 Forces NS_FORWARD mode
-.It Va dev.netmap.flags: 0
 .It Va dev.netmap.txsync_retry: 2
+Number of txsync loops in the
+.Nm VALE
+flush function
 .It Va dev.netmap.no_pendintr: 1
 Forces recovery of transmit buffers on system calls
-.It Va dev.netmap.mitigate: 1
-Propagates interrupt mitigation to user processes
 .It Va dev.netmap.no_timestamp: 0
 Disables the update of the timestamp in the netmap ring
 .It Va dev.netmap.verbose: 0
@@ -914,12 +915,29 @@ as it impacts the total amount of memory used by netmap.
 .It Va dev.netmap.if_curr_num: 0
 .It Va dev.netmap.if_curr_size: 0
 Actual values in use.
+.It Va dev.netmap.priv_buf_num: 4098
+.It Va dev.netmap.priv_buf_size: 2048
+.It Va dev.netmap.priv_ring_num: 4
+.It Va dev.netmap.priv_ring_size: 20480
+.It Va dev.netmap.priv_if_num: 2
+.It Va dev.netmap.priv_if_size: 1024
+Sizes and number of objects (netmap_if, netmap_ring, buffers)
+for private memory regions.
+A separate memory region is used for each
+.Nm VALE
+port and each pair of
+.Nm netmap pipes .
 .It Va dev.netmap.bridge_batch: 1024
 Batch size used when moving packets across a
 .Nm VALE
 switch.
 Values above 64 generally guarantee good
 performance.
+.It Va dev.netmap.max_bridges: 8
+Max number of
+.Nm VALE
+switches that can be created. This tunable can be specified
+at loader time.
 .It Va dev.netmap.ptnet_vnet_hdr: 1
 Allow ptnet devices to use virtio-net headers
 .El
@@ -985,7 +1003,7 @@ interfaces, as in
 or even connect the NIC to the host stack using netmap
 .Dl bridge -i netmap:ix0
 .Ss USING THE NATIVE API
-The following code implements a traffic generator
+The following code implements a traffic generator:
 .Pp
 .Bd -literal -compact
 #include <net/netmap_user.h>
@@ -1020,7 +1038,8 @@ void sender(void)
 }
 .Ed
 .Ss HELPER FUNCTIONS
-A simple receiver can be implemented using the helper functions
+A simple receiver can be implemented using the helper functions:
+.Pp
 .Bd -literal -compact
 #define NETMAP_WITH_LIBS
 #include <net/netmap_user.h>
@@ -1049,6 +1068,7 @@ it is possible to do packet forwarding between ports
 swapping buffers.
 The buffer from the transmit ring is used
 to replenish the receive ring:
+.Pp
 .Bd -literal -compact
     uint32_t tmp;
     struct netmap_slot *src, *dst;
@@ -1087,15 +1107,15 @@ changing port names, e.g.,
 .Pp
 The following command attaches an interface and the host stack
 to a switch:
-.Dl vale-ctl -h vale2:em0
+.Dl valectl -h vale2:em0
 Other
 .Nm
 clients attached to the same switch can now communicate
 with the network card or the host.
 .Sh SEE ALSO
 .Xr vale 4 ,
-.Xr vale-ctl 4 ,
 .Xr bridge 8 ,
+.Xr valectl 8 ,
 .Xr lb 8 ,
 .Xr nmreplay 8 ,
 .Xr pkt-gen 8

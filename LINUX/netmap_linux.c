@@ -1572,7 +1572,7 @@ netmap_pernet_init(struct net *net)
 		return error;
 
 	ns->net = net;
-	ns->num_bridges = NM_BRIDGES;
+	ns->num_bridges = vale_max_bridges;
 	ns->bridges = netmap_init_bridges2(ns->num_bridges);
 	if (ns->bridges == NULL) {
 		nm_bns_destroy(net, ns);

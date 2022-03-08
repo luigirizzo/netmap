@@ -490,6 +490,7 @@ struct timeval {
  * windows: they are emulated via get/setsockopt
  */
 #define CTLFLAG_RD              1
+#define CTLFLAG_RDTUN           CTLFLAG_RD
 #define CTLFLAG_RW              2
 
 struct sysctl_oid;
