@@ -2384,10 +2384,11 @@ netmap_mem_ext_create(uint64_t usrptr, struct nmreq_pools_info *pi, int *perror)
 	os = NULL; /* pass ownership */
 
 	clust = nm_os_extmem_nextpage(nme->os);
-	off = 0;
 	for (i = 0; i < NETMAP_POOLS_NR; i++) {
 		struct netmap_obj_pool *p = &nme->up.pools[i];
 		struct netmap_obj_params *o = &nme->up.params[i];
+
+		off = 0;
 
 		p->_objsize = o->size;
 		p->_clustsize = o->size;
@@ -2452,6 +2453,14 @@ netmap_mem_ext_create(uint64_t usrptr, struct nmreq_pools_info *pi, int *perror)
 		p->objtotal = j;
 		p->numclusters = p->objtotal;
 		p->memtotal = j * (size_t)p->_objsize;
+		if (p->memtotal & (PAGE_SIZE - 1)) {
+			// make sure that the objects of the next pool start page-aligned
+			p->memtotal = (p->memtotal & ~(PAGE_SIZE - 1)) + PAGE_SIZE;
+			if (nr_pages > 0) {
+				clust = nm_os_extmem_nextpage(nme->os);
+				nr_pages--;
+			}
+		}
 		nm_prdis("%d memtotal %zu", j, p->memtotal);
 	}
 
