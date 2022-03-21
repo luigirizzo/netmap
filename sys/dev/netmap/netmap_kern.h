@@ -1566,6 +1566,7 @@ extern unsigned int vale_max_bridges;
 #define	netmap_get_vale_na(_1, _2, _3, _4)	0
 #define netmap_bdg_create(_1, _2)	NULL
 #define netmap_bdg_destroy(_1, _2)	0
+#define vale_max_bridges		1
 #endif /* !WITH_VALE */
 
 #ifdef WITH_PIPES
