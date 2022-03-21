@@ -1,8 +1,8 @@
 diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
-index 18076c4178b4..12646872c0f6 100644
+index 5bcc870f8367..eef466715f03 100644
 --- a/ixgbe/ixgbe_main.c
 +++ b/ixgbe/ixgbe_main.c
-@@ -359,6 +359,22 @@ static const struct ixgbe_reg_info ixgbe_reg_info_tbl[] = {
+@@ -328,6 +328,22 @@ static const struct ixgbe_reg_info ixgbe_reg_info_tbl[] = {
  	{}
  };
  
@@ -25,7 +25,7 @@ index 18076c4178b4..12646872c0f6 100644
  
  /*
   * ixgbe_regdump - register printout routine
-@@ -990,6 +1006,17 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
+@@ -959,6 +975,17 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
  	if (test_bit(__IXGBE_DOWN, &adapter->state))
  		return true;
  
@@ -43,7 +43,7 @@ index 18076c4178b4..12646872c0f6 100644
  	tx_buffer = &tx_ring->tx_buffer_info[i];
  	tx_desc = IXGBE_TX_DESC(tx_ring, i);
  	i -= tx_ring->count;
-@@ -2026,6 +2053,16 @@ static int ixgbe_clean_rx_irq(struct ixgbe_q_vector *q_vector,
+@@ -1995,6 +2022,16 @@ static int ixgbe_clean_rx_irq(struct ixgbe_q_vector *q_vector,
  #endif /* IXGBE_FCOE */
  	u16 cleaned_count = ixgbe_desc_unused(rx_ring);
  
@@ -60,7 +60,7 @@ index 18076c4178b4..12646872c0f6 100644
  	do {
  		union ixgbe_adv_rx_desc *rx_desc;
  		struct sk_buff *skb;
-@@ -3049,6 +3086,10 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
+@@ -3018,6 +3055,10 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
  
  	clear_bit(__IXGBE_HANG_CHECK_ARMED, &ring->state);
  
@@ -71,7 +71,7 @@ index 18076c4178b4..12646872c0f6 100644
  	/* enable queue */
  	IXGBE_WRITE_REG(hw, IXGBE_TXDCTL(reg_idx), txdctl);
  
-@@ -3429,6 +3470,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
+@@ -3394,6 +3435,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
  	IXGBE_WRITE_REG(hw, IXGBE_RXDCTL(reg_idx), rxdctl);
  
  	ixgbe_rx_desc_queue_enable(adapter, ring);
@@ -82,7 +82,7 @@ index 18076c4178b4..12646872c0f6 100644
  	ixgbe_alloc_rx_buffers(ring, ixgbe_desc_unused(ring));
  }
  
-@@ -4636,16 +4681,6 @@ static void ixgbe_up_complete(struct ixgbe_adapter *adapter)
+@@ -4600,16 +4645,6 @@ static void ixgbe_up_complete(struct ixgbe_adapter *adapter)
  	/* enable transmits */
  	netif_tx_start_all_queues(adapter->netdev);
  
@@ -99,7 +99,7 @@ index 18076c4178b4..12646872c0f6 100644
  	/* bring the link up in the watchdog, this could race with our first
  	 * link up interrupt but shouldn't be a problem */
  	adapter->flags |= IXGBE_FLAG_NEED_LINK_UPDATE;
-@@ -5451,6 +5486,7 @@ static int ixgbe_open(struct net_device *netdev)
+@@ -5412,6 +5447,7 @@ static int ixgbe_open(struct net_device *netdev)
  
  	ixgbe_up_complete(adapter);
  
@@ -107,7 +107,7 @@ index 18076c4178b4..12646872c0f6 100644
  	return 0;
  
  err_set_queues:
-@@ -8228,6 +8264,10 @@ static int ixgbe_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
+@@ -8174,6 +8210,10 @@ static int ixgbe_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
  			IXGBE_LINK_SPEED_10GB_FULL | IXGBE_LINK_SPEED_1GB_FULL,
  			true);
  
@@ -118,7 +118,7 @@ index 18076c4178b4..12646872c0f6 100644
  	return 0;
  
  err_register:
-@@ -8262,6 +8302,10 @@ static void ixgbe_remove(struct pci_dev *pdev)
+@@ -8208,6 +8248,10 @@ static void ixgbe_remove(struct pci_dev *pdev)
  	struct ixgbe_adapter *adapter = pci_get_drvdata(pdev);
  	struct net_device *netdev = adapter->netdev;
  
@@ -128,4 +128,4 @@ index 18076c4178b4..12646872c0f6 100644
 +
  	ixgbe_dbg_adapter_exit(adapter);
  
- 	set_bit(__IXGBE_REMOVING, &adapter->state);
+ 	set_bit(__IXGBE_DOWN, &adapter->state);
