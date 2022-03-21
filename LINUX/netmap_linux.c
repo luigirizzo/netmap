@@ -1355,7 +1355,12 @@ linux_netmap_change_mtu(struct net_device *dev, int new_mtu)
  */
 int
 linux_netmap_set_ringparam(struct net_device *dev,
-	struct ethtool_ringparam *e)
+	struct ethtool_ringparam *e
+#ifdef NETMAP_LINUX_HAVE_SETRNGPRM_4ARGS
+	, struct kernel_ethtool_ringparam *k
+	, struct netlink_ext_ack *a
+#endif /* NETMAP_LINUX_HAVE_SETRNGPRM_4ARGS */
+	)
 {
 #ifdef NETMAP_LINUX_HAVE_AX25PTR
 	return -EBUSY;
@@ -1365,7 +1370,11 @@ linux_netmap_set_ringparam(struct net_device *dev,
 	if (nm_netmap_on(na))
 		return -EBUSY;
 	if (na->magic.save_eto->set_ringparam)
-		return na->magic.save_eto->set_ringparam(dev, e);
+		return na->magic.save_eto->set_ringparam(dev, e
+#ifdef NETMAP_LINUX_HAVE_SETRNGPRM_4ARGS
+				, k, a
+#endif /* NETMAP_LINUX_HAVE_SETRNGPRM_4ARGS */
+				)
 	return -EOPNOTSUPP;
 #endif /* NETMAP_LINUX_HAVE_AX25PTR */
 }

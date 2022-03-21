@@ -1830,6 +1830,19 @@ EOF
 	}
 EOF
 
+  # setringparam additional parameters
+  add_test 'have SETRNGPRM_4ARGS' <<EOF
+	#include <linux/netdevice.h>
+	#include <linux/ethtool.h>
+
+	int
+	dummy(struct net_device *net, struct ethtool_ringparam *r,
+		struct kernel_ethtool_ringparam *k,
+		struct netlink_ext_ack *a) {
+		return net->ethtool_ops->set_ringparam(net, r, k, a);
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################
