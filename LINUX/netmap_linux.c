@@ -1374,7 +1374,7 @@ linux_netmap_set_ringparam(struct net_device *dev,
 #ifdef NETMAP_LINUX_HAVE_SETRNGPRM_4ARGS
 				, k, a
 #endif /* NETMAP_LINUX_HAVE_SETRNGPRM_4ARGS */
-				)
+				);
 	return -EOPNOTSUPP;
 #endif /* NETMAP_LINUX_HAVE_AX25PTR */
 }
