@@ -156,11 +156,15 @@ veth_netmap_reg(struct netmap_adapter *na, int onoff)
 		return 0;
 	}
 	if (onoff) {
-		vna->peer->peer_ref = 0;
-		netmap_adapter_put(na);
+		if (vna->peer->peer_ref) {
+			vna->peer->peer_ref = 0;
+			netmap_adapter_put(na);
+		}
 	} else {
-		netmap_adapter_get(na);
-		vna->peer->peer_ref = 1;
+		if (!vna->peer->peer_ref) {
+			netmap_adapter_get(na);
+			vna->peer->peer_ref = 1;
+		}
 	}
 
 	return 0;
