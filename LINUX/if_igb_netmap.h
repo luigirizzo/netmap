@@ -82,7 +82,7 @@ static inline void NM_WRITE_SRRCTL(struct igb_adapter *adapter, struct igb_ring 
 	u32 srrctl)
 {
 	struct e1000_hw *hw = &adapter->hw;
-	wr32(E1000_TDH(rxr->reg_idx), srrctl);
+	wr32(E1000_SRRCTL(rxr->reg_idx), srrctl);
 }
 #else
 #define NM_WRITE_RCTL(_adapter, _rxr, _rxdctl)	\
