@@ -14,3 +14,5 @@ diff --git a/common.mk b/common.mk
      echo "warning: but the signing key cannot be found. The module must" ; \\
      echo "warning: be signed manually using 'scripts/sign-file'." ;
 EOF
+
+sed -i -e 's|^#include <linux/auxiliary_bus\.h>|#include "linux/auxiliary_bus.h"|' *_client.h || true
