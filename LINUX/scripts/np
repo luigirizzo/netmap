@@ -378,7 +378,7 @@ function build-prep()
 	(
 		cd $dst
 		last=compiler-gcc.h
-		for i in $(seq 11); do
+		for i in $(seq 12); do
 			[ -e include/linux/compiler-gcc$i.h ] ||
 				ln -s $last include/linux/compiler-gcc$i.h
 			last=compiler-gcc$i.h
