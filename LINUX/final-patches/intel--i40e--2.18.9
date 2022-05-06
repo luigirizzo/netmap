@@ -1,0 +1,173 @@
+diff --git a/i40e/Makefile b/i40e/Makefile
+index 62220eb..6e5b009 100644
+--- a/i40e/Makefile
++++ b/i40e/Makefile
+@@ -10,9 +10,9 @@ ifneq ($(KERNELRELEASE),)
+ ccflags-y += -I$(src)
+ subdir-ccflags-y += -I$(src)
+ 
+-obj-m += i40e.o
++obj-m += i40e$(NETMAP_DRIVER_SUFFIX).o
+ 
+-i40e-y := i40e_main.o \
++i40e$(NETMAP_DRIVER_SUFFIX)-y := i40e_main.o \
+ 	i40e_ethtool.o \
+ 	i40e_xsk.o \
+ 	i40e_adminq.o \
+@@ -29,9 +29,9 @@ i40e-y := i40e_main.o \
+ 	i40e_client.o \
+ 	i40e_virtchnl_pf.o
+ 
+-i40e-$(CONFIG_DCB) += i40e_dcb.o i40e_dcb_nl.o
+-i40e-y += kcompat.o
+-i40e-y += kcompat_vfd.o
++i40e$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_DCB) += i40e_dcb.o i40e_dcb_nl.o
++i40e$(NETMAP_DRIVER_SUFFIX)-y += kcompat.o
++i40e$(NETMAP_DRIVER_SUFFIX)-y += kcompat_vfd.o
+ 
+ ifeq (${NEED_AUX_BUS},2)
+ obj-m += auxiliary.o
+@@ -41,7 +41,7 @@ endif
+ else	# ifneq($(KERNELRELEASE),)
+ # normal makefile
+ 
+-DRIVER := i40e
++DRIVER := i40e$(NETMAP_DRIVER_SUFFIX)
+ 
+ # If the user just wants to print the help output, don't include common.mk or
+ # perform any other checks. This ensures that running "make help" will always
+@@ -95,9 +95,12 @@ ccc: clean
+ 	@+$(call kernelbuild,modules,coccicheck MODE=report)
+ 
+ # Build manfiles
+-manfile:
++manfile: ../${DRIVER}.${MANSECTION}
+ 	@gzip -c ../${DRIVER}.${MANSECTION} > ${DRIVER}.${MANSECTION}.gz
+ 
++../${DRIVER}.${MANSECTION}:
++	touch $@
++
+ # Clean the module subdirectories
+ clean:
+ 	@+$(call kernelbuild,clean)
+diff --git a/i40e/i40e_main.c b/i40e/i40e_main.c
+index f19b701..d723387 100644
+--- a/i40e/i40e_main.c
++++ b/i40e/i40e_main.c
+@@ -161,6 +161,11 @@ bool i40e_is_l4mode_enabled(void)
+ 	return l4mode > L4_MODE_DISABLED;
+ }
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#define NETMAP_I40E_MAIN
++#include <i40e_netmap_linux.h>
++#endif
++
+ /**
+  * i40e_get_lump - find a lump of free generic resource
+  * @pf: board private structure
+@@ -4142,6 +4147,10 @@ static int i40e_configure_tx_ring(struct i40e_ring *ring)
+ 	/* cache tail off for easier writes later */
+ 	ring->tail = hw->hw_addr + I40E_QTX_TAIL(pf_q);
+ 
++#ifdef DEV_NETMAP
++	i40e_netmap_configure_tx_ring(ring);
++#endif /* DEV_NETMAP */
++
+ 	return 0;
+ }
+ 
+@@ -4271,6 +4280,10 @@ static int i40e_configure_rx_ring(struct i40e_ring *ring)
+ 	/* set the prefena field to 1 because the manual says to */
+ 	rx_ctx.prefena = 1;
+ 
++#ifdef DEV_NETMAP
++	i40e_netmap_preconfigure_rx_ring(ring, &rx_ctx);
++#endif /* DEV_NETMAP */
++
+ 	/* clear the context in the HMC */
+ 	err = i40e_clear_lan_rx_queue_context(hw, pf_q);
+ 	if (err) {
+@@ -4299,6 +4312,11 @@ static int i40e_configure_rx_ring(struct i40e_ring *ring)
+ 	ring->tail = hw->hw_addr + I40E_QRX_TAIL(pf_q);
+ 	writel(0, ring->tail);
+ 
++#ifdef DEV_NETMAP
++	if (i40e_netmap_configure_rx_ring(ring))
++		return 0;
++#endif /* DEV_NETMAP */
++
+ #ifdef HAVE_AF_XDP_ZC_SUPPORT
+ #ifdef HAVE_MEM_TYPE_XSK_BUFF_POOL
+ #ifdef HAVE_NETDEV_BPF_XSK_POOL
+@@ -15595,6 +15613,12 @@ int i40e_vsi_release(struct i40e_vsi *vsi)
+ 	}
+ 
+ 	set_bit(__I40E_VSI_RELEASING, vsi->state);
++
++#ifdef DEV_NETMAP
++	if (vsi->netdev_registered)
++		netmap_detach(vsi->netdev);
++#endif
++
+ 	uplink_seid = vsi->uplink_seid;
+ 	if (vsi->type != I40E_VSI_SRIOV) {
+ 		if (vsi->netdev_registered) {
+@@ -15988,6 +16012,12 @@ struct i40e_vsi *i40e_vsi_setup(struct i40e_pf *pf, u8 type,
+ 	    (vsi->type == I40E_VSI_VMDQ2)) {
+ 		ret = i40e_vsi_config_rss(vsi);
+ 	}
++
++#ifdef DEV_NETMAP
++	if (vsi->netdev_registered)
++		i40e_netmap_attach(vsi);
++#endif
++
+ 	return vsi;
+ 
+ err_rings:
+diff --git a/i40e/i40e_txrx.c b/i40e/i40e_txrx.c
+index cbfc1a1..2d0646e 100644
+--- a/i40e/i40e_txrx.c
++++ b/i40e/i40e_txrx.c
+@@ -13,6 +13,10 @@
+ #include "i40e_xsk.h"
+ #endif /* HAVE_AF_XDP_ZC_SUPPORT */
+ 
++#if defined(CONFIG_NETMAP) || defined (CONFIG_NETMAP_MODULE)
++#include <i40e_netmap_linux.h>
++#endif /* DEV_NETMAP */
++
+ #define I40E_TXD_CMD (I40E_TX_DESC_CMD_EOP | I40E_TX_DESC_CMD_RS)
+ /**
+  * i40e_fdir - Generate a Flow Director descriptor based on fdata
+@@ -977,6 +981,11 @@ static bool i40e_clean_tx_irq(struct i40e_vsi *vsi,
+ 	unsigned int total_bytes = 0, total_packets = 0;
+ 	unsigned int budget = vsi->work_limit;
+ 
++#ifdef DEV_NETMAP
++	if (tx_ring->netdev && netmap_tx_irq(tx_ring->netdev, tx_ring->queue_index) != NM_IRQ_PASS)
++		return true;
++#endif /* DEV_NETMAP */
++
+ 	tx_buf = &tx_ring->tx_bi[i];
+ 	tx_desc = I40E_TX_DESC(tx_ring, i);
+ 	i -= tx_ring->count;
+@@ -2908,7 +2917,17 @@ static int i40e_clean_rx_irq(struct i40e_ring *rx_ring, int budget)
+ 	struct xdp_buff xdp;
+ 	u16 tpid;
+ 
++#ifdef DEV_NETMAP
++	if (rx_ring->netdev) {
++		int dummy, nm_irq;
++		nm_irq = netmap_rx_irq(rx_ring->netdev, rx_ring->queue_index, &dummy);
++		if (nm_irq != NM_IRQ_PASS) {
++			return (nm_irq == NM_IRQ_COMPLETED) ? 1 : budget;
++		}
++	}
++#endif /* DEV_NETMAP */
+ #ifdef HAVE_XDP_BUFF_FRAME_SZ
++
+ #if (PAGE_SIZE < 8192)
+ 	xdp.frame_sz = i40e_rx_frame_truesize(rx_ring, 0);
+ #endif

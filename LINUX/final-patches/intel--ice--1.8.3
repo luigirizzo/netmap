@@ -1,0 +1,215 @@
+diff --git a/ice/Makefile b/ice/Makefile
+index 789a908..cdb3394 100644
+--- a/ice/Makefile
++++ b/ice/Makefile
+@@ -26,9 +26,9 @@ ifneq ($(KERNELRELEASE),)
+ ccflags-y += -I$(src)
+ subdir-ccflags-y += -I$(src)
+ 
+-obj-m += ice.o
++obj-m += ice$(NETMAP_DRIVER_SUFFIX).o
+ 
+-ice-y := ice_main.o	\
++ice$(NETMAP_DRIVER_SUFFIX)-y := ice_main.o	\
+ 	 ice_controlq.o	\
+ 	 ice_common.o	\
+ 	 ice_nvm.o	\
+@@ -57,32 +57,33 @@ ice-y := ice_main.o	\
+ 	 ice_fwlog.o		\
+ 	 ice_ieps.o		\
+ 	 ice_ethtool.o
+-ice-$(CONFIG_NET_DEVLINK:m=y) += ice_devlink.o ice_fw_update.o
+-ice-$(CONFIG_NET_DEVLINK:m=y) += ice_eswitch.o ice_repr.o
+-ice-y += ice_idc.o
+-ice-$(CONFIG_DEBUG_FS) += ice_debugfs.o
+-ice-$(CONFIG_PCI_IOV) += ice_virtchnl_allowlist.o
+-ice-$(CONFIG_PCI_IOV) += ice_dcf.o
+-ice-$(CONFIG_PCI_IOV) += ice_virtchnl_fdir.o
+-ice-$(CONFIG_PCI_IOV) +=	\
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_NET_DEVLINK:m=y) += ice_devlink.o ice_fw_update.o
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_NET_DEVLINK:m=y) += ice_eswitch.o ice_repr.o
++ice$(NETMAP_DRIVER_SUFFIX)-y += ice_idc.o
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_DEBUG_FS) += ice_debugfs.o
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_PCI_IOV) += ice_virtchnl_allowlist.o
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_PCI_IOV) += ice_dcf.o
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_PCI_IOV) += ice_virtchnl_fdir.o
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_PCI_IOV) +=	\
+ 	ice_sriov.o		\
+ 	ice_vf_mbx.o		\
+ 	ice_vf_vsi_vlan_ops.o	\
+ 	ice_vf_adq.o		\
+ 	ice_virtchnl.o		\
+ 	ice_vf_lib.o
+-ice-$(CONFIG_PTP_1588_CLOCK:m=y) += ice_ptp.o ice_ptp_hw.o
+-ice-$(CONFIG_DCB) += ice_dcb.o ice_dcb_nl.o ice_dcb_lib.o
+-ice-$(CONFIG_RFS_ACCEL) += ice_arfs.o
+-ice-$(CONFIG_XDP_SOCKETS) += ice_xsk.o
+-ice-y += kcompat.o
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_PTP_1588_CLOCK:m=y) += ice_ptp.o ice_ptp_hw.o
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_DCB) += ice_dcb.o ice_dcb_nl.o ice_dcb_lib.o
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_RFS_ACCEL) += ice_arfs.o
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_RFS_ACCEL) += ice_arfs.o
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_XDP_SOCKETS) += ice_xsk.o
++ice$(NETMAP_DRIVER_SUFFIX)-y += kcompat.o
+ # Use kcompat pldmfw.c if kernel does not provide CONFIG_PLDMFW
+ ifndef CONFIG_PLDMFW
+-ice-y += kcompat_pldmfw.o
++ice$(NETMAP_DRIVER_SUFFIX)-y += kcompat_pldmfw.o
+ endif
+ # Use kcompat DIMLIB if kernel doesn't provide it
+ ifndef CONFIG_DIMLIB
+-ice-y += kcompat_dim.o kcompat_net_dim.o
++ice$(NETMAP_DRIVER_SUFFIX)-y += kcompat_dim.o kcompat_net_dim.o
+ endif
+ 
+ ifeq (${NEED_AUX_BUS},2)
+@@ -92,7 +93,7 @@ endif
+ else	# ifneq($(KERNELRELEASE),)
+ # normal makefile
+ 
+-DRIVER := ice
++DRIVER := ice$(NETMAP_DRIVER_SUFFIX)
+ 
+ COMMON_MK ?= $(wildcard common.mk)
+ ifeq (${COMMON_MK},)
+@@ -119,7 +120,7 @@ endif
+ 
+ all:
+ 	+$(call kernelbuild,modules)
+-	@gzip -c ../${DRIVER}.${MANSECTION} > ${DRIVER}.${MANSECTION}.gz
++	##@gzip -c ../${DRIVER}.${MANSECTION} > ${DRIVER}.${MANSECTION}.gz
+ ifneq ($(wildcard lttng),)
+ 	$(MAKE) -C lttng
+ endif
+diff --git a/ice/ice_base.c b/ice/ice_base.c
+index adaaa84..cb29c06 100644
+--- a/ice/ice_base.c
++++ b/ice/ice_base.c
+@@ -6,6 +6,11 @@
+ #include "ice_dcb_lib.h"
+ #include "ice_sriov.h"
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#define NETMAP_ICE_BASE
++#include <ice_netmap_linux.h>
++#endif
++
+ /**
+  * __ice_vsi_get_qs_contig - Assign a contiguous chunk of queues to VSI
+  * @qs_cfg: gathered variables needed for PF->VSI queues assignment
+@@ -459,6 +464,10 @@ static int ice_setup_rx_ctx(struct ice_ring *ring)
+ 	/* Rx queue threshold in units of 64 */
+ 	rlan_ctx.lrxqthresh = 1;
+ 
++#ifdef DEV_NETMAP
++    ice_netmap_preconfigure_rx_ring(ring, &rlan_ctx);
++#endif /* DEV_NETMAP */
++
+ 	/* Enable Flexible Descriptors in the queue context which
+ 	 * allows this driver to select a specific receive descriptor format
+ 	 * increasing context priority to pick up profile ID; default is 0x01;
+@@ -615,6 +624,11 @@ int ice_vsi_cfg_rxq(struct ice_ring *ring)
+ 		return 0;
+ 	}
+ #endif /* HAVE_AF_XDP_ZC_SUPPORT */
++    
++#ifdef DEV_NETMAP
++    if (ice_netmap_configure_rx_ring(ring))
++        return 0;
++#endif /* DEV_NETMAP */
+ 
+ 	ice_alloc_rx_bufs(ring, num_bufs);
+ 
+@@ -885,6 +899,11 @@ ice_vsi_cfg_txq(struct ice_vsi *vsi, struct ice_ring *ring,
+ 	txq = &qg_buf->txqs[0];
+ 	if (pf_q == le16_to_cpu(txq->txq_id))
+ 		ring->txq_teid = le32_to_cpu(txq->q_teid);
++    
++#ifdef DEV_NETMAP
++    ice_netmap_configure_tx_ring(ring);
++#endif /* DEV_NETMAP */
++
+ 
+ 	return 0;
+ }
+diff --git a/ice/ice_lib.c b/ice/ice_lib.c
+index 034a064..d8d3ef9 100644
+--- a/ice/ice_lib.c
++++ b/ice/ice_lib.c
+@@ -10,6 +10,12 @@
+ #include "ice_vsi_vlan_ops.h"
+ #include "ice_irq.h"
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#define NETMAP_ICE_LIB
++#include <ice_netmap_linux.h>
++#endif
++
++
+ /**
+  * ice_vsi_type_str - maps VSI type enum to string equivalents
+  * @vsi_type: VSI type enum
+@@ -2807,6 +2813,10 @@ ice_vsi_setup(struct ice_pf *pf, struct ice_port_info *pi,
+ 	if (!vsi->agg_node)
+ 		ice_set_agg_vsi(vsi);
+ 
++#ifdef DEV_NETMAP
++    ice_netmap_attach(vsi);
++#endif
++
+ 	return vsi;
+ 
+ unroll_clear_rings:
+@@ -3155,6 +3165,9 @@ int ice_vsi_release(struct ice_vsi *vsi)
+ 	 */
+ 	if (vsi->netdev && !ice_is_reset_in_progress(pf->state) &&
+ 	    (test_bit(ICE_VSI_NETDEV_REGISTERED, vsi->state))) {
++#ifdef DEV_NETMAP
++        netmap_detach(vsi->netdev);
++#endif
+ 		unregister_netdev(vsi->netdev);
+ 		clear_bit(ICE_VSI_NETDEV_REGISTERED, vsi->state);
+ 
+diff --git a/ice/ice_txrx.c b/ice/ice_txrx.c
+index 68e659d..0bdc49b 100644
+--- a/ice/ice_txrx.c
++++ b/ice/ice_txrx.c
+@@ -30,6 +30,10 @@
+ #define FDIR_DESC_RXDID 0x40
+ #define ICE_FDIR_CLEAN_DELAY 10
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#include <ice_netmap_linux.h>
++#endif
++
+ /**
+  * ice_prgm_fdir_fltr - Program a Flow Director filter
+  * @vsi: VSI to send dummy packet
+@@ -227,6 +231,10 @@ static bool ice_clean_tx_irq(struct ice_ring *tx_ring, int napi_budget)
+ 	s16 i = tx_ring->next_to_clean;
+ 	struct ice_tx_desc *tx_desc;
+ 	struct ice_tx_buf *tx_buf;
++#ifdef DEV_NETMAP
++    if (tx_ring->netdev && netmap_tx_irq(tx_ring->netdev, tx_ring->q_index) != NM_IRQ_PASS)
++        return true;
++#endif /* DEV_NETMAP */
+ 
+ 	/* get the bql data ready */
+ #ifdef HAVE_XDP_SUPPORT
+@@ -412,6 +420,16 @@ void ice_clean_rx_ring(struct ice_ring *rx_ring)
+ 	if (!rx_ring->rx_buf)
+ 		return;
+ 
++#ifdef DEV_NETMAP
++    if (rx_ring->netdev) {
++        int dummy, nm_irq;
++        nm_irq = netmap_rx_irq(rx_ring->netdev, rx_ring->q_index, &dummy);
++        if (nm_irq != NM_IRQ_PASS) {
++            return;
++        }
++    }
++#endif /* DEV_NETMAP */
++
+ #ifdef HAVE_AF_XDP_ZC_SUPPORT
+ 	if (rx_ring->xsk_pool) {
+ 		ice_xsk_clean_rx_ring(rx_ring);
