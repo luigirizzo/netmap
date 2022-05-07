@@ -15,4 +15,7 @@ diff --git a/common.mk b/common.mk
      echo "warning: be signed manually using 'scripts/sign-file'." ;
 EOF
 
-sed -i -e 's|^#include <linux/auxiliary_bus\.h>|#include "linux/auxiliary_bus.h"|' *_client.h || true
+if ! [ -e "@KSRC@/include/linux/auxiliary_bus.h" ]
+then
+	sed -i -e 's|^#include <linux/auxiliary_bus\.h>|#include "linux/auxiliary_bus.h"|' *_client.h || true
+fi

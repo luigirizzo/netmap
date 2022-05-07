@@ -817,6 +817,8 @@ for dv in $(echo "$versions" | sed 's/,/ /g'); do
 done
 
 replace_vars $SRCDIR/default-config.mak.in_ > default-config.mak
+replace_vars $SRCDIR/intel-fix.sh_ > intel-fix.sh
+chmod +x intel-fix.sh
 
 ###############################################################
 # Makefile creation
