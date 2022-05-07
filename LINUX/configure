@@ -805,6 +805,42 @@ EOF
 fi
 lin_ver=$(awk '/LINUX_VERSION_CODE/ { printf "%03x%02x", $3/256, $3%256}' "$version_hdr")
 
+#################################################
+# preliminary build tests
+#################################################
+
+reset_tests
+
+broken_buildsystem() {
+	error <<EOF
+It looks like we are not able to build kernel modules for the current
+configuration. Please check 'config.log' for possible clues.
+EOF
+}
+
+  add_test true broken_buildsystem < /dev/null
+
+DISABLED_WARNINGS="unused-but-set-variable attributes packed-not-aligned \
+	stringop-truncation missing-attributes format-truncation \
+	maybe-uninitialized unused-variable unused-label \
+	implicit-fallthrough"
+REC_DISABLED_WARNINGS=
+disable_warning() {
+	REC_DISABLED_WARNINGS="$1 $REC_DISABLED_WARNINGS"
+}
+
+i=1
+for w in $DISABLED_WARNINGS; do
+	add_named_test "__warn__$i" "disable_warning $w" < /dev/null
+	echo "CFLAGS___warn__$i.o = -Wno-error=$w" >> $TMPDIR/extra.mk
+	i=$(($i+1))
+done
+
+  message " NOTE  " <<EOF
+Running some preliminary tests to customize the build environment.
+EOF
+run_preliminary_tests
+
 # create the versions file
 rm -f extdrv-versions.mak
 for dv in $(echo "$versions" | sed 's/,/ /g'); do
@@ -985,42 +1021,6 @@ done
 # update the subsets again since the above checks
 # may have disabled some driver
 update_drivers
-
-#################################################
-# preliminary build tests
-#################################################
-
-reset_tests
-
-broken_buildsystem() {
-	error <<EOF
-It looks like we are not able to build kernel modules for the current
-configuration. Please check 'config.log' for possible clues.
-EOF
-}
-
-  add_test true broken_buildsystem < /dev/null
-
-DISABLED_WARNINGS="unused-but-set-variable attributes packed-not-aligned \
-	stringop-truncation missing-attributes format-truncation \
-	maybe-uninitialized unused-variable unused-label \
-	implicit-fallthrough"
-REC_DISABLED_WARNINGS=
-disable_warning() {
-	REC_DISABLED_WARNINGS="$1 $REC_DISABLED_WARNINGS"
-}
-
-i=1
-for w in $DISABLED_WARNINGS; do
-	add_named_test "__warn__$i" "disable_warning $w" < /dev/null
-	echo "CFLAGS___warn__$i.o = -Wno-error=$w" >> $TMPDIR/extra.mk
-	i=$(($i+1))
-done
-
-  message " NOTE  " <<EOF
-Running some preliminary tests to customize the build environment.
-EOF
-run_preliminary_tests
 
 #################################################
 # create the config.h file
