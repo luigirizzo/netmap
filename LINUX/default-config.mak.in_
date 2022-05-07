@@ -78,6 +78,7 @@ endef
 e1000e@cflags := -fno-pie
 igb@cflags := -DDISABLE_PACKET_SPLIT -fno-pie
 ixgbe@cflags := @REC_DISABLED_WARNINGS@
+i40e@cflags := @REC_DISABLED_WARNINGS@
 igb@prepare := $(if $(filter $(igb@v),5.3.5.61 5.3.6 5.4.6 5.5.2),@BUILDDIR@/intel-fix.sh igb,)
 e1000e@prepare := $(if $(filter $(e1000e@v),3.8.4),@BUILDDIR@/intel-fix.sh e1000e,)
 ixgbevf@prepare := $(if $(filter $(ixgbevf@v),4.7.1 4.8.1 4.9.3 4.10.2 4.11.1),@BUILDDIR@/intel-fix.sh ixgbevf,)
