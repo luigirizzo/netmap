@@ -62,6 +62,7 @@ e1000_netmap_reg(struct netmap_adapter *na, int onoff)
 	} else {
 		nm_clear_native_flags(na);
 	}
+	netmap_krings_mode_commit(na, onoff);
 	if (netif_running(adapter->netdev))
 		e1000_up(adapter);
 	else
