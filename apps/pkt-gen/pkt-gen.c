@@ -1547,6 +1547,11 @@ pong_body(void *data)
 				dpkt[3] = spkt[0];
 				dpkt[4] = spkt[1];
 				dpkt[5] = spkt[2];
+				/* swap source and destination IPv4 */
+				dpkt[13] = spkt[15];
+				dpkt[14] = spkt[16];
+				dpkt[15] = spkt[13];
+				dpkt[16] = spkt[14];
 				txring->slot[txhead].len = slot->len;
 				txhead = nm_ring_next(txring, txhead);
 				txavail--;
