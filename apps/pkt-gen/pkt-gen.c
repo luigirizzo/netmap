@@ -1557,7 +1557,7 @@ pong_body(void *data)
 				dpkt[4] = spkt[1];
 				dpkt[5] = spkt[2];
 				/* swap source and destination IPv4 */
-				if (ntohs(spkt[6]) & ETHERTYPE_IP) {
+				if (spkt[6] == htons(ETHERTYPE_IP)) {
 					dpkt[13] = spkt[15];
 					dpkt[14] = spkt[16];
 					dpkt[15] = spkt[13];
