@@ -17,9 +17,10 @@ To learn about netmap, you can use the following resources:
 
 This repository contains source code (BSD-Copyright) for FreeBSD, Linux and
 Windows.
-Note that recent FreeBSD distributions (>= 10.x) already include both
-Netmap and VALE.
-
+Netmap, VALE and related applications are already included in FreeBSD
+since version 10.x. FreeBSD users should use the code included in the
+FreeBSD src tree rather than the one in this repository, although the two
+codebases are mostly aligned.
 
 ## Why should I use netmap?
 
@@ -89,8 +90,9 @@ by adding a `dev netmap` line, and rebuilding the kernel.
 Alternatively, you can build standalone modules (netmap, ixgbe, em, lem,
 re, igb, ...).
 
-Example applications are available in the `apps/` directory in this
-repository, or in `src/tools/tools/netmap/` in the FreeBSD source tree.
+Linux users can find the netmap example applications in the `apps/`
+directory in this repository. FreeBSD users will find the applications
+in `src/tools/tools/netmap/` within the FreeBSD src tree.
 
 
 ### Linux
