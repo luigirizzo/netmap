@@ -90,8 +90,7 @@ by adding a `dev netmap` line, and rebuilding the kernel.
 Alternatively, you can build standalone modules (netmap, ixgbe, em, lem,
 re, igb, ...).
 
-Linux users can find the netmap example applications in the `apps/`
-directory in this repository. FreeBSD users will find the applications
+FreeBSD users will find the netmap example applications
 in `src/tools/tools/netmap/` within the FreeBSD src tree.
 
 
@@ -107,6 +106,9 @@ The sources for e1000e, igb, ixgbe and i40e will be downloaded
 from the Intel e1000 project on sourceforce.
 If you need the netmap enabled drivers for e1000, veth, forcedeth,
 virtio-net or r8169 you will also need the full kernel sources.
+
+Linux users can find the netmap example applications in the `apps/`
+directory in this repository.
 
 #### Step 1
 
