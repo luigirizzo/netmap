@@ -4,19 +4,6 @@
 
 extern int ix_crcstrip;
 
-#ifdef NETMAP_LINUX_ICE_PTR_ARRAY
-#define NM_ICE_TX_RING(a, r)		((a)->tx_rings[(r)])
-#define NM_ICE_RX_RING(a, r)		((a)->rx_rings[(r)])
-#else
-#define NM_ICE_TX_RING(a, r)		(&(a)->tx_rings[(r)])
-#define NM_ICE_RX_RING(a, r)		(&(a)->rx_rings[(r)])
-#endif
-#ifdef NETMAP_LINUX_ICE_PTR_STATE
-#define NM_ICE_STATE(pf)		(&(pf)->state)
-#else
-#define NM_ICE_STATE(pf)		((pf)->state)
-#endif
-
 #ifdef NETMAP_ICE_LIB
 
 /*
@@ -66,7 +53,7 @@ ice_netmap_txsync(struct netmap_kring *kring, int flags)
 	if (!netif_carrier_ok(ifp))
 		return 0;
 
-	txr = NM_ICE_TX_RING(vsi, kring->ring_id);
+	txr = vsi->tx_rings[kring->ring_id];
 	if (unlikely(!txr || !txr->desc)) {
 		nm_prlim(1, "ring %s is missing (txr=%p)", kring->name, txr);
 		return ENXIO;
@@ -232,7 +219,7 @@ ice_netmap_rxsync(struct netmap_kring *kring, int flags)
 	if (!netif_running(ifp))
 		return 0;
 
-	rxr = NM_ICE_RX_RING(vsi, kring->ring_id);
+	rxr = vsi->rx_rings[kring->ring_id];
 	if (unlikely(!rxr || !rxr->desc)) {
 		nm_prlim(1, "ring %s is missing (rxr=%p)", kring->name, rxr);
 		return ENXIO;
@@ -378,7 +365,7 @@ ice_netmap_reg(struct netmap_adapter *na, int onoff)
 	struct ice_pf   *pf = (struct ice_pf *)vsi->back;
 	bool was_running;
 
-	while (test_and_set_bit(ICE_CFG_BUSY, NM_ICE_STATE(pf)))
+	while (test_and_set_bit(ICE_CFG_BUSY, pf->state))
 			usleep_range(1000, 2000);
 
 	if ( (was_running = netif_running(vsi->netdev)) )
@@ -396,7 +383,7 @@ ice_netmap_reg(struct netmap_adapter *na, int onoff)
 	}
 	//set_crcstrip(&adapter->hw, onoff); // XXX why twice ?
 
-	clear_bit(ICE_CFG_BUSY, NM_ICE_STATE(pf));
+	clear_bit(ICE_CFG_BUSY, pf->state);
 
 	return 0;
 }
@@ -454,10 +441,10 @@ ice_netmap_attach(struct ice_vsi *vsi)
 	na.ifp = vsi->netdev;
 	na.pdev = &vsi->back->pdev->dev;
 	na.na_flags = NAF_MOREFRAG | NAF_OFFSETS;
-	na.num_tx_desc = NM_ICE_TX_RING(vsi, 0)->count;
-	na.num_rx_desc = NM_ICE_RX_RING(vsi, 0)->count;
+	na.num_tx_desc = vsi->tx_rings[0]->count;
+	na.num_rx_desc = vsi->rx_rings[0]->count;
 	na.num_tx_rings = vsi->num_txq;
-    na.num_rx_rings = vsi->num_rxq;
+	na.num_rx_rings = vsi->num_rxq;
 	na.rx_buf_maxsize = vsi->rx_buf_len;
 	na.nm_txsync = ice_netmap_txsync;
 	na.nm_rxsync = ice_netmap_rxsync;
