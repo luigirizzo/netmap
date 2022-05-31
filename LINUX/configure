@@ -2271,28 +2271,6 @@ EOF
 
   fi # virtio-net
 
-  if drv enabled ice; then
-    add_test 'define ICE_PTR_ARRAY' <<EOF
-  	#include "ice/ice.h"
-
-  	struct ice_ring *
-  	dummy(struct ice_vsi *vsi) {
-  		return vsi->tx_rings[0];
-  	}
-EOF
-
-   add_test 'define ICE_PTR_STATE' <<EOF
-   	#include "ice/ice.h"
-	#include <linux/bitops.h>
-	#pragma GCC diagnostic error "-Wincompatible-pointer-types"
-
-	int
-	dummy(struct ice_pf *pf) {
-		return test_and_set_bit(1, &pf->state);
-	}
-EOF
-  fi # ice
-
   if drv enabled i40e; then
     add_test 'define I40E_PTR_ARRAY' <<EOF
   	#include "i40e/i40e.h"
