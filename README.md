@@ -149,7 +149,9 @@ command above. The new drivers will then be called `e1000e-netmap`,
 ### Windows
 
 Netmap has been ported to Windows in summer 2015 by Alessio Faina as part of
-his Master thesis. Please look [here](WINDOWS/README.txt) for details.
+his Master thesis. You may take a look [here](WINDOWS/README.txt) for details,
+but please be aware that the port has been left behind for years, and is
+currently unmantained.
 
 ## Applications
 
