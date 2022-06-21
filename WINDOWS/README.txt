@@ -1,6 +1,7 @@
 **************************************************************
-DISCLAIMER: This documentation is currently outdated.
-            It is going to be updated soon.
+DISCLAIMER: The Windows port of netmap is currently unmantained.  Not even
+compilation is guaranteed.  Moreover, it is know to contain security-critcal
+bugs.
 **************************************************************
 
 This directory contains the Windows version of netmap, developed by
