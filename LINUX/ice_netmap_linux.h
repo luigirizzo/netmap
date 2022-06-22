@@ -21,13 +21,6 @@ extern int ix_crcstrip;
  * methods should be handled by the individual drivers.
  */
 
-static inline u_int
-ice_netmap_read_hwtail(void *base, int nslots)
-{
-	struct ice_tx_desc *desc = base;
-	return le32toh(*(volatile __le32 *)&desc[nslots]);
-}
-
 int
 ice_netmap_txsync(struct netmap_kring *kring, int flags)
 {
@@ -43,7 +36,7 @@ ice_netmap_txsync(struct netmap_kring *kring, int flags)
 	 * interrupts on every tx packet are expensive so request
 	 * them every half ring, or where NS_REPORT is set
 	 */
-	u_int report_frequency = kring->nkr_num_slots >> 1;
+	//u_int report_frequency = kring->nkr_num_slots >> 1;
 
 	/* device-specific */
 	struct ice_netdev_priv *np = netdev_priv(ifp);
@@ -121,12 +114,13 @@ ice_netmap_txsync(struct netmap_kring *kring, int flags)
 			if (!(slot->flags & NS_MOREFRAG)) {
 				hw_flags |= ((u64)(ICE_TX_DESC_CMD_EOP) <<
 						ICE_TXD_QW1_CMD_S);
-				if (slot->flags & NS_REPORT || nic_i == 0 ||
-						nic_i == report_frequency) {
-					hw_flags |= ((u64)ICE_TX_DESC_CMD_RS <<
-							ICE_TXD_QW1_CMD_S);
-				}
+				//if (slot->flags & NS_REPORT || nic_i == 0 ||
+				//		nic_i == report_frequency) {
+				//	hw_flags |= ((u64)ICE_TX_DESC_CMD_RS <<
+				//			ICE_TXD_QW1_CMD_S);
+				//}
 			}
+			hw_flags |= ((u64)ICE_TX_DESC_CMD_RS << ICE_TXD_QW1_CMD_S);
 			if (slot->flags & NS_BUF_CHANGED) {
 				/* buffer has changed, reload map */
 				//netmap_reload_map(na, txr->dma.tag, txbuf->map, addr);
@@ -161,23 +155,28 @@ ice_netmap_txsync(struct netmap_kring *kring, int flags)
 	/*
 	 * Second part: reclaim buffers for completed transmissions.
 	 */
-	nic_i = ice_netmap_read_hwtail(txr->desc, kring->nkr_num_slots);
-	if (nic_i != txr->next_to_clean) {
-		u_int tosync;
-		nm_i = netmap_idx_n2k(kring, nic_i);
+	nic_i = txr->next_to_clean;
+	nm_i = netmap_idx_n2k(kring, nic_i);
+	for (n = 0; ; n++) {
+		struct ice_tx_desc *curr = ICE_TX_DESC(txr, nic_i);
+		struct netmap_slot *slot;
+		uint64_t paddr;
 
-		/* some tx completed, increment avail */
+		if (!(curr->cmd_type_offset_bsz &
+					cpu_to_le64(ICE_TX_DESC_DTYPE_DESC_DONE)))
+			break;
+		curr->buf_addr = 0;
+		curr->cmd_type_offset_bsz = 0;
+		slot = &ring->slot[nm_i];
+		(void)PNMB_O(kring, slot, &paddr);
+		netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev,
+				&paddr, slot->len, NR_TX);
+
+		nm_i = nm_next(nm_i, lim);
+		nic_i = nm_next(nic_i, lim);
+	}
+	if (n) {
 		txr->next_to_clean = nic_i;
-		tosync = nm_next(kring->nr_hwtail, lim);
-		/* sync all buffers that we are returning to userspace */
-		for ( ; tosync != nm_i; tosync = nm_next(tosync, lim)) {
-			struct netmap_slot *slot = &ring->slot[tosync];
-			uint64_t paddr;
-			(void)PNMB_O(kring, slot, &paddr);
-
-			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev,
-					&paddr, slot->len, NR_TX);
-		}
 		kring->nr_hwtail = nm_prev(nm_i, lim);
 	}
 
@@ -274,9 +273,9 @@ ice_netmap_rxsync(struct netmap_kring *kring, int flags)
 			if ((staterr & (1<<ICE_RX_DESC_STATUS_DD_S)) == 0) {
 				break;
 			}
+			dma_rmb();
 			slot = ring->slot + nm_i;
-			slot->len = ((qword & ICE_RXD_QW1_LEN_PBUF_M)
-			    >> ICE_RXD_QW1_LEN_PBUF_S) - crclen;
+			slot->len = (le16_to_cpu(curr->wb.pkt_len) & ICE_RX_FLX_DESC_PKT_LEN_M) - crclen;
 
 			if (unlikely((staterr & (1<<ICE_RX_DESC_STATUS_EOF_S)) == 0 )) {
 				slot_flags = NS_MOREFRAG;
@@ -365,11 +364,14 @@ ice_netmap_reg(struct netmap_adapter *na, int onoff)
 	struct ice_pf   *pf = (struct ice_pf *)vsi->back;
 	bool was_running;
 
-	while (test_and_set_bit(ICE_CFG_BUSY, pf->state))
-			usleep_range(1000, 2000);
+	while (ice_is_reset_in_progress(pf->state)) {
+		usleep_range(1000, 2000);
+	}
 
-	if ( (was_running = netif_running(vsi->netdev)) )
+	if (!test_and_set_bit(ICE_VSI_DOWN, vsi->state)) {
+		was_running = true;
 		ice_down(vsi);
+	}
 
 	//set_crcstrip(&adapter->hw, onoff);
 	/* enable or disable flags and callbacks in na and ifp */
@@ -382,8 +384,6 @@ ice_netmap_reg(struct netmap_adapter *na, int onoff)
 		ice_up(vsi);
 	}
 	//set_crcstrip(&adapter->hw, onoff); // XXX why twice ?
-
-	clear_bit(ICE_CFG_BUSY, pf->state);
 
 	return 0;
 }
@@ -432,12 +432,18 @@ ice_netmap_config(struct netmap_adapter *na, struct nm_config_info *info)
  * operate in standard mode.
  */
 static void
-ice_netmap_attach(struct ice_vsi *vsi)
+ice_netmap_attach(struct ice_pf *pf)
 {
+	struct ice_vsi *vsi;
 	struct netmap_adapter na;
 
 	bzero(&na, sizeof(na));
 
+	vsi = ice_get_main_vsi(pf);
+	if (!vsi || !vsi->netdev) {
+		nm_prerr("null %s, attach failed", vsi ? "vsi->netdev" : "vsi");
+		return;
+	}
 	na.ifp = vsi->netdev;
 	na.pdev = &vsi->back->pdev->dev;
 	na.na_flags = NAF_MOREFRAG | NAF_OFFSETS;
@@ -452,6 +458,17 @@ ice_netmap_attach(struct ice_vsi *vsi)
 	na.nm_config = ice_netmap_config;
 	na.nm_bufcfg = ice_netmap_bufcfg;
 	netmap_attach(&na);
+}
+
+static void
+ice_netmap_detach(struct ice_pf *pf)
+{
+	struct ice_vsi *vsi;
+
+	vsi = ice_get_main_vsi(pf);
+	if (!vsi || !vsi->netdev)
+		return;
+	netmap_detach(vsi->netdev);
 }
 
 #endif // NETMAP_ICE_LIB

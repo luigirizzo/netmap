@@ -75,7 +75,7 @@ index a98dd4c..8b64fcc 100644
  	$(MAKE) -C lttng
  endif
 diff --git a/ice/ice_base.c b/ice/ice_base.c
-index 9f2320f..6e0adf4 100644
+index 9f2320f..9f9126a 100644
 --- a/ice/ice_base.c
 +++ b/ice/ice_base.c
 @@ -6,6 +6,11 @@
@@ -95,7 +95,7 @@ index 9f2320f..6e0adf4 100644
  	rlan_ctx.lrxqthresh = 1;
  
 +#ifdef DEV_NETMAP
-+    ice_netmap_preconfigure_rx_ring(ring, &rlan_ctx);
++	ice_netmap_preconfigure_rx_ring(ring, &rlan_ctx);
 +#endif /* DEV_NETMAP */
 +
  	/* Enable Flexible Descriptors in the queue context which
@@ -107,8 +107,8 @@ index 9f2320f..6e0adf4 100644
  #endif /* HAVE_AF_XDP_ZC_SUPPORT */
 +    
 +#ifdef DEV_NETMAP
-+    if (ice_netmap_configure_rx_ring(ring))
-+        return 0;
++	if (ice_netmap_configure_rx_ring(ring))
++		return 0;
 +#endif /* DEV_NETMAP */
  
  	ice_alloc_rx_bufs(ring, num_bufs);
@@ -119,19 +119,19 @@ index 9f2320f..6e0adf4 100644
  		ring->txq_teid = le32_to_cpu(txq->q_teid);
 +    
 +#ifdef DEV_NETMAP
-+    ice_netmap_configure_tx_ring(ring);
++	ice_netmap_configure_tx_ring(ring);
 +#endif /* DEV_NETMAP */
 +
  
  	return 0;
  }
-diff --git a/ice/ice_lib.c b/ice/ice_lib.c
-index 8899720..99687fe 100644
---- a/ice/ice_lib.c
-+++ b/ice/ice_lib.c
-@@ -9,6 +9,12 @@
- #include "ice_devlink.h"
- #include "ice_vsi_vlan_ops.h"
+diff --git a/ice/ice_main.c b/ice/ice_main.c
+index 97e754b..4eeb305 100644
+--- a/ice/ice_main.c
++++ b/ice/ice_main.c
+@@ -103,6 +103,12 @@ static unsigned long fwlog_events; /* no enabled events by default */
+ module_param(fwlog_events, ulong, 0644);
+ MODULE_PARM_DESC(fwlog_events, "FW events to log (32-bit mask)\n");
  
 +#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
 +#define NETMAP_ICE_LIB
@@ -139,32 +139,32 @@ index 8899720..99687fe 100644
 +#endif
 +
 +
- /**
-  * ice_vsi_type_str - maps VSI type enum to string equivalents
-  * @vsi_type: VSI type enum
-@@ -2790,6 +2796,10 @@ ice_vsi_setup(struct ice_pf *pf, struct ice_port_info *pi,
- 	if (!vsi->agg_node)
- 		ice_set_agg_vsi(vsi);
+ static struct workqueue_struct *ice_wq;
+ 
+ static const struct net_device_ops ice_netdev_recovery_ops;
+@@ -6169,6 +6175,9 @@ probe_done:
+ 		dev_warn(dev, "Aux drivers are not supported on this device\n");
+ 	}
  
 +#ifdef DEV_NETMAP
-+    ice_netmap_attach(vsi);
++	ice_netmap_attach(pf);
 +#endif
+ 	return 0;
+ 
+ 	/* Unwind non-managed device resources, etc. if something failed */
+@@ -6279,6 +6288,10 @@ static void ice_remove(struct pci_dev *pdev)
+ 	if (!pf)
+ 		return;
+ 
++#ifdef DEV_NETMAP
++	ice_netmap_detach(pf);
++#endif /* DEV_NETMAP */
 +
- 	return vsi;
- 
- unroll_clear_rings:
-@@ -3134,6 +3144,9 @@ int ice_vsi_release(struct ice_vsi *vsi)
- 	 */
- 	if (vsi->netdev && !ice_is_reset_in_progress(pf->state) &&
- 	    (test_bit(ICE_VSI_NETDEV_REGISTERED, vsi->state))) {
-+#ifdef DEV_NETMAP
-+        netmap_detach(vsi->netdev);
-+#endif
- 		unregister_netdev(vsi->netdev);
- 		clear_bit(ICE_VSI_NETDEV_REGISTERED, vsi->state);
- 
+ 	/* ICE_PREPPED_RECOVERY_MODE is set when the up and running
+ 	 * driver transitions to recovery mode. If this is not set
+ 	 * it means that the driver went into recovery mode on load.
 diff --git a/ice/ice_txrx.c b/ice/ice_txrx.c
-index 037cc5a..884df87 100644
+index 037cc5a..899ee4c 100644
 --- a/ice/ice_txrx.c
 +++ b/ice/ice_txrx.c
 @@ -30,6 +30,10 @@
@@ -189,20 +189,21 @@ index 037cc5a..884df87 100644
  
  	/* get the bql data ready */
  #ifdef HAVE_XDP_SUPPORT
-@@ -412,6 +420,16 @@ void ice_clean_rx_ring(struct ice_ring *rx_ring)
- 	if (!rx_ring->rx_buf)
- 		return;
+@@ -1481,6 +1489,17 @@ int ice_clean_rx_irq(struct ice_ring *rx_ring, int budget)
+ 	struct xdp_buff xdp;
+ 	bool failure;
  
 +#ifdef DEV_NETMAP
 +    if (rx_ring->netdev) {
 +        int dummy, nm_irq;
 +        nm_irq = netmap_rx_irq(rx_ring->netdev, rx_ring->q_index, &dummy);
 +        if (nm_irq != NM_IRQ_PASS) {
-+            return;
++            return 1;
 +        }
 +    }
 +#endif /* DEV_NETMAP */
 +
- #ifdef HAVE_AF_XDP_ZC_SUPPORT
- 	if (rx_ring->xsk_pool) {
- 		ice_xsk_clean_rx_ring(rx_ring);
++
+ #ifdef HAVE_XDP_SUPPORT
+ #ifdef HAVE_XDP_BUFF_RXQ
+ 	xdp.rxq = &rx_ring->xdp_rxq;
