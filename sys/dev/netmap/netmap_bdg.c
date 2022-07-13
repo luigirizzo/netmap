@@ -1657,7 +1657,7 @@ put_out:
  * On attach, it needs to provide a fake netmap_priv_d structure and
  * perform a netmap_do_regif() on the bwrap. This will put both the
  * bwrap and the hwna in netmap mode, with the netmap rings shared
- * and cross linked. Moroever, it will start intercepting interrupts
+ * and cross linked. Moreover, it will start intercepting interrupts
  * directed to hwna.
  */
 static int

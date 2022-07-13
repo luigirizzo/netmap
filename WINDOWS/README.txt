@@ -215,7 +215,7 @@ provide a similar one for the filter).
 
 To build the kernel modules we use the compiler from Visual Studio.
 
-For convenience, we have construted the "solution" file and the various
+For convenience, we have constructed the "solution" file and the various
 project files with VSC, and then manually cleaned up the .vcxprj files
 to remove the infinite copies of the same set of options generated
 by the GUI. The configurations include instructions to sign the drivers
