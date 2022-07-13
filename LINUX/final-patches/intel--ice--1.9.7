@@ -1,5 +1,5 @@
 diff --git a/ice/Makefile b/ice/Makefile
-index d94e327..76153d3 100644
+index d94e327..b930d52 100644
 --- a/ice/Makefile
 +++ b/ice/Makefile
 @@ -26,9 +26,9 @@ ifneq ($(KERNELRELEASE),)
@@ -79,6 +79,15 @@ index d94e327..76153d3 100644
  ifneq ($(wildcard lttng),)
  	$(MAKE) -C lttng
  endif
+@@ -176,7 +176,7 @@ ifneq (${DDP_PKG_ORIGIN},)
+ endif
+ 
+ mandocs_install: all
+-	install -D -m 644 ${DRIVER}.${MANSECTION}.gz ${INSTALL_MOD_PATH}/${MANDIR}/man${MANSECTION}/${DRIVER}.${MANSECTION}.gz
++	##install -D -m 644 ${DRIVER}.${MANSECTION}.gz ${INSTALL_MOD_PATH}/${MANDIR}/man${MANSECTION}/${DRIVER}.${MANSECTION}.gz
+ 
+ # After installing all the files, perform necessary work to ensure the system
+ # will use the new modules. This includes running depmod to update module
 diff --git a/ice/ice_base.c b/ice/ice_base.c
 index b43752e..f28e37d 100644
 --- a/ice/ice_base.c
