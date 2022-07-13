@@ -2406,7 +2406,7 @@ out:
 
 /* set the hardware buffer length in each one of the newly opened rings
  * (hwbuf_len field in the kring struct). The purpose it to select
- * the maximum supported input buffer lenght that will not cause writes
+ * the maximum supported input buffer length that will not cause writes
  * outside of the available space, even when offsets are in use.
  */
 static int
