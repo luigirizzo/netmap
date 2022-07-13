@@ -1091,9 +1091,17 @@ nm_os_generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *r
 	int error = EOPNOTSUPP;
 #ifdef NETMAP_LINUX_HAVE_GET_RINGPARAM
 	struct ethtool_ringparam rp;
+#if NETMAP_LINUX_HAVE_GET_RINGPARAM == extended
+	struct kernel_ethtool_ringparam ker;
+	struct netlink_ext_ack extack;
+#endif
 
 	if (ifp->ethtool_ops && ifp->ethtool_ops->get_ringparam) {
-		ifp->ethtool_ops->get_ringparam(ifp, &rp);
+		ifp->ethtool_ops->get_ringparam(ifp, &rp
+#if NETMAP_LINUX_HAVE_GET_RINGPARAM == extended
+				, &ker, &extack
+#endif
+				);
 		*tx = rp.tx_pending ? rp.tx_pending : rp.tx_max_pending;
 		*rx = rp.rx_pending ? rp.rx_pending : rp.rx_max_pending;
 		if (*rx < 3) {

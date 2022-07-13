@@ -1227,13 +1227,26 @@ EOF
 EOF
 
   # ethtool get_ringparam
-  add_test 'have GET_RINGPARAM' <<EOF
+  add_test 'define GET_RINGPARAM old' <<EOF
 	#include <linux/netdevice.h>
 	#include <linux/ethtool.h>
 
 	void
 	dummy(struct net_device *net, struct ethtool_ringparam *rp) {
 	        net->ethtool_ops->get_ringparam(net, rp);
+	}
+EOF
+
+  # ethtool extended get_ringparam
+  add_test 'define HAVE_GET_RINGPARAM extended' <<EOF
+	#include <linux/netdevice.h>
+	#include <linux/ethtool.h>
+
+	void
+	dummy(struct net_device *net, struct ethtool_ringparam *rp,
+		struct kernel_ethtool_ringparam *ker,
+		struct netlink_ext_ack *extack) {
+	        net->ethtool_ops->get_ringparam(net, rp, ker, extack);
 	}
 EOF
 
