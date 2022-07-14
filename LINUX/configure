@@ -1227,7 +1227,7 @@ EOF
 EOF
 
   # ethtool get_ringparam
-  add_test 'define GET_RINGPARAM old' <<EOF
+  add_test 'define GET_RINGPARAM 1' <<EOF
 	#include <linux/netdevice.h>
 	#include <linux/ethtool.h>
 
@@ -1238,7 +1238,7 @@ EOF
 EOF
 
   # ethtool extended get_ringparam
-  add_test 'define HAVE_GET_RINGPARAM extended' <<EOF
+  add_test 'define HAVE_GET_RINGPARAM 2' <<EOF
 	#include <linux/netdevice.h>
 	#include <linux/ethtool.h>
 
