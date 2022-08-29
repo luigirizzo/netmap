@@ -95,7 +95,7 @@ setop()
 
 # available subsystems
 subsystem_avail="vale pipe monitor generic ptnetmap sink \
-	extmem null"
+	extmem paste null"
 #enabled subsystems (bitfield)
 subsystem=0
 
@@ -324,6 +324,8 @@ Available options:
   --mod-name=		       netmap module name [$MODNAME]
   --enable-vale      	       enable the VALE switch
   --disable-vale      	       disable the VALE switch
+  --enable-paste      	       enable netmap API for kernel TCP/IP
+  --disable-paste      	       disable netmap API for kernel TCP/IP
   --enable-pipe      	       enable the netmap pipes
   --disable-pipe      	       disable the netmap pipes
   --enable-monitor   	       enable the nemtap monitors
@@ -1592,6 +1594,26 @@ EOF
 EOF
   done
 
+# page_to_virt
+  add_test 'have PAGE_TO_VIRT' <<EOF
+	#include <linux/mm.h>
+	void *
+	dummy(struct page *page) {
+		return page_to_virt(page);
+	}
+EOF
+
+  # arguments of callback of struct ubuf_info (either 2 (old) or 3)
+  add_test 'define UBUF_INFO_CALLBACK_3ARGS' <<EOF
+	#include <linux/skbuff.h>
+
+	void
+	dummy(struct ubuf_info *u)
+	{
+		u->callback(NULL, NULL, 1);
+	}
+EOF
+
 # check for third argument in qdisc enqueue callbacks
   add_test 'have QDISC_ENQUEUE_TOFREE' <<EOF
 	#include <net/sch_generic.h>
@@ -1619,6 +1641,48 @@ EOF
 	int
 	dummy(struct net_device_ops *ops, struct net_device *dev) {
 		return ops->ndo_change_mtu_rh74(dev, 0);
+	}
+EOF
+
+# check for kernel_sendpage_locked
+  add_test 'have KERNEL_SENDPAGE_LOCKED' <<EOF
+	#include <linux/net.h>
+
+	int
+	dummy(struct sock *sk) {
+		return kernel_sendpage_locked(sk, NULL, 0, 0, 0);
+	}
+EOF
+
+# check for netif_receive_skb_core
+  add_test 'have NETIF_RECEIVE_SKB_CORE' <<EOF
+	#include <linux/netdevice.h>
+
+	int
+	dummy(struct sk_buff *skb) {
+		return netif_receive_skb_core(skb);
+	}
+EOF
+
+  # arguments of skb_zcopy_set (either 2 or 3)
+  add_test 'define SKB_ZCOPY_SET_3ARGS' <<EOF
+	#include <linux/skbuff.h>
+
+	void
+	dummy(struct sk_buff *skb, struct ubuf_info *ui)
+	{
+		skb_zcopy_set(skb, ui, NULL);
+	}
+EOF
+
+  # arguments of skb_zcopy_set (either 2 or 3)
+  add_test 'have SKB_FRAG_OFF' <<EOF
+	#include <linux/skbuff.h>
+
+	unsigned int
+	dummy(struct sk_buff *skb)
+	{
+		return skb_frag_off(&skb_shinfo(skb)->frags[0]);
 	}
 EOF
 
@@ -1774,6 +1838,17 @@ EOF
 	int
 	dummy(struct Qdisc_ops *ops, struct netlink_ext_ack *extack) {
 		return ops->init(NULL, NULL, extack);
+	}
+EOF
+
+  # check for SO_TIMESTAMPING in sock
+  add_test 'have SO_TIMESTAMPING' <<EOF
+	#include <net/sock.h>
+	#include <net/ip.h>
+
+	void
+	dummy(struct sock *sk, struct ipcm_cookie *ipc) {
+		sock_tx_timestamp(sk, ipc->sockc.tsflags, &ipc->tx_flags);
 	}
 EOF
 

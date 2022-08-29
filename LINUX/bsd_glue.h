@@ -73,6 +73,10 @@
 #include <linux/page_ref.h>
 #endif /* NETMAP_LINUX_HAVE_PAGE_REF */
 
+#ifndef NETMAP_LINUX_HAVE_PAGE_TO_VIRT
+#define page_to_virt(x)	__va(PFN_PHYS(page_to_pfn(x)))
+#endif /* NETMAP_LINUX_HAVE_PAGE_TO_VIRT */
+
 #ifndef NETMAP_LINUX_HAVE_HRTIMER_MODE_REL
 #define HRTIMER_MODE_REL	HRTIMER_REL
 #endif
@@ -563,4 +567,89 @@ void netmap_bns_unregister(void);
 #define BIT_ULL(nr)	(1ULL << (nr))
 #endif /* !BIT_ULL */
 
+/*
+ * for PASTE
+ */
+#define curcpu         smp_processor_id()
+#define so_lock(_s)	lock_sock(_s)
+#define so_unlock(_s)	release_sock(_s)
+#define	SOCKBUF_LOCK(sb)
+#define	SOCKBUF_UNLOCK(sb)
+#define pause(_s, _v)		usleep_range((_v) * 1000, (_v) * 1000 + 5000)
+#define nm_os_sock_set_nocoalesce(_sb)
+
+static inline u_int
+intr_disable(void)
+{
+	local_bh_disable();
+	return 0;
+}
+
+static inline void
+intr_restore(u_int intr)
+{
+	local_bh_enable();
+}
+
+#define MBUF_L3_OFST(m)		skb_network_offset(m)
+#define MBUF_L4_OFST(m)		skb_transport_offset(m)
+#define MBUF_L3_HEADER(m)	skb_network_header(m)
+#define MBUF_L4_HEADER(m)	skb_transport_header(m)
+#define MBUF_HASNEXT(m)		skb_is_nonlinear(m)
+#define MBUF_FLATTEN(m)		skb_linearize(m)
+#define MBUF_DATA(m)		(m)->data
+#define MBUF_CSUM_DONE(m)	((m)->ip_summed = CHECKSUM_COMPLETE)
+
+#define NM_SOCK_T	struct sock
+#define SAVE_SOUPCALL(sk, soa) \
+	(soa)->save_soupcall = (sk)->sk_data_ready
+#define RESTORE_SOUPCALL(sk, soa) \
+	(sk)->sk_data_ready = (void *)(soa)->save_soupcall
+#define SAVE_SODTOR(sk, soa) \
+	(soa)->save_sodtor = (sk)->sk_destruct
+#define RESTORE_SODTOR(sk, soa) \
+	(sk)->sk_destruct = (void *)(soa)->save_sodtor
+#define SET_SOUPCALL(sk, f)	(sk)->sk_data_ready = (void *)f
+#define SET_SODTOR(sk, f)	(sk)->sk_destruct = (void *)f
+#define so_dtor sk_destruct
+#define MBUF_HDRLEN(m)			skb_headlen(m)
+
+/* NMCB() is only valid for mbuf populated by nm_os_build_mbuf() */
+#define NMCB(_m)		((struct nmcb *)(_m)->head)
+#define NMCB_EXT(_m, _i, _bs) \
+	NMCB_BUF(page_address(skb_frag_page(&skb_shinfo(_m)->frags[_i])) + \
+		 _bs * (skb_frag_off(&skb_shinfo(_m)->frags[_i]) / _bs))
+#define NMCB_BUF(_buf)		((struct nmcb *)(_buf))
+#define m_length(_m, _x)	(_m)->len
+
+struct nm_ubuf_info {
+	struct ubuf_info ubuf;
+};
+
+#define nmcb_kring(nmcb)	((struct netmap_kring *)(nmcb)->ui.ubuf.ctx)
+#define nmcb_slot(nmcb)	((struct netmap_slot *)(uintptr_t)(nmcb)->ui.ubuf.desc)
+#define nmcbw(cb, kring, slot)	do {\
+	(cb)->ui.ubuf.ctx = (kring);\
+	(cb)->ui.ubuf.desc = (uintptr_t)(slot);\
+} while (0)
+
+static inline struct pst_so_adapter *
+pst_so(NM_SOCK_T *sk)
+{
+	return (struct pst_so_adapter *)sk->sk_user_data;
+}
+
+ /* We overwrite sk->sk_cookie as it appear not to be used */
+static inline void
+pst_wso(struct pst_so_adapter *soa, NM_SOCK_T *sk)
+{
+	sk->sk_user_data = soa;
+}
+
+#ifndef NETMAP_LINUX_HAVE_NETIF_RECEIVE_SKB_CORE
+#define netif_receive_skb_core	netif_receive_skb
+#endif /* NETMAP_LINUX_HAVE_NETIF_RECEIVE_SKB_CORE */
+#ifndef NETMAP_LINUX_HAVE_SKB_FRAG_OFF
+#define skb_frag_off(_f)	(_f)->page_offset
+#endif /* NETMAP_LINUX_HAVE_NETIF_RECEIVE_SKB_CORE */
 #endif /* NETMAP_BSD_GLUE_H */
