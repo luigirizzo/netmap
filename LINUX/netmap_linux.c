@@ -1083,8 +1083,12 @@ nm_os_generic_set_features(struct netmap_generic_adapter *gna)
 }
 #endif /* WITH_GENERIC */
 
-/* Use ethtool to find the current NIC rings lengths, so that the netmap
-   rings can have the same lengths. */
+/*
+ * Use ethtool to find the current NIC rings lengths, so that the netmap
+ * rings can have the same lengths. If no ethtool command is available,
+ * or something fails, do not update the output arguments.
+ * The caller should initialize the output arguments with sane defaults.
+ */
 int
 nm_os_generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *rx)
 {
@@ -1095,6 +1099,7 @@ nm_os_generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *r
 	struct kernel_ethtool_ringparam ker;
 	struct netlink_ext_ack extack;
 #endif
+	unsigned int ntx, nrx;
 
 	if (ifp->ethtool_ops && ifp->ethtool_ops->get_ringparam) {
 		ifp->ethtool_ops->get_ringparam(ifp, &rp
@@ -1102,15 +1107,13 @@ nm_os_generic_find_num_desc(struct ifnet *ifp, unsigned int *tx, unsigned int *r
 				, &ker, &extack
 #endif
 				);
-		*tx = rp.tx_pending ? rp.tx_pending : rp.tx_max_pending;
-		*rx = rp.rx_pending ? rp.rx_pending : rp.rx_max_pending;
-		if (*rx < 3) {
-			nm_prerr("Invalid RX ring size %u, using default", *rx);
-			*rx = netmap_generic_ringsize;
+		ntx = rp.tx_pending ? rp.tx_pending : rp.tx_max_pending;
+		nrx = rp.rx_pending ? rp.rx_pending : rp.rx_max_pending;
+		if (nrx >= 3) {
+			*rx = nrx;
 		}
-		if (*tx < 3) {
-			nm_prerr("Invalid TX ring size %u, using default", *tx);
-			*tx = netmap_generic_ringsize;
+		if (ntx >= 3) {
+			*tx = ntx;
 		}
 		error = 0;
 	}
@@ -1156,13 +1159,17 @@ netmap_rings_config_get(struct netmap_adapter *na, struct nm_config_info *info)
 		error = ENXIO;
 		goto out;
 	}
-	error = nm_os_generic_find_num_desc(ifp, &info->num_tx_descs,
-						&info->num_rx_descs);
-	if (error)
-		goto out;
 	nm_os_generic_find_num_queues(ifp, &info->num_tx_rings,
 					&info->num_rx_rings);
 
+	/*
+	 * Start from what we already know and check for config
+	 * updates.
+	 */
+	info->num_tx_descs = na->num_tx_desc;
+	info->num_rx_descs = na->num_rx_desc;
+	nm_os_generic_find_num_desc(ifp, &info->num_tx_descs,
+					&info->num_rx_descs);
 out:
 	rtnl_unlock();
 
