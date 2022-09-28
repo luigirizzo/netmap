@@ -75,12 +75,12 @@ $(1)@v := $(if $($(1)@v),$($(1)@v),$(2))
 endef
 
 # set all the default versions (can be overridden by --select-version=)
-$(eval $(call default,ixgbe,5.3.8))
-$(eval $(call default,ixgbevf,4.3.2))
-$(eval $(call default,e1000e,3.4.0.2))
-$(eval $(call default,igb,5.3.5.20))
-$(eval $(call default,i40e,2.4.6))
-$(eval $(call default,ice,1.7.16))
+$(eval $(call default,ixgbe,5.15.2))
+$(eval $(call default,ixgbevf,4.15.1))
+$(eval $(call default,e1000e,3.8.7))
+$(eval $(call default,igb,5.10.2))
+$(eval $(call default,i40e,2.19.3))
+$(eval $(call default,ice,1.9.11))
 
 # some additional, driver-specific CFLAGS (used in the @build variable above) and fixes
 e1000e@cflags := -fno-pie
