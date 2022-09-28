@@ -232,7 +232,7 @@ decode_ipv6_n_hash(const struct ip6_hdr *ipv6h, uint8_t hash_split, uint8_t seed
 		const struct tcphdr *tcph = NULL;
 		const struct udphdr *udph = NULL;
 
-		switch(ntohs(ipv6h->ip6_ctlun.ip6_un1.ip6_un1_nxt)) {
+		switch(ipv6h->ip6_ctlun.ip6_un1.ip6_un1_nxt) {
 		case IPPROTO_TCP:
 			tcph = (const struct tcphdr *)(ipv6h + 1);
 			rc = sym_hash_fn(ntohl(saddr),
@@ -260,7 +260,7 @@ decode_ipv6_n_hash(const struct ip6_hdr *ipv6h, uint8_t hash_split, uint8_t seed
 		case IPPROTO_GRE:
 			rc = decode_gre_hash((const uint8_t *)(ipv6h + 1), hash_split, seed);
 			break;
-		case IPPROTO_ICMP:
+		case IPPROTO_ICMPV6:
 		case IPPROTO_ESP:
 		case IPPROTO_PIM:
 		case IPPROTO_IGMP:
