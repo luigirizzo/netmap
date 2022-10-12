@@ -362,7 +362,7 @@ ice_netmap_reg(struct netmap_adapter *na, int onoff)
 	struct ice_netdev_priv *np = netdev_priv(ifp);
 	struct ice_vsi  *vsi = np->vsi;
 	struct ice_pf   *pf = (struct ice_pf *)vsi->back;
-	bool was_running;
+	bool was_running = false;
 
 	while (ice_is_reset_in_progress(pf->state)) {
 		usleep_range(1000, 2000);
