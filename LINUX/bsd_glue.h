@@ -563,4 +563,9 @@ void netmap_bns_unregister(void);
 #define BIT_ULL(nr)	(1ULL << (nr))
 #endif /* !BIT_ULL */
 
+#ifndef NETMAP_LINUX_HAVE_ONLINE_CPUS
+#define get_online_cpus()	cpus_read_lock()
+#define put_online_cpus()	cpus_read_unlock()
+#endif /* NETMAP_LINUX_HAVE_ONLINE_CPUS */
+
 #endif /* NETMAP_BSD_GLUE_H */

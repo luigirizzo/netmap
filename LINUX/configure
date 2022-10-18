@@ -1859,6 +1859,16 @@ EOF
 	}
 EOF
 
+    # put/get_online_cpus or cpu_read_lock/unlock?
+    add_test 'have ONLINE_CPUS' <<EOF
+	#include <linux/cpu.h>
+
+	void dummy(void) {
+		get_online_cpus();
+		put_online_cpus();
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################
