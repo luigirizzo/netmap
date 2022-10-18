@@ -763,7 +763,7 @@ netmap_update_config(struct netmap_adapter *na)
 {
 	struct nm_config_info info;
 
-	if (na->ifp) {
+	if (na->ifp && !nm_is_bwrap(na)) {
 		strlcpy(na->name, na->ifp->if_xname, sizeof(na->name));
 	}
 

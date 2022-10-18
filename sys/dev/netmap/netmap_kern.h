@@ -1155,6 +1155,7 @@ struct netmap_bwrap_adapter {
 	struct netmap_vp_adapter *saved_na_vp;
 	int (*nm_intr_notify)(struct netmap_kring *kring, int flags);
 };
+int nm_is_bwrap(struct netmap_adapter *na);
 int nm_bdg_polling(struct nmreq_header *hdr);
 
 int netmap_bdg_attach(struct nmreq_header *hdr, void *auth_token);
