@@ -1869,6 +1869,20 @@ EOF
 	}
 EOF
 
+   # pollwait with 5 args (as seen in uek)
+   add_test 'have POLLWAIT_5ARGS' <<EOF
+	#include <linux/poll.h>
+
+	void dummypoll(struct file *f,
+		wait_queue_head_t *w,
+		struct poll_table_struct *p,
+		unsigned long fixed_event);
+
+	void dummy(poll_table *pt) {
+		init_poll_funcptr(pt, dummypoll);
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################

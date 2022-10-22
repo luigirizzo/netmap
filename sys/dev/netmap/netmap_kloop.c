@@ -472,7 +472,11 @@ struct sync_kloop_poll_ctx {
 
 static void
 sync_kloop_poll_table_queue_proc(struct file *file, wait_queue_head_t *wqh,
-				poll_table *pt)
+				poll_table *pt
+#ifdef NETMAP_LINUX_HAVE_POLLWAIT_5ARGS
+				, unsigned long unused
+#endif
+				)
 {
 	struct sync_kloop_poll_ctx *poll_ctx =
 		container_of(pt, struct sync_kloop_poll_ctx, wait_table);
