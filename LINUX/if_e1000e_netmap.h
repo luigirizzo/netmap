@@ -312,6 +312,7 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 */
 	if (netmap_no_pendintr || force_update) {
 		int strip_crc = (adapter->flags2 & FLAG2_CRC_STRIPPING) ? 0 : 4;
+		u_int new_hwtail = (u_int)-1;
 
 		nic_i = rxr->next_to_clean;
 		nm_i = netmap_idx_n2k(kring, nic_i);
@@ -321,21 +322,27 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 			uint32_t staterr = le32toh(curr->NM_E1R_RX_STATUS);
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			uint64_t paddr;
+			int complete;
 
 			if ((staterr & E1000_RXD_STAT_DD) == 0)
 				break;
 			dma_rmb();  /* read descriptor after status DD */
 			PNMB_O(kring, slot, &paddr);
 			slot->len = le16toh(curr->NM_E1R_RX_LENGTH) - strip_crc;
-			slot->flags = (!(staterr & E1000_RXD_STAT_EOP) ? NS_MOREFRAG : 0);
+			complete = staterr & E1000_RXD_STAT_EOP;
+			slot->flags = complete ? NS_MOREFRAG : 0;
 			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev, &paddr,
 					slot->len, NR_RX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
+
+			if (complete)
+				new_hwtail = nm_i;
 		}
 		if (n) { /* update the state variables */
 			rxr->next_to_clean = nic_i;
-			kring->nr_hwtail = nm_i;
+			if (new_hwtail != (u_int)-1)
+				kring->nr_hwtail = nm_i;
 		}
 		kring->nr_kflags &= ~NKR_PENDINTR;
 	}

@@ -222,6 +222,8 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 * First part: import newly received packets.
 	 */
 	if (netmap_no_pendintr || force_update) {
+		u_int new_hwtail = (u_int)-1;
+
 		nic_i = rxr->next_to_clean;
 		nm_i = netmap_idx_n2k(kring, nic_i);
 
@@ -230,6 +232,7 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 			uint32_t staterr = le32toh(curr->status);
 			struct netmap_slot *slot;
 			uint64_t paddr;
+			int complete = 0;
 
 			if ((staterr & E1000_RXD_STAT_DD) == 0)
 				break;
@@ -242,15 +245,20 @@ e1000_netmap_rxsync(struct netmap_kring *kring, int flags)
 			if (staterr & E1000_RXD_STAT_EOP) {
 				slot->len -= 4; /* exclude the CRC */
 				slot->flags = 0;
+				complete = 1;
 			}
 			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev,
 					&paddr, slot->len, NR_RX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
+
+			if (complete)
+				new_hwtail = nm_i;
 		}
 		if (n) { /* update the state variables */
 			rxr->next_to_clean = nic_i;
-			kring->nr_hwtail = nm_i;
+			if (new_hwtail != (u_int)-1)
+				kring->nr_hwtail = nm_i;
 		}
 		kring->nr_kflags &= ~NKR_PENDINTR;
 	}

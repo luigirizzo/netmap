@@ -310,8 +310,6 @@ igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 	u_int const lim = kring->nkr_num_slots - 1;
 	u_int const head = kring->rhead;
 	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
-	int complete; /* did we see a complete packet ? */
-
 	/* device-specific */
 	struct SOFTC_T *adapter = netdev_priv(ifp);
 	struct igb_ring *rxr = adapter->rx_ring[ring_nr];
@@ -328,6 +326,8 @@ igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 	 * First part: import newly received packets.
 	 */
 	if (netmap_no_pendintr || force_update) {
+		u_int new_hwtail = (u_int)-1;
+
 		nic_i = rxr->next_to_clean;
 		nm_i = netmap_idx_n2k(kring, nic_i);
 
@@ -337,6 +337,7 @@ igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 			uint32_t staterr = le32toh(curr->wb.upper.status_error);
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			uint64_t paddr;
+			int complete;
 
 			if ((staterr & E1000_RXD_STAT_DD) == 0)
 				break;
@@ -348,13 +349,16 @@ igb_netmap_rxsync(struct netmap_kring *kring, int flags)
 			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev, &paddr, slot->len, NR_RX);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
+
+			if (complete)
+				new_hwtail = nm_i;
 		}
 		if (n) { /* update the state variables */
 			rxr->next_to_clean = nic_i;
 #ifdef NETMAP_LINUX_HAVE_IGB_NTA
 			rxr->next_to_alloc = nic_i;
 #endif /* NETMAP_LINUX_HAVE_IGB_NTA */
-			if (complete)
+			if (new_hwtail != (u_int)-1)
 				kring->nr_hwtail = nm_i;
 		}
 		kring->nr_kflags &= ~NKR_PENDINTR;
