@@ -1,5 +1,7 @@
 #!/bin/sh
 
+[ -e common.mk ] || exit 0
+
 cd $1
 patch -p1 <<EOF
 diff --git a/common.mk b/common.mk
