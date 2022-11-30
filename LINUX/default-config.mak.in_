@@ -100,7 +100,9 @@ stmmac@conf := CONFIG_STMMAC_ETH
 # only define the drivers that are selected after the --(no-)ext-drivers= processing (variable E_DRIVERS)
 $(foreach d,$(filter ixgbe ixgbevf e1000e igb ice i40e,$(E_DRIVERS)),$(eval $(call intel_driver,$d,$($(d)@v))))
 
+ifneq ($(filter e1000e,$(E_DRIVERS)),)
 e1000e@fetch := test -e @SRCDIR@/ext-drivers/e1000e-$(e1000e@v).tar.gz || wget https://sourceforge.net/projects/e1000/files/e1000e%20historic%20archive/$(e1000e@v)/e1000e-$(e1000e@v).tar.gz -P @SRCDIR@/ext-drivers/
+endif
 
 define mellanox_driver
 $(1)@fetch	:= test -e @SRCDIR@/ext-drivers/mlnx-en-$(2)-ubuntu18.04-x86_64.tgz || wget http://content.mellanox.com/ofed/MLNX_EN-$(2)/mlnx-en-$(2)-ubuntu18.04-x86_64.tgz -P @SRCDIR@/ext-drivers
