@@ -2410,7 +2410,7 @@ out:
 
 /* set the hardware buffer length in each one of the newly opened rings
  * (hwbuf_len field in the kring struct). The purpose it to select
- * the maximum supported input buffer length that will not cause writes
+ * the maximum supported input buffer lenght that will not cause writes
  * outside of the available space, even when offsets are in use.
  */
 static int
@@ -2436,7 +2436,7 @@ netmap_compute_buf_len(struct netmap_priv_d *priv)
 		 * minus the max offset declared by the user at open time.  If
 		 * the user plans to have several slots pointing to different
 		 * offsets into the same large buffer, she must also declare a
-		 * "minium gap" between two such consecutive offsets. In this
+		 * "minimum gap" between two such consecutive offsets. In this
 		 * case the user-declared 'offset_gap' is taken as the
 		 * available space and offset_max is ignored.
 		 */
