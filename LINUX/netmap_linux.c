@@ -236,6 +236,9 @@ nm_os_extmem_nr_pages(struct nm_os_extmem *e)
 struct nm_os_extmem *
 nm_os_extmem_create(unsigned long p, struct nmreq_pools_info *pi, int *perror)
 {
+#ifndef FOLL_POPULATE
+#define FOLL_POPULATE 0
+#endif /* FOLL_POPULATE */
 	unsigned long end, start;
 	int nr_pages, res;
 	struct nm_os_extmem *e = NULL;
