@@ -568,4 +568,10 @@ void netmap_bns_unregister(void);
 #define put_online_cpus()	cpus_read_unlock()
 #endif /* NETMAP_LINUX_HAVE_ONLINE_CPUS */
 
+#ifdef NETMAP_LINUX_HAVE_NAPI_POLL_WEIGHT
+#define NM_NETIF_NAPI_ADD	netif_napi_add_weight
+#else
+#define NM_NETIF_NAPI_ADD	netif_napi_add
+#endif /* NETMAP_LINUX_HAVE_NAPI_POLL_WEIGHT */
+
 #endif /* NETMAP_BSD_GLUE_H */

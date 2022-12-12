@@ -1390,7 +1390,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	for (i = 0; i < queue_pairs; i++) {
 		struct ptnet_rx_queue *prq = (struct ptnet_rx_queue *)
 					     pi->rxqueues[i];
-		netif_napi_add(netdev, &prq->napi, ptnet_rx_poll, NAPI_POLL_WEIGHT);
+		NM_NETIF_NAPI_ADD(netdev, &prq->napi, ptnet_rx_poll, NAPI_POLL_WEIGHT);
 	}
 
 	strlcpy(netdev->name, pci_name(pdev), sizeof(netdev->name));

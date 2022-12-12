@@ -1883,6 +1883,19 @@ EOF
 	}
 EOF
 
+  # netif_napi_poll_weight?
+  add_test 'have NAPI_POLL_WEIGHT' <<EOF
+	#include <linux/netdevice.h>
+
+	void dummy(struct net_device *dev,
+		struct napi_struct *napi,
+		int (*poll)(struct napi_struct *, int),
+		int weight)
+	{
+		netif_napi_add_weight(dev, napi, poll, weight);
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################
