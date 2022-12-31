@@ -2378,6 +2378,7 @@ EOF
 Now running compile tests to adapt the code to your
 kernel version. Please wait.
 EOF
+  touch Module.symvers
   run_tests
 
 # check for exported split_page
