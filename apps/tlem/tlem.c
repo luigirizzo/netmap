@@ -2309,8 +2309,6 @@ main(int argc, char **argv)
     *strp = '\0';
     ifname = invdopt['i']->arg;
 
-    fprintf(stderr, "%s built %s %s\n", argv[0], __DATE__, __TIME__);
-
     bzero(&bp, sizeof(bp));	/* all data initially go here */
 
     for (i = 0; i < EC_NOPTS; i++) {

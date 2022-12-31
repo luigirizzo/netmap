@@ -69,8 +69,6 @@ main(int argc, char **argv)
 	time_t last_hash_output = 0;
 #endif
 
-	fprintf(stderr, "%s built %s %s\n\n", argv[0], __DATE__, __TIME__);
-
 	while ((ch = getopt(argc, argv, "hci:vw:W:F:H")) != -1) {
 		switch (ch) {
 		default:
