@@ -1,5 +1,5 @@
 diff --git a/e1000e/Makefile b/e1000e/Makefile
-index f300712..01c2de9 100644
+index f300712..206f69f 100644
 --- a/e1000e/Makefile
 +++ b/e1000e/Makefile
 @@ -9,9 +9,9 @@ ifneq ($(KERNELRELEASE),)
@@ -39,6 +39,24 @@ index f300712..01c2de9 100644
  
  ifeq (,$(wildcard common.mk))
    $(error Cannot find common.mk build rules)
+@@ -94,7 +94,7 @@ ccc: clean
+ 
+ # Build manfiles
+ manfile:
+-	@gzip -c ../${DRIVER}.${MANSECTION} > ${DRIVER}.${MANSECTION}.gz
++	#@gzip -c ../${DRIVER}.${MANSECTION} > ${DRIVER}.${MANSECTION}.gz
+ 
+ # Clean the module subdirectories
+ clean:
+@@ -104,7 +104,7 @@ clean:
+ # Install the modules and manpage
+ install: default manfile
+ 	@echo "Copying manpages..."
+-	@install -D -m 644 ${DRIVER}.${MANSECTION}.gz ${INSTALL_MOD_PATH}${MANDIR}/man${MANSECTION}/${DRIVER}.${MANSECTION}.gz
++	#@install -D -m 644 ${DRIVER}.${MANSECTION}.gz ${INSTALL_MOD_PATH}${MANDIR}/man${MANSECTION}/${DRIVER}.${MANSECTION}.gz
+ 	@echo "Installing modules..."
+ 	@+$(call devkernelbuild,modules_install)
+ 	@echo "Running depmod..."
 diff --git a/e1000e/netdev.c b/e1000e/netdev.c
 index 081ca43..12f992c 100644
 --- a/e1000e/netdev.c
