@@ -550,7 +550,7 @@ ice_netmap_configure_rx_ring(struct ice_ring *ring)
 	kring = na->rx_rings[ring_nr];
 	lim = na->num_rx_desc - 1 - nm_kr_rxspace(kring);
 
-	for (i = 0; i < lim; i++) {
+	for (i = 0; i <= lim; i++) {
 		int si = netmap_idx_n2k(kring, i);
 		uint64_t paddr;
 		union ice_32b_rx_flex_desc *rx = ICE_RX_DESC(ring, i);

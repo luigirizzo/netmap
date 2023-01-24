@@ -491,7 +491,7 @@ igb_netmap_configure_rx_ring(struct igb_ring *rxr)
 	kring = na->rx_rings[reg_idx];
 	/* preserve buffers already made available to clients */
 	n = rxr->count - 1 - nm_kr_rxspace(na->rx_rings[reg_idx]);
-	for (i = 0; i < n; i++) {
+	for (i = 0; i <= n; i++) {
 		union e1000_adv_rx_desc *rx_desc;
 		uint64_t paddr;
 		int si = netmap_idx_n2k(kring, i);
