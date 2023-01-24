@@ -846,7 +846,7 @@ rm -f extdrv-versions.mak
 for dv in $(echo "$versions" | sed 's/,/ /g'); do
 	d=${dv%:*}
 	v=${dv#*:}
-	if ! $(edrv enabled $d); then
+	if ! edrv enabled $d; then
 		echo "$d is not an external driver" | warning
 	fi
 	echo "$d@v := $v" >> extdrv-versions.mak
@@ -1079,7 +1079,7 @@ EOF
   }
 
   for d in $(edrv print); do
-	if !(cdrv enabled $d); then
+	if ! cdrv enabled $d; then
             add_file_exists_check build-$d true "edrv_build_error $d"
 	fi
   done
