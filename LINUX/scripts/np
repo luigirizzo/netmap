@@ -90,7 +90,7 @@ function get-params {
 
 function need {
 	eval "local v=\${$1}"
-	[ -n "$v" -a -d "$v${2:+/$2}" ] || error "Variable $1 not set or not valid"
+	[ -n "$v" ] && [ -d "$v${2:+/$2}" ] || error "Variable $1 not set or not valid"
 }
 
 ## The following environment variables must be set:
@@ -161,7 +161,7 @@ function get-patch()
 	local v2=$(scripts/vers $version -i -c)
 	local patchname=vanilla--$driver--$v1--$v2
 	local out=tmp-patches/$patchname
-	[ -n "$use_cache" -a -s $out ] && { echo $out; return; }
+	[ -n "$use_cache" ] && [ -s $out ] && { echo $out; return; }
 	local drvpath=$(driver-path $driver $version)
 	[ -n "$drvpath" ] || return
 	local drvdir=$(dirname $drvpath)
@@ -285,7 +285,7 @@ function minimize()
 	# next patch becomes the new pivot. The process
 	# is repeated until there are no more patches to consider.
 	local pivot=$1
-	[ -n "$pivot" -a -e "$pivot" ] || return 1
+	[ -n "$pivot" ] && [ -e "$pivot" ] || return 1
 	# extract the left end and right end of the pivot's range
 	local ple=$(scripts/vers $pivot -s -p -C)
 	local pre=$(scripts/vers $pivot -s -C)
