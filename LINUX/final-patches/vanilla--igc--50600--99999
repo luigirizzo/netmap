@@ -1,8 +1,8 @@
 diff --git a/igc/igc_main.c b/igc/igc_main.c
-index 1a0aae7..4d1966b 100644
+index d9d5425fe8d9..7d9f5b80f28b 100644
 --- a/igc/igc_main.c
 +++ b/igc/igc_main.c
-@@ -60,6 +60,10 @@ static const struct pci_device_id igc_pci_tbl[] = {
+@@ -52,6 +52,10 @@ static const struct pci_device_id igc_pci_tbl[] = {
  
  MODULE_DEVICE_TABLE(pci, igc_pci_tbl);
  
@@ -13,7 +13,7 @@ index 1a0aae7..4d1966b 100644
  enum latency_range {
  	lowest_latency = 0,
  	low_latency = 1,
-@@ -618,6 +622,9 @@ static void igc_configure_tx_ring(struct igc_adapter *adapter,
+@@ -612,6 +616,9 @@ static void igc_configure_tx_ring(struct igc_adapter *adapter,
  
  	txdctl |= IGC_TXDCTL_QUEUE_ENABLE;
  	wr32(IGC_TXDCTL(reg_idx), txdctl);
@@ -23,7 +23,7 @@ index 1a0aae7..4d1966b 100644
  }
  
  /**
-@@ -1949,6 +1956,11 @@ static void igc_alloc_rx_buffers(struct igc_ring *rx_ring, u16 cleaned_count)
+@@ -1801,6 +1808,11 @@ static void igc_alloc_rx_buffers(struct igc_ring *rx_ring, u16 cleaned_count)
  	struct igc_rx_buffer *bi;
  	u16 bufsz;
  
@@ -35,7 +35,7 @@ index 1a0aae7..4d1966b 100644
  	/* nothing to do */
  	if (!cleaned_count)
  		return;
-@@ -2014,6 +2026,11 @@ static int igc_clean_rx_irq(struct igc_q_vector *q_vector, const int budget)
+@@ -1866,6 +1878,11 @@ static int igc_clean_rx_irq(struct igc_q_vector *q_vector, const int budget)
  	struct sk_buff *skb = rx_ring->skb;
  	u16 cleaned_count = igc_desc_unused(rx_ring);
  
@@ -47,7 +47,7 @@ index 1a0aae7..4d1966b 100644
  	while (likely(total_packets < budget)) {
  		union igc_adv_rx_desc *rx_desc;
  		struct igc_rx_buffer *rx_buffer;
-@@ -2118,6 +2135,11 @@ static bool igc_clean_tx_irq(struct igc_q_vector *q_vector, int napi_budget)
+@@ -1970,6 +1987,11 @@ static bool igc_clean_tx_irq(struct igc_q_vector *q_vector, int napi_budget)
  	if (test_bit(__IGC_DOWN, &adapter->state))
  		return true;
  
@@ -59,7 +59,7 @@ index 1a0aae7..4d1966b 100644
  	tx_buffer = &tx_ring->tx_buffer_info[i];
  	tx_desc = IGC_TX_DESC(tx_ring, i);
  	i -= tx_ring->count;
-@@ -5364,6 +5386,10 @@ static int igc_probe(struct pci_dev *pdev,
+@@ -4788,6 +4810,10 @@ static int igc_probe(struct pci_dev *pdev,
  	/* Check if Media Autosense is enabled */
  	adapter->ei = *ei;
  
@@ -70,7 +70,7 @@ index 1a0aae7..4d1966b 100644
  	/* print pcie link status and MAC address */
  	pcie_print_link_status(pdev);
  	netdev_info(netdev, "MAC: %pM\n", netdev->dev_addr);
-@@ -5429,6 +5455,11 @@ static void igc_remove(struct pci_dev *pdev)
+@@ -4840,6 +4866,11 @@ static void igc_remove(struct pci_dev *pdev)
  	 * would have already happened in close and is redundant.
  	 */
  	igc_release_hw_control(adapter);
