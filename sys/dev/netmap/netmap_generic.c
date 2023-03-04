@@ -776,7 +776,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 			nm_os_generic_xmit_frame(&a);
 		}
 		/* Update hwcur to the next slot to transmit. Here nm_i
-		 * is not necessarily head, as we could break early. */
+		 * is not necessarily head, we could break early. */
 		kring->nr_hwcur = nm_i;
 
 #ifdef __FreeBSD__
@@ -838,8 +838,10 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 		 * support RX scatter-gather. */
 		nm_prlim(2, "Warning: driver pushed up big packet "
 				"(size=%d)", (int)MBUF_LEN(m));
+		if_inc_counter(ifp, IFCOUNTER_IQDROPS, 1);
 		m_freem(m);
-	} else if (unlikely(mbq_len(&kring->rx_queue) > 1024)) {
+	} else if (unlikely(mbq_len(&kring->rx_queue) > na->num_rx_desc)) {
+		if_inc_counter(ifp, IFCOUNTER_IQDROPS, 1);
 		m_freem(m);
 	} else {
 		mbq_safe_enqueue(&kring->rx_queue, m);

@@ -351,6 +351,8 @@ nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 			ret = EBUSY; /* already set */
 			goto out;
 		}
+
+		ifp->if_capenable |= IFCAP_NETMAP;
 		gna->save_if_input = ifp->if_input;
 		ifp->if_input = freebsd_generic_rx_handler;
 	} else {
@@ -360,6 +362,8 @@ nm_os_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 			ret = EINVAL;  /* not saved */
 			goto out;
 		}
+
+		ifp->if_capenable &= ~IFCAP_NETMAP;
 		ifp->if_input = gna->save_if_input;
 		gna->save_if_input = NULL;
 	}
@@ -616,7 +620,6 @@ nm_os_vi_persist(const char *name, struct ifnet **ret)
 		return ENOMEM;
 	}
 	if_initname(ifp, name, IF_DUNIT_NONE);
-	ifp->if_mtu = 65536;
 	ifp->if_flags = IFF_UP | IFF_SIMPLEX | IFF_MULTICAST;
 	ifp->if_init = (void *)nm_vi_dummy;
 	ifp->if_ioctl = nm_vi_dummy;
@@ -799,9 +802,8 @@ static driver_t ptn_memdev_driver = {
 
 /* We use (SI_ORDER_MIDDLE+1) here, see DEV_MODULE_ORDERED() invocation
  * below. */
-static devclass_t ptnetmap_devclass;
-DRIVER_MODULE_ORDERED(ptn_memdev, pci, ptn_memdev_driver, ptnetmap_devclass,
-		      NULL, NULL, SI_ORDER_MIDDLE + 1);
+DRIVER_MODULE_ORDERED(ptn_memdev, pci, ptn_memdev_driver, NULL, NULL,
+		      SI_ORDER_MIDDLE + 1);
 
 /*
  * Map host netmap memory through PCI-BAR in the guest OS,

@@ -345,6 +345,8 @@ struct netmap_linux_magic {
 #define ifnet           	net_device      /* remap */
 #define	if_xname		name		/* field ifnet-> net_device */
 
+#define	if_inc_counter(ifp, flags, cnt) 	do {} while (0)
+
 /* some other FreeBSD APIs */
 struct net_device* ifunit_ref(const char *name);
 void if_ref(struct net_device *ifp);
