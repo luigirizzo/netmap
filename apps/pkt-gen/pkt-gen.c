@@ -1306,7 +1306,7 @@ ping_body(void *data)
 	struct targ *targ = (struct targ *) data;
 	struct pollfd pfd = { .fd = targ->fd, .events = POLLIN };
 	struct netmap_if *nifp = targ->nmd->nifp;
-	int i, m, rx = 0;
+	int i, m;
 	void *frame;
 	int size;
 	struct timespec ts, now, last_print;
@@ -1399,7 +1399,9 @@ ping_body(void *data)
 		}
 #endif /* BUSYWAIT */
 		/* see what we got back */
-		rx = 0;
+#ifdef BUSYWAIT
+		int rx = 0;
+#endif
 		for (i = targ->nmd->first_rx_ring;
 			i <= targ->nmd->last_rx_ring; i++) {
 			ring = NETMAP_RXRING(nifp, i);
@@ -1434,7 +1436,9 @@ ping_body(void *data)
 				buckets[pos]++;
 				/* now store it in a bucket */
 				ring->head = ring->cur = nm_ring_next(ring, ring->head);
+#ifdef BUSYWAIT
 				rx++;
+#endif
 			}
 		}
 		//D("tx %d rx %d", sent, rx);
@@ -1502,7 +1506,7 @@ pong_body(void *data)
 	struct pollfd pfd = { .fd = targ->fd, .events = POLLIN };
 	struct netmap_if *nifp = targ->nmd->nifp;
 	struct netmap_ring *txring, *rxring;
-	int i, rx = 0;
+	int i;
 	uint64_t sent = 0, n = targ->g->npackets;
 
 	if (targ->g->nthreads > 1) {
@@ -1544,7 +1548,6 @@ pong_body(void *data)
 				src = NETMAP_BUF(rxring, slot->buf_idx);
 				//D("got pkt %p of size %d", src, slot->len);
 				rxring->head = rxring->cur = nm_ring_next(rxring, head);
-				rx++;
 				if (txavail == 0)
 					continue;
 				dst = NETMAP_BUF(txring,
@@ -1579,7 +1582,6 @@ pong_body(void *data)
 #ifdef BUSYWAIT
 		ioctl(pfd.fd, NIOCTXSYNC, NULL);
 #endif
-		//D("tx %d rx %d", sent, rx);
 	}
 
 	targ->completed = 1;
@@ -1837,6 +1839,7 @@ receiver_body(void *data)
 	struct netmap_ring *rxring;
 	int i;
 	struct my_ctrs cur;
+	uint64_t n = targ->g->npackets / targ->g->nthreads;
 
 	memset(&cur, 0, sizeof(cur));
 
@@ -1864,7 +1867,7 @@ receiver_body(void *data)
 	/* main loop, exit after 1s silence */
 	clock_gettime(CLOCK_REALTIME_PRECISE, &targ->tic);
     if (targ->g->dev_type == DEV_TAP) {
-	while (!targ->cancel) {
+	while (!targ->cancel && (n == 0 || targ->ctr.pkts < n)) {
 		char buf[MAX_BODYSIZE];
 		/* XXX should we poll ? */
 		i = read(targ->g->main_fd, buf, sizeof(buf));
@@ -1876,7 +1879,7 @@ receiver_body(void *data)
 	}
 #ifndef NO_PCAP
     } else if (targ->g->dev_type == DEV_PCAP) {
-	while (!targ->cancel) {
+	while (!targ->cancel && (n == 0 || targ->ctr.pkts < n)) {
 		/* XXX should we poll ? */
 		pcap_dispatch(targ->g->p, targ->g->burst, receive_pcap,
 			(u_char *)&targ->ctr);
@@ -1887,7 +1890,7 @@ receiver_body(void *data)
 	int dump = targ->g->options & OPT_DUMP;
 
 	nifp = targ->nmd->nifp;
-	while (!targ->cancel) {
+	while (!targ->cancel && (n == 0 || targ->ctr.pkts < n)) {
 		/* Once we started to receive packets, wait at most 1 seconds
 		   before quitting. */
 #ifdef BUSYWAIT
@@ -2812,7 +2815,7 @@ tap_alloc(char *dev)
 
 	/* try to create the device */
 	if( (err = ioctl(fd, TUNSETIFF, (void *) &ifr)) < 0 ) {
-		D("failed to to a TUNSETIFF: %s", strerror(errno));
+		D("failed to do a TUNSETIFF: %s", strerror(errno));
 		close(fd);
 		return err;
 	}
@@ -3204,17 +3207,17 @@ main(int arc, char **argv)
 		struct netmap_if *nifp = g.nmd->nifp;
 		struct nmreq_register *req = &g.nmd->reg;
 
-		D("nifp at offset %"PRIu64", %d tx %d rx region %d",
+		D("nifp at offset %"PRIu64" ntxqs %d nrxqs %d memid %d",
 		    req->nr_offset, req->nr_tx_rings, req->nr_rx_rings,
 		    req->nr_mem_id);
 		for (i = 0; i < req->nr_tx_rings + req->nr_host_tx_rings; i++) {
 			struct netmap_ring *ring = NETMAP_TXRING(nifp, i);
-			D("   TX%d at %p slots %d", i,
+			D("   TX%d at offset %p slots %d", i,
 			    (void *)((char *)ring - (char *)nifp), ring->num_slots);
 		}
 		for (i = 0; i < req->nr_rx_rings + req->nr_host_rx_rings; i++) {
 			struct netmap_ring *ring = NETMAP_RXRING(nifp, i);
-			D("   RX%d at %p slots %d", i,
+			D("   RX%d at offset %p slots %d", i,
 			    (void *)((char *)ring - (char *)nifp), ring->num_slots);
 		}
 	}
