@@ -267,7 +267,7 @@ static int time_uptime_w32()
 struct netmap_adapter;
 
 struct net_device {
-	char	if_xname[IFNAMSIZ];			// external name (name + unit)
+	char	name[IFNAMSIZ];			// external name (name + unit)
 	//        struct ifaltq if_snd;         /* output queue (includes altq) */
 	struct netmap_adapter	*na;
 	void	*pfilter;
@@ -365,7 +365,9 @@ void if_ref(struct net_device *ifp);
 
 PVOID send_up_to_stack(struct ifnet *ifp, struct mbuf *m, PVOID head);
 
-#define WNA(_ifp)		_ifp->na
+#define if_setnetmapadapter(_ifp, _na) do {				\
+	(_ifp)->na = _na;							\
+} while (0)
 #define NM_BNS_GET(b)	do { (void)(b); } while (0)
 #define NM_BNS_PUT(b)   do { (void)(b); } while (0)
 

@@ -647,7 +647,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
 	struct netmap_generic_adapter *gna = (struct netmap_generic_adapter *)na;
-	struct ifnet *ifp = na->ifp;
+	if_t ifp = na->ifp;
 	struct netmap_ring *ring = kring->ring;
 	u_int nm_i;	/* index into the netmap ring */ // j
 	u_int const lim = kring->nkr_num_slots - 1;
@@ -812,7 +812,7 @@ generic_netmap_txsync(struct netmap_kring *kring, int flags)
  * Returns 1 if the packet was stolen, 0 otherwise.
  */
 int
-generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
+generic_rx_handler(if_t ifp, struct mbuf *m)
 {
 	struct netmap_adapter *na = NA(ifp);
 	struct netmap_generic_adapter *gna = (struct netmap_generic_adapter *)na;
@@ -1021,7 +1021,7 @@ static void
 generic_netmap_dtor(struct netmap_adapter *na)
 {
 	struct netmap_generic_adapter *gna = (struct netmap_generic_adapter*)na;
-	struct ifnet *ifp = netmap_generic_getifp(gna);
+	if_t ifp = netmap_generic_getifp(gna);
 	struct netmap_adapter *prev_na = gna->prev;
 
 	if (prev_na != NULL) {
@@ -1036,10 +1036,6 @@ generic_netmap_dtor(struct netmap_adapter *na)
 		nm_prinf("Native netmap adapter for %s restored", prev_na->name);
 	}
 	NM_RESTORE_NA(ifp, prev_na);
-	/*
-	 * netmap_detach_common(), that it's called after this function,
-	 * overrides WNA(ifp) if na->ifp is not NULL.
-	 */
 	na->ifp = NULL;
 	nm_prinf("Emulated netmap adapter for %s destroyed", na->name);
 }
@@ -1062,7 +1058,7 @@ na_is_generic(struct netmap_adapter *na)
  * actual configuration.
  */
 int
-generic_netmap_attach(struct ifnet *ifp)
+generic_netmap_attach(if_t ifp)
 {
 	struct netmap_adapter *na;
 	struct netmap_generic_adapter *gna;
@@ -1070,7 +1066,7 @@ generic_netmap_attach(struct ifnet *ifp)
 	u_int num_tx_desc, num_rx_desc;
 
 #ifdef __FreeBSD__
-	if (ifp->if_type == IFT_LOOP) {
+	if (if_gettype(ifp) == IFT_LOOP) {
 		nm_prerr("if_loop is not supported by %s", __func__);
 		return EINVAL;
 	}
@@ -1099,7 +1095,7 @@ generic_netmap_attach(struct ifnet *ifp)
 		return ENOMEM;
 	}
 	na = (struct netmap_adapter *)gna;
-	strlcpy(na->name, ifp->if_xname, sizeof(na->name));
+	strlcpy(na->name, if_name(ifp), sizeof(na->name));
 	na->ifp = ifp;
 	na->num_tx_desc = num_tx_desc;
 	na->num_rx_desc = num_rx_desc;

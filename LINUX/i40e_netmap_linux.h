@@ -589,7 +589,7 @@ i40e_netmap_rxsync(struct netmap_kring *kring, int flags)
 			rxr->next_to_clean = nic_i;
 			if (likely(ntail <= lim)) {
 				kring->nr_hwtail = ntail;
-				nm_prdis("%s: nic_i %u nm_i %u ntail %u n %u", ifp->if_xname, nic_i, nm_i, ntail, n);
+				nm_prdis("%s: nic_i %u nm_i %u ntail %u n %u", if_name(ifp), nic_i, nm_i, ntail, n);
 			}
 		}
 		kring->nr_kflags &= ~NKR_PENDINTR;

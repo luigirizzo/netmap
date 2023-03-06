@@ -626,7 +626,7 @@ ifunit_ref(const char* name)
 
     win32_init_lookaside_buffers(ifp);
 
-    RtlCopyMemory(ifp->if_xname, name, IFNAMSIZ);
+    RtlCopyMemory(if_name(ifp), name, IFNAMSIZ);
     ifp->ifIndex = deviceIfIndex;
 
 	win32_init_lookaside_buffers(ifp);

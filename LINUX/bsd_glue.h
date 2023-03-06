@@ -298,7 +298,11 @@ struct thread;
  * in linux we have no spares so we overload ax25_ptr, and the detection
  * for netmap-capable is some magic in the area pointed by that.
  */
-#define WNA(_ifp)		(_ifp)->ax25_ptr
+#define if_setnetmapadapter(_ifp, _na)	do { 				\
+	(_ifp)->ax25_ptr = _na;						\
+} while (0)
+#define if_getnetmapadapter(_ifp)	((struct netmap_adapter *)(_ifp)->ax25_ptr)
+
 /* use the default NM_ATTACH_NA/NM_DETACH_NA defined in netmap_kernel.h */
 #else /* !NETMAP_LINUX_HAVE_AX25PTR */
 /*
@@ -315,7 +319,10 @@ struct netmap_linux_magic {
 	const struct ethtool_ops *save_eto;
 };
 #define NM_OS_MAGIC	struct netmap_linux_magic
-#define WNA(ifp)	(ifp->ethtool_ops)
+#define if_setnetmapadapter(_ifp, _na) do {				\
+	(_ifp)->ethtool_ops = _na;					\
+} while (0)
+#define if_getnetmapadapter(_ifp)	((struct netmap_adapter *)(_ifp)->ethtool_ops)
 #define NM_DETACH_NA(ifp)  do {						\
 	(ifp)->ethtool_ops = NA(ifp)->magic.save_eto;			\
 } while (0)
@@ -343,7 +350,8 @@ struct netmap_linux_magic {
 #endif /* NETAP_LINUX_HAVE_AX25PTR */
 
 #define ifnet           	net_device      /* remap */
-#define	if_xname		name		/* field ifnet-> net_device */
+typedef struct net_device* 	if_t;	/* remap */
+#define if_name(ifp)		ifp->name
 
 #define	if_inc_counter(ifp, flags, cnt) 	do {} while (0)
 
