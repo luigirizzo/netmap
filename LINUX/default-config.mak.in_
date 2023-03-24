@@ -136,3 +136,23 @@ virtio_net.c@force	:= 1
 endef
 
 $(foreach d,$(filter virtio_net.c,$(E_DRIVERS)),$(eval $(call virtio_net)))
+
+# need to sub release string on the line here
+bnxt_en_ver := 1.10.2
+
+define bnxt_driver
+$(1)@fetch	:= test -e @SRCDIR@/../bnxt_en-$(bnxt_en_ver)-$(2).tar.gz && cp @SRCDIR@/../bnxt_en-$(bnxt_en_ver)-$(2).tar.gz -P @SRCDIR@/ext-drivers
+$(1)@src	:= tar xf @SRCDIR@/ext-drivers/bnxt_en-$(bnxt_en_ver)-$(2).tar.gz && ln -s bnxt_en-$(bnxt_en_ver)-$(2) $(1)
+$(1)@build	:= [ -z "$(EXTRA_CFLAGS)" ] || make EXTRA_CFLAGS="$(EXTRA_CFLAGS)" -C $(1) @KOPTS@ KDIR=@KSRC@
+$(1)@install	:= make -C $(1) EXTRA_CFLAGS="$(EXTRA_CFLAGS)" install INSTALL_MOD_PATH=@MODPATH@ NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@
+$(1)@clean	:= if [ -d $(1) ]; then make -C $(1) clean; fi NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@
+$(1)@distclean  := rm -rf bnxt_en-$($(2)@pv) bnxt_en-$(bnxt_en_ver)-$(2)
+$(1)@force	:= 1
+endef
+
+# need to sub version string on the line below
+$(eval $(call default,bnxt,226.0.85.0))
+bnxt@pv		= $(firstword $(subst -, ,$(bnxt@v)))
+bnxt@conf	= CONFIG_BNXT_EN
+
+$(foreach d,$(filter bnxt,$(E_DRIVERS)),$(eval $(call bnxt_driver,$d,$($(d)@v))))
