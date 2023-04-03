@@ -84,7 +84,7 @@ $(eval $(call default,ice,1.9.11))
 
 # some additional, driver-specific CFLAGS (used in the @build variable above) and fixes
 e1000e@cflags := -fno-pie
-igb@cflags := -DDISABLE_PACKET_SPLIT -fno-pie
+igb@cflags := -DDISABLE_PACKET_SPLIT -fno-pie $(addprefix -Wno-,@REC_DISABLED_WARNINGS@)
 ixgbe@cflags := $(addprefix -Wno-,@REC_DISABLED_WARNINGS@)
 i40e@cflags :=  $(addprefix -Wno-,@REC_DISABLED_WARNINGS@)
 igb@prepare := $(if $(filter $(igb@v),5.3.5.61 5.3.6 5.4.6 5.5.2 5.7.2 5.8.5 5.9.3 5.10.2),@BUILDDIR@/intel-fix.sh igb,)
