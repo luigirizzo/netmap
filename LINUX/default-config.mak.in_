@@ -91,7 +91,7 @@ igb@prepare := $(if $(filter $(igb@v),5.3.5.61 5.3.6 5.4.6 5.5.2 5.7.2 5.8.5 5.9
 e1000e@prepare := $(if $(filter $(e1000e@v),3.8.4 3.8.7),@BUILDDIR@/intel-fix.sh e1000e,)
 ixgbevf@prepare := $(if $(filter $(ixgbevf@v),4.7.1 4.8.1 4.9.3 4.10.2 4.11.1 4.12.4 4.13.3 4.14.5 4.15.1),@BUILDDIR@/intel-fix.sh ixgbevf,)
 ixgbe@prepare := $(if $(filter $(ixgbe@v),5.8.1 5.9.4 5.10.2 5.11.3 5.12.5 5.13.4),@BUILDDIR@/intel-fix.sh ixgbe,)
-i40e@prepare := $(if $(filter $(i40e@v),2.12.6 2.14.13 2.15.9 2.16.11 2.17.4 2.17.15 2.18.9 2.19.3 2.22.8),@BUILDDIR@/intel-fix.sh i40e,)
+i40e@prepare := $(if $(filter $(i40e@v),2.12.6 2.14.13 2.15.9 2.16.11 2.17.4 2.17.15 2.18.9 2.19.3),@BUILDDIR@/intel-fix.sh i40e,)
 ice@prepare := $(if $(filter $(ice@v),1.7.16 1.8.8 1.8.9 1.9.7 1.9.11 1.10.1.2 1.10.1.2.2),@BUILDDIR@/intel-fix.sh ice,)
 
 # some additional, driver-specific configuration
