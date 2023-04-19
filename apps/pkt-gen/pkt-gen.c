@@ -3284,8 +3284,8 @@ out:
 		g.tx_period.tv_nsec = g.tx_period.tv_nsec % 1000000000;
 	}
 	if (g.td_type == TD_TYPE_SENDER)
-	    D("Sending %d packets every  %ld.%09ld s",
-			g.burst, g.tx_period.tv_sec, g.tx_period.tv_nsec);
+	    D("Sending %d packets every  %jd.%09ld s",
+			g.burst, (intmax_t)g.tx_period.tv_sec, g.tx_period.tv_nsec);
 	/* Install ^C handler. */
 	global_nthreads = g.nthreads;
 	sigemptyset(&ss);
