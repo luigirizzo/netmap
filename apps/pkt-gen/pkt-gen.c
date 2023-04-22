@@ -1008,7 +1008,7 @@ update_addresses(struct pkt *pkt, struct targ *t)
 }
 
 static void
-update_ip_size(struct pkt *pkt, struct targ *t, int size)
+update_ip_size(struct pkt *pkt, int size)
 {
 	struct ip ip;
 	struct udphdr udp;
@@ -1045,7 +1045,7 @@ update_ip_size(struct pkt *pkt, struct targ *t, int size)
 }
 
 static void
-update_ip6_size(struct pkt *pkt, struct targ *t, int size)
+update_ip6_size(struct pkt *pkt, int size)
 {
 	struct ip6_hdr ip6;
 	struct udphdr udp;
@@ -1079,9 +1079,9 @@ update_size(struct pkt *pkt, struct targ *t, int size)
 {
 	if (t->g->options & OPT_UPDATE_CSUM) {
 		if (t->g->af == AF_INET)
-			update_ip_size(pkt, t, size);
+			update_ip_size(pkt, size);
 		else
-			update_ip6_size(pkt, t, size);
+			update_ip6_size(pkt, size);
 	}
 }
 
