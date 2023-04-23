@@ -2343,6 +2343,21 @@ EOF
 EOF
   fi # i40e
 
+  if drv enabled ice; then
+    add_test 'have ICE_XRINGS' <<EOF
+	#include "ice/ice.h"
+
+	struct ice_tx_ring *
+	dummy1(struct ice_vsi *vsi) {
+		return vsi->tx_rings[0];
+	}
+	struct ice_rx_ring *
+	dummy2(struct ice_vsi *vsi) {
+		return vsi->rx_rings[0];
+	}
+EOF
+  fi # ice
+
   if drv enabled igb; then
     add_test 'have IGB_RD32' <<EOF
         #include "igb/e1000_regs.h"

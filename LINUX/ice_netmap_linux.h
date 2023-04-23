@@ -1,6 +1,13 @@
 #include <bsd_glue.h>
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
+#ifdef NETMAP_LINUX_HAVE_ICE_XRINGS
+#define NM_ICE_RXRING ice_rx_ring
+#define NM_ICE_TXRING ice_tx_ring
+#else
+#define NM_ICE_RXRING ice_ring
+#define NM_ICE_TXRING ice_ring
+#endif /* NETMAP_LINUX_HAVE_ICE_XRINGS */
 
 extern int ix_crcstrip;
 
@@ -41,7 +48,7 @@ ice_netmap_txsync(struct netmap_kring *kring, int flags)
 	/* device-specific */
 	struct ice_netdev_priv *np = netdev_priv(ifp);
 	struct ice_vsi *vsi = np->vsi;
-	struct ice_ring *txr;
+	struct NM_ICE_TXRING *txr;
 
 	if (!netif_carrier_ok(ifp))
 		return 0;
@@ -213,7 +220,7 @@ ice_netmap_rxsync(struct netmap_kring *kring, int flags)
 	/* device-specific */
 	struct ice_netdev_priv *np = netdev_priv(ifp);
 	struct ice_vsi *vsi = np->vsi;
-	struct ice_ring *rxr;
+	struct NM_ICE_RXRING *rxr;
 
 	if (!netif_running(ifp))
 		return 0;
@@ -258,9 +265,7 @@ ice_netmap_rxsync(struct netmap_kring *kring, int flags)
 
 		for (n = 0; ; n++) {
 			union ice_32b_rx_flex_desc *curr = ICE_RX_DESC(rxr, nic_i);
-			uint64_t qword = le64toh(*(uint64_t*)&curr->wb.status_error0);
-			uint32_t staterr = (qword & ICE_RXD_QW1_STATUS_M)
-				 >> ICE_RXD_QW1_STATUS_S;
+			uint16_t stat_err_bits;
 		        uint16_t slot_flags = 0;
 			struct netmap_slot *slot;
 			uint64_t paddr;
@@ -270,18 +275,24 @@ ice_netmap_rxsync(struct netmap_kring *kring, int flags)
 				complete = 0;
 			}
 
-			if ((staterr & (1<<ICE_RX_DESC_STATUS_DD_S)) == 0) {
+			stat_err_bits = BIT(ICE_RX_FLEX_DESC_STATUS0_DD_S);
+			/* XXX ice_test_staterr() needs ice_txrx_lib.h */
+			if ((curr->wb.status_error0 &
+			    cpu_to_le16(stat_err_bits)) == 0)
 				break;
-			}
 			dma_rmb();
 			slot = ring->slot + nm_i;
-			slot->len = (le16_to_cpu(curr->wb.pkt_len) & ICE_RX_FLX_DESC_PKT_LEN_M) - crclen;
+			slot->len = (le16_to_cpu(curr->wb.pkt_len) &
+					ICE_RX_FLX_DESC_PKT_LEN_M) - crclen;
 
-			if (unlikely((staterr & (1<<ICE_RX_DESC_STATUS_EOF_S)) == 0 )) {
-				slot_flags = NS_MOREFRAG;
-			} else {
+			/* XXX based on ice_is_non_eop() */
+			if (likely(curr->wb.status_error0 &
+			    cpu_to_le16(BIT(ICE_RX_FLEX_DESC_STATUS0_EOF_S)))) {
 				complete = 1;
+			} else {
+				slot_flags = NS_MOREFRAG;
 			}
+
 			slot->flags = slot_flags;
 			PNMB_O(kring, slot, &paddr);
 			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev,
@@ -493,7 +504,7 @@ SYSCTL_INT(_dev_netmap, OID_AUTO, ix_crcstrip,
 		CTLFLAG_RW, &ix_crcstrip, 1, "NIC strips CRC on rx frames");
 
 static void
-ice_netmap_configure_tx_ring(struct ice_ring *ring)
+ice_netmap_configure_tx_ring(struct NM_ICE_TXRING *ring)
 {
 	struct netmap_adapter *na;
 
@@ -507,7 +518,7 @@ ice_netmap_configure_tx_ring(struct ice_ring *ring)
 }
 
 static void
-ice_netmap_preconfigure_rx_ring(struct ice_ring *ring,
+ice_netmap_preconfigure_rx_ring(struct NM_ICE_RXRING *ring,
 		struct ice_rlan_ctx *rx_ctx)
 {
 	struct netmap_adapter *na;
@@ -528,7 +539,7 @@ ice_netmap_preconfigure_rx_ring(struct ice_ring *ring,
 }
 
 static int
-ice_netmap_configure_rx_ring(struct ice_ring *ring)
+ice_netmap_configure_rx_ring(struct NM_ICE_RXRING *ring)
 {
 	struct netmap_adapter *na;
 	struct netmap_slot *slot;
