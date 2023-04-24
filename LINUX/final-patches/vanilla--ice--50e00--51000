@@ -1,0 +1,128 @@
+diff --git a/ice/ice_base.c b/ice/ice_base.c
+index c36057efc7ae..5dec738c6fe9 100644
+--- a/ice/ice_base.c
++++ b/ice/ice_base.c
+@@ -5,6 +5,10 @@
+ #include "ice_base.h"
+ #include "ice_lib.h"
+ #include "ice_dcb_lib.h"
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#define NETMAP_ICE_BASE
++#include <ice_netmap_linux.h>
++#endif
+ 
+ /**
+  * __ice_vsi_get_qs_contig - Assign a contiguous chunk of queues to VSI
+@@ -395,6 +399,10 @@ static int ice_setup_rx_ctx(struct ice_ring *ring)
+ 	/* Rx queue threshold in units of 64 */
+ 	rlan_ctx.lrxqthresh = 1;
+ 
++#ifdef DEV_NETMAP
++	ice_netmap_preconfigure_rx_ring(ring, &rlan_ctx);
++#endif /* DEV_NETMAP */
++
+ 	/* Enable Flexible Descriptors in the queue context which
+ 	 * allows this driver to select a specific receive descriptor format
+ 	 * increasing context priority to pick up profile ID; default is 0x01;
+@@ -512,6 +520,11 @@ int ice_vsi_cfg_rxq(struct ice_ring *ring)
+ 		return 0;
+ 	}
+ 
++#ifdef DEV_NETMAP
++	if (ice_netmap_configure_rx_ring(ring))
++		return 0;
++#endif /* DEV_NETMAP */
++
+ 	ice_alloc_rx_bufs(ring, num_bufs);
+ 
+ 	return 0;
+@@ -764,6 +777,10 @@ ice_vsi_cfg_txq(struct ice_vsi *vsi, struct ice_ring *ring,
+ 	if (pf_q == le16_to_cpu(txq->txq_id))
+ 		ring->txq_teid = le32_to_cpu(txq->q_teid);
+ 
++#ifdef DEV_NETMAP
++	ice_netmap_configure_tx_ring(ring);
++#endif /* DEV_NETMAP */
++
+ 	return 0;
+ }
+ 
+diff --git a/ice/ice_main.c b/ice/ice_main.c
+index fe2ded775f25..e305a1cceea6 100644
+--- a/ice/ice_main.c
++++ b/ice/ice_main.c
+@@ -43,6 +43,11 @@ MODULE_PARM_DESC(debug, "netif level (0=none,...,16=all)");
+ 
+ static DEFINE_IDA(ice_aux_ida);
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#define NETMAP_ICE_LIB
++#include <ice_netmap_linux.h>
++#endif
++
+ static struct workqueue_struct *ice_wq;
+ static const struct net_device_ops ice_netdev_safe_mode_ops;
+ static const struct net_device_ops ice_netdev_ops;
+@@ -4497,6 +4502,9 @@ ice_probe(struct pci_dev *pdev, const struct pci_device_id __always_unused *ent)
+ 		dev_warn(dev, "RDMA is not supported on this device\n");
+ 	}
+ 
++#ifdef DEV_NETMAP
++	ice_netmap_attach(pf);
++#endif
+ 	return 0;
+ 
+ err_init_aux_unroll:
+@@ -4600,6 +4608,9 @@ static void ice_remove(struct pci_dev *pdev)
+ 	if (!pf)
+ 		return;
+ 
++#ifdef DEV_NETMAP
++	ice_netmap_detach(pf);
++#endif /* DEV_NETMAP */
+ 	for (i = 0; i < ICE_MAX_RESET_WAIT; i++) {
+ 		if (!ice_is_reset_in_progress(pf->state))
+ 			break;
+diff --git a/ice/ice_txrx.c b/ice/ice_txrx.c
+index 6ee8e0032d52..912416091772 100644
+--- a/ice/ice_txrx.c
++++ b/ice/ice_txrx.c
+@@ -19,6 +19,10 @@
+ #define FDIR_DESC_RXDID 0x40
+ #define ICE_FDIR_CLEAN_DELAY 10
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#include <ice_netmap_linux.h>
++#endif
++
+ /**
+  * ice_prgm_fdir_fltr - Program a Flow Director filter
+  * @vsi: VSI to send dummy packet
+@@ -209,6 +213,10 @@ static bool ice_clean_tx_irq(struct ice_ring *tx_ring, int napi_budget)
+ 	s16 i = tx_ring->next_to_clean;
+ 	struct ice_tx_desc *tx_desc;
+ 	struct ice_tx_buf *tx_buf;
++#ifdef DEV_NETMAP
++	if (tx_ring->netdev && netmap_tx_irq(tx_ring->netdev, tx_ring->q_index) != NM_IRQ_PASS)
++		return true;
++#endif /* DEV_NETMAP */
+ 
+ 	tx_buf = &tx_ring->tx_buf[i];
+ 	tx_desc = ICE_TX_DESC(tx_ring, i);
+@@ -1071,6 +1079,16 @@ int ice_clean_rx_irq(struct ice_ring *rx_ring, int budget)
+ 	struct xdp_buff xdp;
+ 	bool failure;
+ 
++#ifdef DEV_NETMAP
++	if (rx_ring->netdev) {
++		int dummy, nm_irq;
++		nm_irq = netmap_rx_irq(rx_ring->netdev, rx_ring->q_index, &dummy);
++		if (nm_irq != NM_IRQ_PASS) {
++			return 1;
++		}
++	}
++#endif /* DEV_NETMAP */
++
+ 	/* Frame size depend on rx_ring setup when PAGE_SIZE=4K */
+ #if (PAGE_SIZE < 8192)
+ 	frame_sz = ice_rx_frame_truesize(rx_ring, 0);
