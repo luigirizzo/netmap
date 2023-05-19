@@ -1501,6 +1501,15 @@ int netmap_update_config(struct netmap_adapter *na);
  * leasing-related data structures
  */
 int netmap_krings_create(struct netmap_adapter *na, u_int tailroom);
+
+/*
+ * tailroom must be properly aligned with nm_tailroom_align().
+ */
+static inline u_int
+nm_tailroom_align(u_int tr) {
+	return (tr + 15) & ~15U;
+}
+
 /* deletes the kring array of the adapter. The array must have
  * been created using netmap_krings_create
  */
