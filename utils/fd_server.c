@@ -122,6 +122,7 @@ get_fd(const char *if_name, struct fd_response *res)
 		}
 		if (marshal(res, entry) < 0)
 			return -1;
+		res->result = 0;
 		return entry->nmd->fd;
 	}
 
