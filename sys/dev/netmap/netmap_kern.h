@@ -407,6 +407,7 @@ struct netmap_zmon_list {
  * RX rings attached to the VALE switch are accessed by both senders
  * and receiver. They are protected through the q_lock on the RX ring.
  */
+#define NM_KRING_ALIGNMENT 64
 struct netmap_kring {
 	struct netmap_ring	*ring;
 
@@ -584,9 +585,9 @@ struct netmap_kring {
 #endif
 }
 #ifdef _WIN32
-__declspec(align(64));
+__declspec(align(NM_KRING_ALIGNMENT));
 #else
-__attribute__((__aligned__(64)));
+__attribute__((__aligned__(NM_KRING_ALIGNMENT)));
 #endif
 
 /* return 1 iff the kring needs to be turned on */
@@ -1505,9 +1506,9 @@ int netmap_krings_create(struct netmap_adapter *na, u_int tailroom);
 /*
  * tailroom must be properly aligned with nm_tailroom_align().
  */
-static inline u_int
-nm_tailroom_align(u_int tr) {
-	return (tr + 15) & ~15U;
+static inline uint64_t
+nm_tailroom_align(uint64_t tr) {
+	return (tr + (NM_KRING_ALIGNMENT - 1)) & ~((uint64_t)NM_KRING_ALIGNMENT - 1);
 }
 
 /* deletes the kring array of the adapter. The array must have

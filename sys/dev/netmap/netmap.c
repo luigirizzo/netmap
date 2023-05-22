@@ -837,6 +837,10 @@ netmap_default_bufcfg(struct netmap_kring *kring, uint64_t target)
  *                    |          |  } tailroom bytes
  *                    |          | /
  *                    +----------+
+ * netmap_kring       |          | (aligned to NM_KRING_ALIGNMENT)
+ * structs            ~          ~
+ *                    |          |
+ *                    +----------+
  *
  * Note: for compatibility, host krings are created even when not needed.
  * The tailroom space is currently used by vale ports for allocating leases.
@@ -861,9 +865,9 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 	n[NR_TX] = netmap_all_rings(na, NR_TX);
 	n[NR_RX] = netmap_all_rings(na, NR_RX);
 
-	len = (n[NR_TX] + n[NR_RX]) *
-		(sizeof(struct netmap_kring) + sizeof(struct netmap_kring *))
-		+ tailroom;
+	len = nm_tailroom_align((n[NR_TX] + n[NR_RX]) *
+		sizeof(struct netmap_kring *) + tailroom) +
+		(n[NR_TX] + n[NR_RX]) * sizeof(struct netmap_kring);
 
 	na->tx_rings = nm_os_malloc((size_t)len);
 	if (na->tx_rings == NULL) {
@@ -874,7 +878,8 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 	na->tailroom = na->rx_rings + n[NR_RX];
 
 	/* link the krings in the krings array */
-	kring = (struct netmap_kring *)((char *)na->tailroom + tailroom);
+	kring = (struct netmap_kring *)
+		nm_tailroom_align((uint64_t)((char *)na->tailroom + tailroom));
 	for (i = 0; i < n[NR_TX] + n[NR_RX]; i++) {
 		na->tx_rings[i] = kring;
 		kring++;

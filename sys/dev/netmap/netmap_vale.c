@@ -436,7 +436,7 @@ netmap_vale_vp_krings_create(struct netmap_adapter *na)
 	/*
 	 * Leases are attached to RX rings on vale ports
 	 */
-	tailroom = nm_tailroom_align(sizeof(uint32_t) * na->num_rx_desc * nrx);
+	tailroom = sizeof(uint32_t) * na->num_rx_desc * nrx;
 
 	error = netmap_krings_create(na, tailroom);
 	if (error)
