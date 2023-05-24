@@ -1245,16 +1245,17 @@ netmap_grab_packets(struct netmap_kring *kring, struct mbq *q, int force)
 	for (n = kring->nr_hwcur; n != head; n = nm_next(n, lim)) {
 		struct mbuf *m;
 		struct netmap_slot *slot = &kring->ring->slot[n];
+		uint16_t len = NM_ACCESS_ONCE(slot->len);
 
 		if ((slot->flags & NS_FORWARD) == 0 && !force)
 			continue;
-		if (slot->len < 14 || slot->len > NETMAP_BUF_SIZE(na)) {
-			nm_prlim(5, "bad pkt at %d len %d", n, slot->len);
+		if (len < 14 || len > NETMAP_BUF_SIZE(na)) {
+			nm_prlim(5, "bad pkt at %d len %d", n, len);
 			continue;
 		}
 		slot->flags &= ~NS_FORWARD; // XXX needed ?
 		/* XXX TODO: adapt to the case of a multisegment packet */
-		m = m_devget(NMB(na, slot), slot->len, 0, na->ifp, NULL);
+		m = m_devget(NMB(na, slot), len, 0, na->ifp, NULL);
 
 		if (m == NULL)
 			break;
