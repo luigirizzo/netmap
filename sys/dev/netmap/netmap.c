@@ -1246,16 +1246,17 @@ netmap_grab_packets(struct netmap_kring *kring, struct mbq *q, int force)
 		struct mbuf *m;
 		struct netmap_slot *slot = &kring->ring->slot[n];
 		uint16_t len = NM_ACCESS_ONCE(slot->len);
+		uint64_t offset = nm_get_offset(kring, slot);
 
 		if ((slot->flags & NS_FORWARD) == 0 && !force)
 			continue;
-		if (len < 14 || len > NETMAP_BUF_SIZE(na)) {
+		if (len < 14 || len > (NETMAP_BUF_SIZE(na) - offset)) {
 			nm_prlim(5, "bad pkt at %d len %d", n, len);
 			continue;
 		}
 		slot->flags &= ~NS_FORWARD; // XXX needed ?
 		/* XXX TODO: adapt to the case of a multisegment packet */
-		m = m_devget(NMB(na, slot), len, 0, na->ifp, NULL);
+		m = m_devget(NMB_O(kring, slot), len, 0, na->ifp, NULL);
 
 		if (m == NULL)
 			break;
@@ -1407,14 +1408,14 @@ netmap_rxsync_from_host(struct netmap_kring *kring, int flags)
 
 		nm_i = kring->nr_hwtail;
 		stop_i = nm_prev(kring->nr_hwcur, lim);
-		while ( nm_i != stop_i && (m = mbq_dequeue(q)) != NULL ) {
+		while (nm_i != stop_i && (m = mbq_dequeue(q)) != NULL) {
 			int len = MBUF_LEN(m);
 			struct netmap_slot *slot = &ring->slot[nm_i];
 
-			m_copydata(m, 0, len, NMB(na, slot));
+			m_copydata(m, 0, len, NMB_O(kring, slot));
 			nm_prdis("nm %d len %d", nm_i, len);
 			if (netmap_debug & NM_DEBUG_HOST)
-				nm_prinf("%s", nm_dump_buf(NMB(na, slot),len, 128, NULL));
+				nm_prinf("%s", nm_dump_buf(NMB_O(kring, slot), len, 128, NULL));
 
 			slot->len = len;
 			slot->flags = 0;
