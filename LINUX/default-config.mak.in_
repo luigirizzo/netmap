@@ -136,3 +136,18 @@ virtio_net.c@force	:= 1
 endef
 
 $(foreach d,$(filter virtio_net.c,$(E_DRIVERS)),$(eval $(call virtio_net)))
+
+define netronome_driver
+nfp@fetch	:= test -e @SRCDIR@/ext-drivers/nfp-drv-kmods || git clone https://github.com/Netronome/nfp-drv-kmods @SRCDIR@/ext-drivers/nfp-drv-kmods
+nfp@src		:= ln -s @SRCDIR@/ext-drivers/nfp-drv-kmods nfp
+#nfp@patch	:= patches/netronome--nfp--$($(1)@v)
+nfp@patch	:=
+nfp@prepare	:=
+nfp@build	:= make -C nfp EXTRA_CFLAGS="$(EXTRA_CFLAGS)" KOPTS=@KOPTS@ NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@
+nfp@install 	:= make -C nfp install INSTALL_MOD_PATH=@MODPATH@ EXTRA_CFLAGS="$(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@
+nfp@clean	:= if [ -d nfp ]; then make -C nfp clean EXTRA_CFLAGS="$(EXTRA_CFLAGS)" NETMAP_DRIVERS_SUFFIX=@DRVSUFFIX@; fi
+nfp@distclean	:= rm -f nfp
+nfp@force	:= 1
+endef
+
+$(foreach d,$(filter nfp,$(E_DRIVERS)),$(eval $(call netronome_driver)))
