@@ -1,0 +1,27 @@
+diff --git a/nfp/src/nfp_net_main.c b/nfp/src/nfp_net_main.c
+index 80f13bd..2a2204d 100644
+--- a/nfp/src/nfp_net_main.c
++++ b/nfp/src/nfp_net_main.c
+@@ -35,6 +35,11 @@
+ 
+ #define NFP_PF_CSR_SLICE_SIZE	(32 * 1024)
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#define NETMAP_NFP_MAIN
++#include <nfp_netmap_linux.h>
++#endif
++
+ /**
+  * nfp_net_get_mac_addr() - Get the MAC address.
+  * @pf:       NFP PF handle
+@@ -171,6 +176,10 @@ nfp_net_pf_init_vnic(struct nfp_pf *pf, struct nfp_net *nn, unsigned int id)
+ #else
+ 			goto err_debugfs_vnic_clean;
+ #endif
++
++#ifdef DEV_NETMAP
++			nfp_netmap_attach(nn);;
++#endif /* DEV_NETMAP */
+ 	}
+ 
+ 	return 0;
