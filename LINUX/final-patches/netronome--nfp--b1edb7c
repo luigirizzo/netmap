@@ -1,3 +1,36 @@
+diff --git a/nfp/src/nfd3/dp.c b/nfp/src/nfd3/dp.c
+index 555f5c9..0cd07fa 100644
+--- a/nfp/src/nfd3/dp.c
++++ b/nfp/src/nfd3/dp.c
+@@ -20,6 +20,11 @@
+ #include "../crypto/fw.h"
+ #include "nfd3.h"
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#define NETMAP_NFP_NFD3_DP
++#include <nfp_netmap_linux.h>
++#endif
++
+ /* Transmit processing
+  *
+  * One queue controller peripheral queue is used for transmit.  The
+@@ -940,6 +945,16 @@ static int nfp_nfd3_rx(struct nfp_net_rx_ring *rx_ring, int budget)
+ 	struct xdp_buff xdp;
+ #endif
+ 
++#ifdef DEV_NETMAP
++	if (dp->netdev) {
++		int dummy, nm_irq;
++		nm_irq = netmap_rx_irq(dp->netdev, rx_ring->idx, &dummy);
++		if (nm_irq != NM_IRQ_PASS) {
++			return (nm_irq == NM_IRQ_COMPLETED) ? 1 : budget;
++		}
++	}
++#endif /* DEV_NETMAP */
++
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+ 	rcu_read_lock();
+ #endif
 diff --git a/nfp/src/nfp_net.h b/nfp/src/nfp_net.h
 index 999207a..dfcc9c2 100644
 --- a/nfp/src/nfp_net.h

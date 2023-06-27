@@ -37,9 +37,39 @@
 static int
 nfp_netmap_configure_rx_ring(struct nfp_net *nn, struct nfp_net_rx_ring *rx_ring)
 {
-	(void)nn;
-	nm_prinf("idx %d", rx_ring->idx);
-	return 0;
+	struct netmap_adapter *na;
+	struct netmap_slot *slot;
+	struct netmap_kring *kring;
+	int lim, i, ring_nr;
+
+	if (!nn->dp.netdev || !NM_NA_VALID(nn->dp.netdev))
+		return 0;
+
+	na = NA(nn->dp.netdev);
+	ring_nr = rx_ring->idx;
+
+	slot = netmap_reset(na, NR_RX, ring_nr, 0);
+	if (!slot)
+		return 0;	// not in netmap mode
+
+	kring = na->rx_rings[ring_nr];
+	lim = na->num_rx_desc - 1 - nm_kr_rxspace(kring);
+	rx_ring->cnt = 1; /* to avoid freelist fill */
+
+	nm_prinf("rx ring %d filling %d slots", ring_nr, lim);
+	for (i = 0; i < lim; i++) {
+		int si = netmap_idx_n2k(kring, i);
+		uint64_t paddr;
+		PNMB_O(kring, slot + si, &paddr);
+
+		rx_ring->rxds[si].fld.reserved = 0;
+		rx_ring->rxds[si].fld.meta_len_dd = 0;
+		nfp_desc_set_dma_addr_48b(&rx_ring->rxds[si].fld, paddr);
+	}
+	wmb();
+	nfp_qcp_wr_ptr_add(rx_ring->qcp_fl, lim);
+
+	return 1;
 }
 
 static int
