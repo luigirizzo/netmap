@@ -58,7 +58,7 @@ exit_status=0
 pending_packets="$(($max_packets - $avail_packets))"
 pending_transmissions="$(($num_send - $num_recv))"
 if [ $pending_packets != $pending_transmissions ] ; then
-	exit_status = 1
+	exit_status=1
 fi
 check_exit $pending_transmissions $pending_packets "pending_transmissions=pending_packets"
 
