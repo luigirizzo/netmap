@@ -2446,6 +2446,9 @@ nm_os_onattach(struct ifnet *ifp)
 	if (ifp->netdev_ops) {
 		/* prepare a clone of the netdev ops */
 		hwna->nm_ndo = *ifp->netdev_ops;
+		/* save the old pointer to that if_transmit is
+		 */
+		na->if_transmit = (void *)ifp->netdev_ops;
 	}
 #endif /* NETMAP_LINUX_HAVE_NETDEV_OPS */
 	hwna->nm_ndo.ndo_start_xmit = linux_netmap_start_xmit;

@@ -27,14 +27,51 @@
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
 
+#ifdef NETMAP_NFP_NET
+/* prevent name clash */
+#undef cdev
+#endif /* NETMAP_NFP_NET */
+
+#ifdef NETMAP_NFP_DP
+
+static int
+nfp_netmap_configure_rx_ring(struct nfp_net *nn, struct nfp_net_rx_ring *rx_ring)
+{
+	(void)nn;
+	nm_prinf("idx %d", rx_ring->idx);
+	return 0;
+}
+
+static int
+nfp_netmap_configure_tx_ring(struct nfp_net *nn, struct nfp_net_tx_ring *tx_ring)
+{
+	(void)nn;
+	nm_prinf("idx %d", tx_ring->idx);
+	return 0;
+}
+
+#endif /* NETMAP_NFP_DP */
+
 #ifdef NETMAP_NFP_MAIN
 
 static int
 nfp_netmap_reg(struct netmap_adapter *na, int onoff)
 {
-	(void)na;
-	nm_prinf("called onoff %d", onoff);
-	return 1;
+	struct ifnet *ifp = na->ifp;
+	struct nfp_net *nn = netdev_priv(ifp);
+	struct nfp_net_dp *dp;
+
+	dp = nfp_net_clone_dp(nn);
+	if (!dp)
+		return 1;
+
+	if (onoff) {
+		nm_set_native_flags(na);
+	} else {
+		nm_clear_native_flags(na);
+	}
+
+	return nfp_net_ring_reconfig(nn, dp, NULL);
 }
 
 static int

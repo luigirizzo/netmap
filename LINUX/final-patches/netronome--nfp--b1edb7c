@@ -1,3 +1,69 @@
+diff --git a/nfp/src/nfp_net.h b/nfp/src/nfp_net.h
+index 999207a..dfcc9c2 100644
+--- a/nfp/src/nfp_net.h
++++ b/nfp/src/nfp_net.h
+@@ -951,8 +951,21 @@ extern const char nfp_driver_version[];
+ extern const struct net_device_ops nfp_nfd3_netdev_ops;
+ extern const struct net_device_ops nfp_nfdk_netdev_ops;
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#define NETMAP_NFP_NET
++#include <nfp_netmap_linux.h>
++#undef NETMAP_NFP_NET
++#endif
++
+ static inline bool nfp_netdev_is_nfp_net(struct net_device *netdev)
+ {
++#ifdef DEV_NETMAP
++	struct netmap_adapter *na = NA(netdev);
++	if (na && na->if_transmit) {
++		return na->if_transmit == (void *)&nfp_nfd3_netdev_ops ||
++		       na->if_transmit == (void *)&nfp_nfdk_netdev_ops;
++	}
++#endif /* DEV_NETMAP */
+ 	return netdev->netdev_ops == &nfp_nfd3_netdev_ops ||
+ 	       netdev->netdev_ops == &nfp_nfdk_netdev_ops;
+ }
+diff --git a/nfp/src/nfp_net_dp.c b/nfp/src/nfp_net_dp.c
+index e92157c..3ccf102 100644
+--- a/nfp/src/nfp_net_dp.c
++++ b/nfp/src/nfp_net_dp.c
+@@ -5,6 +5,11 @@
+ #include "nfp_net_dp.h"
+ #include "nfp_net_xsk.h"
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#define NETMAP_NFP_DP
++#include <nfp_netmap_linux.h>
++#endif
++
+ /**
+  * nfp_net_rx_alloc_one() - Allocate and map page frag for RX
+  * @dp:		NFP Net data path struct
+@@ -209,6 +214,11 @@ int nfp_net_tx_rings_prepare(struct nfp_net *nn, struct nfp_net_dp *dp)
+ 		if (nfp_net_tx_ring_alloc(dp, &dp->tx_rings[r]))
+ 			goto err_free_prev;
+ 
++#ifdef DEV_NETMAP
++		if (nfp_netmap_configure_tx_ring(nn, &dp->tx_rings[r]))
++			continue;
++#endif /* DEV_NETMAP */
++
+ 		if (nfp_net_tx_ring_bufs_alloc(dp, &dp->tx_rings[r]))
+ 			goto err_free_ring;
+ 	}
+@@ -368,6 +378,11 @@ int nfp_net_rx_rings_prepare(struct nfp_net *nn, struct nfp_net_dp *dp)
+ 		if (nfp_net_rx_ring_alloc(dp, &dp->rx_rings[r]))
+ 			goto err_free_prev;
+ 
++#ifdef DEV_NETMAP
++		if (nfp_netmap_configure_rx_ring(nn, &dp->rx_rings[r]))
++			continue;
++#endif /* DEV_NETMAP */
++
+ 		if (nfp_net_rx_ring_bufs_alloc(dp, &dp->rx_rings[r]))
+ 			goto err_free_ring;
+ 	}
 diff --git a/nfp/src/nfp_net_main.c b/nfp/src/nfp_net_main.c
 index 80f13bd..2a2204d 100644
 --- a/nfp/src/nfp_net_main.c
@@ -25,3 +91,32 @@ index 80f13bd..2a2204d 100644
  	}
  
  	return 0;
+diff --git a/nfp/src/nfp_net_repr.h b/nfp/src/nfp_net_repr.h
+index b342082..07844c8 100644
+--- a/nfp/src/nfp_net_repr.h
++++ b/nfp/src/nfp_net_repr.h
+@@ -13,6 +13,11 @@ struct nfp_port;
+ 
+ #ifdef COMPAT__HAVE_METADATA_IP_TUNNEL
+ #include <net/dst_metadata.h>
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#define NETMAP_NFP_NET
++#include <nfp_netmap_linux.h>
++#undef NETMAP_NFP_NET
++#endif
+ #endif
+ 
+ /**
+@@ -82,6 +87,12 @@ extern const struct net_device_ops nfp_repr_netdev_ops;
+ #ifdef COMPAT__HAVE_METADATA_IP_TUNNEL
+ static inline bool nfp_netdev_is_nfp_repr(struct net_device *netdev)
+ {
++#ifdef DEV_NETMAP
++	struct netmap_adapter *na = NA(netdev);
++	if (na && na->if_transmit) {
++		return na->if_transmit == (void *)&nfp_repr_netdev_ops;
++	}
++#endif /* DEV_NETMAP */
+ 	return netdev->netdev_ops == &nfp_repr_netdev_ops;
+ }
+ 
