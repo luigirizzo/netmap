@@ -1,5 +1,5 @@
 diff --git a/nfp/src/nfd3/dp.c b/nfp/src/nfd3/dp.c
-index 555f5c9..0cd07fa 100644
+index 555f5c9..ca918b5 100644
 --- a/nfp/src/nfd3/dp.c
 +++ b/nfp/src/nfd3/dp.c
 @@ -20,6 +20,11 @@
@@ -14,7 +14,19 @@ index 555f5c9..0cd07fa 100644
  /* Transmit processing
   *
   * One queue controller peripheral queue is used for transmit.  The
-@@ -940,6 +945,16 @@ static int nfp_nfd3_rx(struct nfp_net_rx_ring *rx_ring, int budget)
+@@ -649,6 +654,11 @@ void nfp_nfd3_rx_ring_fill_freelist(struct nfp_net_dp *dp,
+ {
+ 	unsigned int i;
+ 
++#ifdef DEV_NETMAP
++	if (nfp_netmap_configure_rx_ring(dp, rx_ring))
++		return;
++#endif
++
+ 	if (nfp_net_has_xsk_pool_slow(dp, rx_ring->idx))
+ 		return nfp_net_xsk_rx_ring_fill_freelist(rx_ring);
+ 
+@@ -940,6 +950,16 @@ static int nfp_nfd3_rx(struct nfp_net_rx_ring *rx_ring, int budget)
  	struct xdp_buff xdp;
  #endif
  
@@ -31,6 +43,19 @@ index 555f5c9..0cd07fa 100644
  #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
  	rcu_read_lock();
  #endif
+@@ -1023,6 +1043,12 @@ static int nfp_nfd3_rx(struct nfp_net_rx_ring *rx_ring, int budget)
+ 			nfp_nfd3_set_hash_desc(dp->netdev, &meta,
+ 					       rxbuf->frag + meta_off, rxd);
+ 		} else if (meta_len) {
++#ifdef DEV_NETMAP
++			if (!rxbuf->frag) {
++				nm_prlim(1, "null rxbuf->frag meta_len %d meta_off %x", meta_len, meta_off);
++				continue;
++			}
++#endif
+ 			if (unlikely(nfp_nfd3_parse_meta(dp->netdev, &meta,
+ 							 rxbuf->frag + meta_off,
+ 							 rxbuf->frag + pkt_off,
 diff --git a/nfp/src/nfp_net.h b/nfp/src/nfp_net.h
 index 999207a..dfcc9c2 100644
 --- a/nfp/src/nfp_net.h
@@ -58,7 +83,7 @@ index 999207a..dfcc9c2 100644
  	       netdev->netdev_ops == &nfp_nfdk_netdev_ops;
  }
 diff --git a/nfp/src/nfp_net_dp.c b/nfp/src/nfp_net_dp.c
-index e92157c..3ccf102 100644
+index e92157c..324b444 100644
 --- a/nfp/src/nfp_net_dp.c
 +++ b/nfp/src/nfp_net_dp.c
 @@ -5,6 +5,11 @@
@@ -83,18 +108,6 @@ index e92157c..3ccf102 100644
 +#endif /* DEV_NETMAP */
 +
  		if (nfp_net_tx_ring_bufs_alloc(dp, &dp->tx_rings[r]))
- 			goto err_free_ring;
- 	}
-@@ -368,6 +378,11 @@ int nfp_net_rx_rings_prepare(struct nfp_net *nn, struct nfp_net_dp *dp)
- 		if (nfp_net_rx_ring_alloc(dp, &dp->rx_rings[r]))
- 			goto err_free_prev;
- 
-+#ifdef DEV_NETMAP
-+		if (nfp_netmap_configure_rx_ring(nn, &dp->rx_rings[r]))
-+			continue;
-+#endif /* DEV_NETMAP */
-+
- 		if (nfp_net_rx_ring_bufs_alloc(dp, &dp->rx_rings[r]))
  			goto err_free_ring;
  	}
 diff --git a/nfp/src/nfp_net_main.c b/nfp/src/nfp_net_main.c

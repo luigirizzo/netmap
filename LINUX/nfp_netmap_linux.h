@@ -32,20 +32,20 @@
 #undef cdev
 #endif /* NETMAP_NFP_NET */
 
-#ifdef NETMAP_NFP_DP
+#ifdef NETMAP_NFP_NFD3_DP
 
 static int
-nfp_netmap_configure_rx_ring(struct nfp_net *nn, struct nfp_net_rx_ring *rx_ring)
+nfp_netmap_configure_rx_ring(struct nfp_net_dp *dp, struct nfp_net_rx_ring *rx_ring)
 {
 	struct netmap_adapter *na;
 	struct netmap_slot *slot;
 	struct netmap_kring *kring;
 	int lim, i, ring_nr;
 
-	if (!nn->dp.netdev || !NM_NA_VALID(nn->dp.netdev))
+	if (!dp->netdev || !NM_NA_VALID(dp->netdev))
 		return 0;
 
-	na = NA(nn->dp.netdev);
+	na = NA(dp->netdev);
 	ring_nr = rx_ring->idx;
 
 	slot = netmap_reset(na, NR_RX, ring_nr, 0);
@@ -54,17 +54,18 @@ nfp_netmap_configure_rx_ring(struct nfp_net *nn, struct nfp_net_rx_ring *rx_ring
 
 	kring = na->rx_rings[ring_nr];
 	lim = na->num_rx_desc - 1 - nm_kr_rxspace(kring);
-	rx_ring->cnt = 1; /* to avoid freelist fill */
 
-	nm_prinf("rx ring %d filling %d slots", ring_nr, lim);
+	nm_prinf("rx ring %d filling %d slots rx_offset %x", ring_nr, lim, dp->rx_offset);
 	for (i = 0; i < lim; i++) {
 		int si = netmap_idx_n2k(kring, i);
 		uint64_t paddr;
 		PNMB_O(kring, slot + si, &paddr);
 
-		rx_ring->rxds[si].fld.reserved = 0;
-		rx_ring->rxds[si].fld.meta_len_dd = 0;
-		nfp_desc_set_dma_addr_48b(&rx_ring->rxds[si].fld, paddr);
+		if (i % 32 == 0)
+			nm_prdis("%s: si %d addr %llx", kring->name, si, (unsigned long long)paddr);
+		rx_ring->rxds[i].fld.reserved = 0;
+		rx_ring->rxds[i].fld.meta_len_dd = 0;
+		nfp_desc_set_dma_addr_48b(&rx_ring->rxds[i].fld, paddr);
 	}
 	wmb();
 	nfp_qcp_wr_ptr_add(rx_ring->qcp_fl, lim);
@@ -72,11 +73,15 @@ nfp_netmap_configure_rx_ring(struct nfp_net *nn, struct nfp_net_rx_ring *rx_ring
 	return 1;
 }
 
+#endif
+
+#ifdef NETMAP_NFP_DP
+
 static int
 nfp_netmap_configure_tx_ring(struct nfp_net *nn, struct nfp_net_tx_ring *tx_ring)
 {
 	(void)nn;
-	nm_prinf("idx %d", tx_ring->idx);
+	nm_prdis("idx %d", tx_ring->idx);
 	return 0;
 }
 
@@ -115,9 +120,102 @@ nfp_netmap_txsync(struct netmap_kring *kring, int flags)
 static int
 nfp_netmap_rxsync(struct netmap_kring *kring, int flags)
 {
-	(void)kring;
-	(void)flags;
+	struct netmap_adapter *na = kring->na;
+	struct ifnet *ifp = na->ifp;
+	struct netmap_ring *ring = kring->ring;
+	u_int nm_i;	/* index into the netmap ring */
+	u_int nic_i;	/* index into the NIC ring */
+	u_int n;
+	u_int const lim = kring->nkr_num_slots - 1;
+	u_int const head = kring->rhead;
+	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
+
+	/* device specific */
+	struct nfp_net *nn = netdev_priv(ifp);
+	struct nfp_net_rx_ring *rxr;
+
+	if (!netif_running(ifp))
+		return 0;
+
+	rxr = nn->r_vecs[kring->ring_id].rx_ring;
+	if (unlikely(!rxr || !rxr->rxds)) {
+		nm_prlim(1, "ring %s is missing (rxr=%p)", kring->name, rxr);
+		return ENXIO;
+	}
+
+	if (head > lim)
+		return netmap_ring_reinit(kring);
+
+	if (netmap_no_pendintr || force_update) {
+		unsigned int meta_len, data_len, pkt_len;
+
+		nm_i = kring->nr_hwtail;
+		nic_i = netmap_idx_k2n(kring, nm_i);
+
+		for (n = 0; ; n++) {
+			struct nfp_net_rx_desc *curr = &rxr->rxds[nic_i];
+			struct netmap_slot *slot;
+			uint64_t paddr;
+
+			if (!(curr->rxd.meta_len_dd & PCIE_DESC_RX_DD))
+				break;
+			dma_rmb();
+			//meta_len = curr->rxd.meta_len_dd & PCIE_DESC_RX_META_LEN_MASK;
+			meta_len = 0;
+			data_len = le16_to_cpu(curr->rxd.data_len);
+			pkt_len = data_len - meta_len;
+			slot = ring->slot + nm_i;
+			slot->len = pkt_len;
+			PNMB_O(kring, slot, &paddr);
+			nm_prdis("%s: rd_p %u nic_i %d addr %llx", kring->name, rxr->rd_p, nic_i, (unsigned long long)paddr);
+			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev,
+					&paddr, slot->len, NR_RX);
+
+			nm_i = nm_next(nm_i, lim);
+			nic_i = nm_next(nm_i, rxr->cnt - 1);
+		}
+		if (n) {
+			kring->nr_hwtail = nm_i;
+		}
+		kring->nr_kflags &= ~NKR_PENDINTR;
+	}
+	nm_i = kring->nr_hwcur;
+	if (nm_i != head) {
+		nic_i = netmap_idx_k2n(kring, nm_i);
+		for (n = 0; nm_i != head; n++) {
+			struct netmap_slot *slot = &ring->slot[nm_i];
+			uint64_t paddr;
+			void *addr = PNMB(na, slot, &paddr);
+			uint64_t offset = nm_get_offset(kring, slot);
+
+			struct nfp_net_rx_desc *curr = &rxr->rxds[nic_i];
+
+			if (addr == NETMAP_BUF_BASE(na)) /* bad buf */
+				goto ring_reset;
+
+			if (slot->flags & NS_BUF_CHANGED) {
+				/* buffer has changed, reload map */
+				//netmap_reload_map(na, rxr->ptag, rxbuf->pmap, addr);
+				slot->flags &= ~NS_BUF_CHANGED;
+			}
+			curr->fld.reserved = 0;
+			curr->fld.meta_len_dd = 0;
+			nfp_desc_set_dma_addr_48b(&curr->fld, paddr + offset);
+			nm_prdis("%s: nic_i %d addr %llx", kring->name, nic_i, (unsigned long long)paddr + offset);
+			netmap_sync_map_dev(na, (bus_dma_tag_t) na->pdev,
+					&paddr, NETMAP_BUF_SIZE(na), NR_RX);
+			nm_i = nm_next(nm_i, lim);
+			nic_i = nm_next(nic_i, rxr->cnt - 1);
+		}
+		kring->nr_hwcur = head;
+
+		wmb();
+		nfp_qcp_wr_ptr_add(rxr->qcp_fl, n);
+	}
 	return 0;
+
+ring_reset:
+	return netmap_ring_reinit(kring);
 }
 
 static int
