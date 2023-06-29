@@ -83,7 +83,7 @@ index 999207a..dfcc9c2 100644
  	       netdev->netdev_ops == &nfp_nfdk_netdev_ops;
  }
 diff --git a/nfp/src/nfp_net_dp.c b/nfp/src/nfp_net_dp.c
-index e92157c..324b444 100644
+index e92157c..2f94eab 100644
 --- a/nfp/src/nfp_net_dp.c
 +++ b/nfp/src/nfp_net_dp.c
 @@ -5,6 +5,11 @@
@@ -108,6 +108,18 @@ index e92157c..324b444 100644
 +#endif /* DEV_NETMAP */
 +
  		if (nfp_net_tx_ring_bufs_alloc(dp, &dp->tx_rings[r]))
+ 			goto err_free_ring;
+ 	}
+@@ -368,6 +378,11 @@ int nfp_net_rx_rings_prepare(struct nfp_net *nn, struct nfp_net_dp *dp)
+ 		if (nfp_net_rx_ring_alloc(dp, &dp->rx_rings[r]))
+ 			goto err_free_prev;
+ 
++#ifdef DEV_NETMAP
++		if (nfp_netmap_preconfigure_rx_ring(dp, &dp->rx_rings[r]))
++			continue;
++#endif /* DEV_NETMAP */
++
+ 		if (nfp_net_rx_ring_bufs_alloc(dp, &dp->rx_rings[r]))
  			goto err_free_ring;
  	}
 diff --git a/nfp/src/nfp_net_main.c b/nfp/src/nfp_net_main.c

@@ -79,6 +79,25 @@ nfp_netmap_configure_rx_ring(struct nfp_net_dp *dp, struct nfp_net_rx_ring *rx_r
 #ifdef NETMAP_NFP_DP
 
 static int
+nfp_netmap_preconfigure_rx_ring(struct nfp_net_dp *dp, struct nfp_net_rx_ring *rx_ring)
+{
+	struct netmap_adapter *na;
+	struct netmap_kring *kring;
+
+	if (!dp->netdev)
+		return 0;
+
+	na = NA(dp->netdev);
+
+	if (netmap_reset(na, NR_RX, rx_ring->idx, 0) == NULL)
+		return 0;
+
+	kring = na->rx_rings[rx_ring->idx];
+	dp->fl_bufsz = kring->hwbuf_len + dp->rx_dma_off + NFP_NET_RX_BUF_NON_DATA;
+	return 1;
+}
+
+static int
 nfp_netmap_configure_tx_ring(struct nfp_net *nn, struct nfp_net_tx_ring *tx_ring)
 {
 	(void)nn;
@@ -288,9 +307,15 @@ nfp_netmap_krings_delete(struct netmap_adapter *na)
 static int
 nfp_netmap_bufcfg(struct netmap_kring *kring, uint64_t target)
 {
-	(void)kring;
-	(void)target;
-	nm_prinf("called target %llx", target);
+	kring->buf_align = 0;
+
+	if (kring->tx == NR_TX) {
+		kring->hwbuf_len = target;
+		return 0;
+	}
+
+	kring->hwbuf_len = target + kring->offset_max;
+
 	return 0;
 }
 
@@ -303,7 +328,7 @@ nfp_netmap_attach(struct nfp_net *nn)
 
 	na.ifp = nn->dp.netdev;
 	na.pdev = &nn->pdev->dev;
-	na.na_flags = NAF_OFFSETS;
+	na.na_flags = 0; // no support for user-defined offsets
 	na.num_tx_desc = nn->dp.txd_cnt;
 	na.num_rx_desc = nn->dp.rxd_cnt;
 	na.num_tx_rings = nn->dp.num_tx_rings;
