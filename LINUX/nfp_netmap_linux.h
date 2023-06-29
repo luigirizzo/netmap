@@ -26,6 +26,7 @@
 #include <bsd_glue.h>
 #include <net/netmap.h>
 #include <dev/netmap/netmap_kern.h>
+#include <dev/netmap/netmap_mem2.h>
 
 #ifdef NETMAP_NFP_NET
 /* prevent name clash */
@@ -160,16 +161,16 @@ nfp_netmap_rxsync(struct netmap_kring *kring, int flags)
 			if (!(curr->rxd.meta_len_dd & PCIE_DESC_RX_DD))
 				break;
 			dma_rmb();
-			//meta_len = curr->rxd.meta_len_dd & PCIE_DESC_RX_META_LEN_MASK;
-			meta_len = 0;
+			meta_len = curr->rxd.meta_len_dd & PCIE_DESC_RX_META_LEN_MASK;
 			data_len = le16_to_cpu(curr->rxd.data_len);
 			pkt_len = data_len - meta_len;
 			slot = ring->slot + nm_i;
 			slot->len = pkt_len;
-			PNMB_O(kring, slot, &paddr);
+			PNMB(na, slot, &paddr);
+			nm_write_offset(kring, slot, meta_len);
 			nm_prdis("%s: rd_p %u nic_i %d addr %llx", kring->name, rxr->rd_p, nic_i, (unsigned long long)paddr);
 			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev,
-					&paddr, slot->len, NR_RX);
+					&paddr, data_len, NR_RX);
 
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nm_i, rxr->cnt - 1);
@@ -233,6 +234,58 @@ nfp_netmap_config(struct netmap_adapter *na, struct nm_config_info *info)
 }
 
 static int
+nfp_netmap_krings_create(struct netmap_adapter *na)
+{
+	int error, i;
+
+	error = netmap_hw_krings_create(na);
+	if (error)
+		return error;
+
+	for (i = 0; i < nma_get_nrings(na, NR_RX); i++) {
+		struct netmap_kring *kring = NMR(na, NR_RX)[i];
+
+		kring->nr_kflags |= NKR_NEEDRING;
+	}
+
+	error = netmap_mem_rings_create(na);
+	if (error) {
+		goto err_del_krings;
+	}
+
+	/* set the offset on all the RX rings */
+	for (i = 0; i < nma_get_nrings(na, NR_RX); i++) {
+		struct netmap_kring *kring = NMR(na, NR_RX)[i];
+
+		kring->offset_mask = 0xFFFFFFFFFFFFFFFF;
+		kring->offset_max = NFP_NET_MAX_PREPEND;
+		*(uint64_t *)(uintptr_t)&kring->ring->offset_mask = kring->offset_mask;
+	}
+
+
+	return 0;
+
+err_del_krings:
+	netmap_hw_krings_delete(na);
+	return error;
+}
+
+static void
+nfp_netmap_krings_delete(struct netmap_adapter *na)
+{
+	int i;
+
+	for (i = 0; i < nma_get_nrings(na, NR_RX); i++) {
+		struct netmap_kring *kring = NMR(na, NR_RX)[i];
+
+		kring->nr_kflags &= ~NKR_NEEDRING;
+	}
+
+	netmap_mem_rings_delete(na);
+	netmap_hw_krings_delete(na);
+}
+
+static int
 nfp_netmap_bufcfg(struct netmap_kring *kring, uint64_t target)
 {
 	(void)kring;
@@ -250,7 +303,7 @@ nfp_netmap_attach(struct nfp_net *nn)
 
 	na.ifp = nn->dp.netdev;
 	na.pdev = &nn->pdev->dev;
-	na.na_flags = NAF_MOREFRAG | NAF_OFFSETS;
+	na.na_flags = NAF_OFFSETS;
 	na.num_tx_desc = nn->dp.txd_cnt;
 	na.num_rx_desc = nn->dp.rxd_cnt;
 	na.num_tx_rings = nn->dp.num_tx_rings;
@@ -258,6 +311,8 @@ nfp_netmap_attach(struct nfp_net *nn)
 	na.rx_buf_maxsize = 4096;
 	na.nm_txsync = nfp_netmap_txsync;
 	na.nm_rxsync = nfp_netmap_rxsync;
+	na.nm_krings_create = nfp_netmap_krings_create;
+	na.nm_krings_delete = nfp_netmap_krings_delete;
 	na.nm_register = nfp_netmap_reg;
 	na.nm_config = nfp_netmap_config;
 	na.nm_bufcfg = nfp_netmap_bufcfg;
