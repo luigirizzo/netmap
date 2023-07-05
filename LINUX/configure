@@ -1688,8 +1688,7 @@ EOF
 	#include <linux/skbuff.h>
 
 	unsigned int
-	dummy(void) {
-                struct sk_buff *skb = NULL;
+	dummy(struct sk_buff *skb) {
                 return refcount_read(&skb->users);
 	}
 EOF
