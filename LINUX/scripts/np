@@ -377,6 +377,10 @@ function build-prep()
 
 	(
 		cd $dst
+		# fix for incompatible GNU make change
+		sed -i -e '/^squote/a\
+pound	:= \\#
+			/\<printf\>/{s/\\#/$(pound)/}' tools/build/Build.include || true
 		last=compiler-gcc.h
 		for i in $(seq 12); do
 			[ -e include/linux/compiler-gcc$i.h ] ||
