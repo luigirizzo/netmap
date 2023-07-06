@@ -1895,6 +1895,15 @@ EOF
 	}
 EOF
 
+  # eth_type_vlan?
+  add_test 'have ETH_TYPE_VLAN' <<EOF
+	#include <linux/if_vlan.h>
+
+	bool dummy(__be16 ethertype) {
+		return eth_type_vlan(ethertype);
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################

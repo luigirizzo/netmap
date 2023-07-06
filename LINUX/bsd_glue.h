@@ -190,6 +190,14 @@ static inline int skb_checksum_start_offset(const struct sk_buff *skb) {
 #define page_to_virt(p) 		phys_to_virt(page_to_phys(p))
 #endif /* NETMAP_LINUX_HAVE_PAGE_TO_VIRT */
 
+#ifndef NETMAP_LINUX_HAVE_ETH_TYPE_VLAN
+static inline bool eth_type_vlan(__be16 ethertype)
+{
+	return ethertype == htons(ETH_P_8021Q) ||
+		ethertype == htons(ETH_P_8021AD);
+}
+#endif /* NETMAP_LINUX_HAVE_ETH_TYPE_VLAN */
+
 /*----------- end of LINUX_VERSION_CODE dependencies ----------*/
 
 /* Type redefinitions. XXX check them */
