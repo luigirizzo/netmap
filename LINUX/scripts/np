@@ -409,6 +409,9 @@ KBUILD_CPPFLAGS += $(call cc-option, -fno-pie)' Makefile
 		fi
 		# old kernels' selinux causes compilation failures with gcc >= 9
 		echo "CONFIG_SECURITY_SELINUX=n" >> .config
+		# workaround for some objtool/binutils incompatibility
+		sed -i -e 's/^CONFIG_UNWINDER_ORC=/#&/' .config
+		echo "CONFIG_UNWINDER_FRAME_POINTER=y" >> .config
 		yes '' | make oldconfig
 		# some tools do not compile with -Werror and gcc >= 9
 		sed -i 's/-Werror/-Wno-error/g' $(grep -Rl -- -Werror tools)
