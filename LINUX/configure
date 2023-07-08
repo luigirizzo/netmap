@@ -1904,6 +1904,33 @@ EOF
 	}
 EOF
 
+  # skb_vlan_tag_present?
+  add_test 'have SKB_VLAN_TAG_PRESENT' <<EOF
+	#include <linux/if_vlan.h>
+
+	int dummy(struct sk_buff *skb) {
+		return skb_vlan_tag_present(skb);
+	}
+EOF
+
+  # __vlan_hwaccess_push_inside?
+  add_test 'have VLAN_HWACCEL_PUSH_INSIDE' <<EOF
+	#include <linux/if_vlan.h>
+
+	struct sk_buff* dummy(struct sk_buff *skb) {
+		return __vlan_hwaccel_push_inside(skb);
+	}
+EOF
+
+  # skb_vlan_untag?
+  add_test 'have SKB_VLAN_UNTAG' <<EOF
+	#include <linux/if_vlan.h>
+
+	struct sk_buff* dummy(struct sk_buff *skb) {
+		return skb_vlan_untag(skb);
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################
