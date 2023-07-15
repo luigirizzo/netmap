@@ -149,5 +149,5 @@ nfp@distclean	:= rm -f nfp
 nfp@force	:= 1
 endef
 
-$(eval $(call default,nfp,b1edb7c))
+$(eval $(call default,nfp,19e6b02))
 $(foreach d,$(filter nfp,$(E_DRIVERS)),$(eval $(call netronome_driver)))

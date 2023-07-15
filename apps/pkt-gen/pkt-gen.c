@@ -1271,7 +1271,7 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 	if (options & (OPT_COPY | OPT_PREFETCH) ) {
 		for (sent = 0; sent < count; sent++) {
 			struct netmap_slot *slot = &ring->slot[head];
-			char *p = NETMAP_BUF(ring, slot->buf_idx);
+			char *p = NETMAP_BUF_OFFSET(ring, slot);
 
 			__builtin_prefetch(p);
 			head = nm_ring_next(ring, head);
@@ -1285,7 +1285,7 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 		u_int tosend = size;
 
 		slot = &ring->slot[head];
-		p = NETMAP_BUF(ring, slot->buf_idx);
+		p = NETMAP_BUF_OFFSET(ring, slot);
 		buf_changed = slot->flags & NS_BUF_CHANGED;
 
 		slot->flags = 0;
@@ -1308,7 +1308,7 @@ send_packets(struct netmap_ring *ring, struct pkt *pkt, void *frame,
 				f += frag_size;
 				head = nm_ring_next(ring, head);
 				slot = &ring->slot[head];
-				fp = NETMAP_BUF(ring, slot->buf_idx);
+				fp = NETMAP_BUF_OFFSET(ring, slot);
 			}
 			n -= (frags - 1);
 			p = fp;
@@ -1438,7 +1438,7 @@ ping_body(void *data)
 		for (m = 0; (unsigned)m < limit; m++) {
 			slot = &ring->slot[ring->head];
 			slot->len = size;
-			p = NETMAP_BUF(ring, slot->buf_idx);
+			p = NETMAP_BUF_OFFSET(ring, slot);
 
 			if (nm_ring_empty(ring)) {
 				D("-- ouch, cannot send");
@@ -1491,7 +1491,7 @@ ping_body(void *data)
 				int pos;
 
 				slot = &ring->slot[ring->head];
-				p = NETMAP_BUF(ring, slot->buf_idx);
+				p = NETMAP_BUF_OFFSET(ring, slot);
 
 				clock_gettime(CLOCK_REALTIME_PRECISE, &now);
 				bcopy(p+42, &seq, sizeof(seq));
@@ -1625,13 +1625,13 @@ pong_body(void *data)
 				uint32_t head = rxring->head;
 				struct netmap_slot *slot = &rxring->slot[head];
 				char *src, *dst;
-				src = NETMAP_BUF(rxring, slot->buf_idx);
+				src = NETMAP_BUF_OFFSET(rxring, slot);
 				//D("got pkt %p of size %d", src, slot->len);
 				rxring->head = rxring->cur = nm_ring_next(rxring, head);
 				if (txavail == 0)
 					continue;
-				dst = NETMAP_BUF(txring,
-				    txring->slot[txhead].buf_idx);
+				dst = NETMAP_BUF_OFFSET(txring,
+				    &txring->slot[txhead]);
 				/* copy... */
 				dpkt = (uint16_t *)dst;
 				spkt = (uint16_t *)src;
@@ -1905,7 +1905,7 @@ receive_packets(struct netmap_ring *ring, u_int limit, int dump, uint64_t *bytes
 		limit = n;
 	for (rx = 0; rx < limit; rx++) {
 		struct netmap_slot *slot = &ring->slot[head];
-		char *p = NETMAP_BUF(ring, slot->buf_idx);
+		char *p = NETMAP_BUF_OFFSET(ring, slot);
 
 		*bytes += slot->len;
 		if (dump)
@@ -2148,7 +2148,7 @@ txseq_body(void *data)
 		for (fcnt = frags, head = ring->head;
 				sent < limit; sent++, sequence++) {
 			struct netmap_slot *slot = &ring->slot[head];
-			char *p = NETMAP_BUF(ring, slot->buf_idx);
+			char *p = NETMAP_BUF_OFFSET(ring, slot);
 			uint16_t *w = (uint16_t *)PKT(pkt, body, targ->g->af), t;
 
 			memcpy(&sum, targ->g->af == AF_INET ? &pkt->ipv4.udp.uh_sum : &pkt->ipv6.udp.uh_sum, sizeof(sum));
@@ -2346,7 +2346,7 @@ rxseq_body(void *data)
 
 			for (head = ring->head, i = 0; i < limit; i++) {
 				struct netmap_slot *slot = &ring->slot[head];
-				char *p = NETMAP_BUF(ring, slot->buf_idx);
+				char *p = NETMAP_BUF_OFFSET(ring, slot);
 				int len = slot->len;
 				struct pkt *pkt;
 

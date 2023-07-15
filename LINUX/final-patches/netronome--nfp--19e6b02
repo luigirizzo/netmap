@@ -1,5 +1,5 @@
 diff --git a/nfp/src/nfd3/dp.c b/nfp/src/nfd3/dp.c
-index 555f5c9..ca918b5 100644
+index 555f5c9..12e96e6 100644
 --- a/nfp/src/nfd3/dp.c
 +++ b/nfp/src/nfd3/dp.c
 @@ -20,6 +20,11 @@
@@ -49,7 +49,7 @@ index 555f5c9..ca918b5 100644
  		} else if (meta_len) {
 +#ifdef DEV_NETMAP
 +			if (!rxbuf->frag) {
-+				nm_prlim(1, "null rxbuf->frag meta_len %d meta_off %x", meta_len, meta_off);
++				nm_prlim(1, "ring %d: null rxbuf->frag netmap_on %d", dp->netdev ? nm_netmap_on(NA(dp->netdev)) : -1);
 +				continue;
 +			}
 +#endif
@@ -82,6 +82,33 @@ index 999207a..dfcc9c2 100644
  	return netdev->netdev_ops == &nfp_nfd3_netdev_ops ||
  	       netdev->netdev_ops == &nfp_nfdk_netdev_ops;
  }
+diff --git a/nfp/src/nfp_net_common.c b/nfp/src/nfp_net_common.c
+index e6eda0d..94d9612 100644
+--- a/nfp/src/nfp_net_common.c
++++ b/nfp/src/nfp_net_common.c
+@@ -72,6 +72,11 @@
+ static int nfp_net_mc_unsync(struct net_device *netdev, const unsigned char *addr);
+ #endif
+ 
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#define NETMAP_NFP_COMMON
++#include <nfp_netmap_linux.h>
++#endif
++
+ /**
+  * nfp_net_get_fw_version() - Read and parse the FW version
+  * @fw_ver:	Output fw_version structure to read to
+@@ -1731,6 +1736,10 @@ int nfp_net_ring_reconfig(struct nfp_net *nn, struct nfp_net_dp *dp,
+ 	nfp_net_close_stack(nn);
+ 	nfp_net_clear_config_and_disable(nn);
+ 
++#ifdef DEV_NETMAP
++	nfp_netmap_reconfig(nn);
++#endif /* DEV_NETMAP */
++
+ 	err = nfp_net_dp_swap_enable(nn, dp);
+ 	if (err) {
+ 		int err2;
 diff --git a/nfp/src/nfp_net_dp.c b/nfp/src/nfp_net_dp.c
 index e92157c..2f94eab 100644
 --- a/nfp/src/nfp_net_dp.c

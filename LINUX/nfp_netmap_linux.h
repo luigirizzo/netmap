@@ -31,6 +31,13 @@
 #ifdef NETMAP_NFP_NET
 /* prevent name clash */
 #undef cdev
+#else /* NETMAP_NFP_NET */
+struct netmap_nfp_adapter {
+	struct netmap_hw_adapter up;
+	int netmap_mode_switch;
+#define NETMAP_NFP_REGIF	1
+#define NETMAP_NFP_UNREGIF	2
+};
 #endif /* NETMAP_NFP_NET */
 
 #ifdef NETMAP_NFP_NFD3_DP
@@ -43,7 +50,7 @@ nfp_netmap_configure_rx_ring(struct nfp_net_dp *dp, struct nfp_net_rx_ring *rx_r
 	struct netmap_kring *kring;
 	int lim, i, ring_nr;
 
-	if (!dp->netdev || !NM_NA_VALID(dp->netdev))
+	if (!dp->netdev)
 		return 0;
 
 	na = NA(dp->netdev);
@@ -74,7 +81,34 @@ nfp_netmap_configure_rx_ring(struct nfp_net_dp *dp, struct nfp_net_rx_ring *rx_r
 	return 1;
 }
 
-#endif
+#endif /* NETMAP_NFP_NFD3_DP */
+
+#ifdef NETMAP_NFP_COMMON
+
+static void
+nfp_netmap_reconfig(struct nfp_net *nn)
+{
+	struct netmap_adapter *na;
+	struct netmap_nfp_adapter *nna;
+
+	if (!nn->dp.netdev)
+		return;
+
+	na = NA(nn->dp.netdev);
+	nna = (struct netmap_nfp_adapter *)na;
+	switch (nna->netmap_mode_switch) {
+	case NETMAP_NFP_REGIF:
+		nm_set_native_flags(na);
+		break;
+	case NETMAP_NFP_UNREGIF:
+		nm_clear_native_flags(na);
+		break;
+	default:
+		break;
+	}
+}
+
+#endif /* NETMAP_NFP_COMMON */
 
 #ifdef NETMAP_NFP_DP
 
@@ -82,17 +116,34 @@ static int
 nfp_netmap_preconfigure_rx_ring(struct nfp_net_dp *dp, struct nfp_net_rx_ring *rx_ring)
 {
 	struct netmap_adapter *na;
+	struct netmap_nfp_adapter *nna;
 	struct netmap_kring *kring;
 
 	if (!dp->netdev)
 		return 0;
 
 	na = NA(dp->netdev);
+	nna = (struct netmap_nfp_adapter *)na;
 
-	if (netmap_reset(na, NR_RX, rx_ring->idx, 0) == NULL)
+	if (!nna->netmap_mode_switch)
 		return 0;
 
 	kring = na->rx_rings[rx_ring->idx];
+
+	switch (nna->netmap_mode_switch) {
+	case NETMAP_NFP_REGIF:
+		if (kring->nr_pending_mode != NKR_NETMAP_ON &&
+		    kring->nr_mode != NKR_NETMAP_ON)
+			return 0;
+		break;
+	case NETMAP_NFP_UNREGIF:
+		if (kring->nr_pending_mode == NKR_NETMAP_OFF ||
+		    kring->nr_mode == NKR_NETMAP_OFF)
+			return 0;
+		break;
+	}
+
+	nm_prinf("ring %d: skipping nfp buf alloc", rx_ring->idx);
 	dp->fl_bufsz = kring->hwbuf_len + dp->rx_dma_off + NFP_NET_RX_BUF_NON_DATA;
 	return 1;
 }
@@ -115,18 +166,17 @@ nfp_netmap_reg(struct netmap_adapter *na, int onoff)
 	struct ifnet *ifp = na->ifp;
 	struct nfp_net *nn = netdev_priv(ifp);
 	struct nfp_net_dp *dp;
+	struct netmap_nfp_adapter *nna = (struct netmap_nfp_adapter *)na;
+	int err;
 
 	dp = nfp_net_clone_dp(nn);
 	if (!dp)
 		return 1;
 
-	if (onoff) {
-		nm_set_native_flags(na);
-	} else {
-		nm_clear_native_flags(na);
-	}
-
-	return nfp_net_ring_reconfig(nn, dp, NULL);
+	nna->netmap_mode_switch = onoff ? NETMAP_NFP_REGIF: NETMAP_NFP_UNREGIF;
+	err = nfp_net_ring_reconfig(nn, dp, NULL);
+	nna->netmap_mode_switch = 0;
+	return err;
 }
 
 static int
@@ -341,6 +391,8 @@ nfp_netmap_attach(struct nfp_net *nn)
 	na.nm_register = nfp_netmap_reg;
 	na.nm_config = nfp_netmap_config;
 	na.nm_bufcfg = nfp_netmap_bufcfg;
-	netmap_attach(&na);
+	if (netmap_attach_ext(&na, sizeof(struct netmap_nfp_adapter), 1)) {
+		pr_err("netmap: failed to attach netmap adapter");
+	}
 }
 #endif /* NETMAP_NFP_MAIN */
