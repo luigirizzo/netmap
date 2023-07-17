@@ -147,7 +147,7 @@ nfp_netmap_preconfigure_rx_ring(struct nfp_net_dp *dp, struct nfp_net_rx_ring *r
 	}
 
 	nm_prdis("ring %d: skipping nfp buf alloc", rx_ring->idx);
-	dp->fl_bufsz = kring->hwbuf_len + dp->rx_dma_off + NFP_NET_RX_BUF_NON_DATA;
+//	dp->fl_bufsz = kring->hwbuf_len + dp->rx_dma_off + NFP_NET_RX_BUF_NON_DATA;
 	return 1;
 }
 
