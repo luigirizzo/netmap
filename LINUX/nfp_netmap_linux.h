@@ -78,6 +78,9 @@ nfp_netmap_configure_rx_ring(struct nfp_net_dp *dp, struct nfp_net_rx_ring *rx_r
 	wmb();
 	nfp_qcp_wr_ptr_add(rx_ring->qcp_fl, lim);
 
+	rx_ring->wr_p = 0;
+	rx_ring->rd_p = 0;
+
 	return 1;
 }
 
@@ -147,6 +150,16 @@ nfp_netmap_preconfigure_rx_ring(struct nfp_net_dp *dp, struct nfp_net_rx_ring *r
 	dp->fl_bufsz = kring->hwbuf_len + dp->rx_dma_off + NFP_NET_RX_BUF_NON_DATA;
 	return 1;
 }
+
+static void
+nfp_netmap_cleanup_rx_ring(struct nfp_net_dp *dp, struct nfp_net_rx_ring *rx_ring)
+{
+	if (rx_ring->rxds)
+		memset(rx_ring->rxds, 0, rx_ring->size);
+	rx_ring->wr_p = 0;
+	rx_ring->rd_p = 0;
+}
+
 
 static int
 nfp_netmap_configure_tx_ring(struct nfp_net *nn, struct nfp_net_tx_ring *tx_ring)
