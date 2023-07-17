@@ -2941,6 +2941,8 @@ main(int arc, char **argv)
 
 	struct td_desc *fn = func;
 
+	nmport_enable_option("offset");
+
 	bzero(&g, sizeof(g));
 
 	g.main_fd = -1;

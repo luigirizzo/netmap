@@ -63,7 +63,7 @@ nfp_netmap_configure_rx_ring(struct nfp_net_dp *dp, struct nfp_net_rx_ring *rx_r
 	kring = na->rx_rings[ring_nr];
 	lim = na->num_rx_desc - 1 - nm_kr_rxspace(kring);
 
-	nm_prinf("rx ring %d filling %d slots rx_offset %x", ring_nr, lim, dp->rx_offset);
+	nm_prdis("rx ring %d filling %d slots rx_offset %x", ring_nr, lim, dp->rx_offset);
 	for (i = 0; i < lim; i++) {
 		int si = netmap_idx_n2k(kring, i);
 		uint64_t paddr;
@@ -146,7 +146,7 @@ nfp_netmap_preconfigure_rx_ring(struct nfp_net_dp *dp, struct nfp_net_rx_ring *r
 		break;
 	}
 
-	nm_prinf("ring %d: skipping nfp buf alloc", rx_ring->idx);
+	nm_prdis("ring %d: skipping nfp buf alloc", rx_ring->idx);
 	dp->fl_bufsz = kring->hwbuf_len + dp->rx_dma_off + NFP_NET_RX_BUF_NON_DATA;
 	return 1;
 }

@@ -49,7 +49,7 @@ index 555f5c9..ec4dfb8 100644
  		} else if (meta_len) {
 +#ifdef DEV_NETMAP
 +			if (!rxbuf->frag) {
-+				nm_prdis(1, "ring %d: null rxbuf->frag netmap_on %d", idx, dp->netdev ? nm_netmap_on(NA(dp->netdev)) : -1);
++				nm_prlim(1, "ring %d: null rxbuf->frag netmap_on %d", idx, dp->netdev ? nm_netmap_on(NA(dp->netdev)) : -1);
 +				continue;
 +			}
 +#endif
