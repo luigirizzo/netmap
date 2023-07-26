@@ -250,7 +250,7 @@ nfp_netmap_rxsync(struct netmap_kring *kring, int flags)
 			slot->len = pkt_len;
 			PNMB(na, slot, &paddr);
 			nm_write_offset(kring, slot, meta_len);
-			nm_prdis("%s: rd_p %u nic_i %d addr %llx", kring->name, rxr->rd_p, nic_i, (unsigned long long)paddr);
+			nm_prdis("%s[%u]: addr %llx pkt_off %x", kring->name, nic_i, (unsigned long long)paddr, meta_len);
 			netmap_sync_map_cpu(na, (bus_dma_tag_t) na->pdev,
 					&paddr, data_len, NR_RX);
 
@@ -269,7 +269,7 @@ nfp_netmap_rxsync(struct netmap_kring *kring, int flags)
 			struct netmap_slot *slot = &ring->slot[nm_i];
 			uint64_t paddr;
 			void *addr = PNMB(na, slot, &paddr);
-			uint64_t offset = nm_get_offset(kring, slot);
+			//uint64_t offset = nm_get_offset(kring, slot);
 
 			struct nfp_net_rx_desc *curr = &rxr->rxds[nic_i];
 
@@ -281,9 +281,10 @@ nfp_netmap_rxsync(struct netmap_kring *kring, int flags)
 				//netmap_reload_map(na, rxr->ptag, rxbuf->pmap, addr);
 				slot->flags &= ~NS_BUF_CHANGED;
 			}
+			slot->ptr = 0;
 			curr->fld.reserved = 0;
 			curr->fld.meta_len_dd = 0;
-			nfp_desc_set_dma_addr_48b(&curr->fld, paddr + offset);
+			nfp_desc_set_dma_addr_48b(&curr->fld, paddr);
 			nm_prdis("%s: nic_i %d addr %llx", kring->name, nic_i, (unsigned long long)paddr + offset);
 			netmap_sync_map_dev(na, (bus_dma_tag_t) na->pdev,
 					&paddr, NETMAP_BUF_SIZE(na), NR_RX);

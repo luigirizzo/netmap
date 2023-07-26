@@ -2437,6 +2437,7 @@ quit:
 }
 
 
+
 static void
 tx_output(struct glob_arg *g, struct my_ctrs *cur, double delta, const char *msg)
 {
