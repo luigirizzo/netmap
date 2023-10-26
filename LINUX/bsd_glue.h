@@ -191,7 +191,7 @@ static inline int skb_checksum_start_offset(const struct sk_buff *skb) {
 #define page_to_virt(p) 		phys_to_virt(page_to_phys(p))
 #endif /* NETMAP_LINUX_HAVE_PAGE_TO_VIRT */
 
-#ifdef NETMAP_LINUX_HAVE_VLAN_UNTAG
+#ifdef NETMAP_LINUX_HAVE_SKB_VLAN_UNTAG
 #ifndef NETMAP_LINUX_HAVE_ETH_TYPE_VLAN
 static inline bool eth_type_vlan(__be16 ethertype)
 {
@@ -214,7 +214,7 @@ static inline struct sk_buff *__vlan_hwaccel_push_inside(struct sk_buff *skb)
 	return skb;
 }
 #endif /* NETMAP_LINUX_HAVE_VLAN_HWACCESS_PUSH_INSIDE */
-#endif /* NETMAP_LINUX_HAVE_VLAN_UNTAG */
+#endif /* NETMAP_LINUX_HAVE_SKB_VLAN_UNTAG */
 
 /*----------- end of LINUX_VERSION_CODE dependencies ----------*/
 
