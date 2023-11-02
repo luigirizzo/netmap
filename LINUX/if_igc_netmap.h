@@ -11,6 +11,9 @@
 #include <netmap/netmap_kern.h>
 
 #define SOFTC_T	igc_adapter
+#ifndef IGC_SRRCTL_BSIZEPKT_SHIFT
+#define IGC_SRRCTL_BSIZEPKT_SHIFT 10
+#endif /* IGC_SRRCTL_BSIZEPKT_SHIFT */
 
 #define igc_driver_name netmap_igc_driver_name
 char netmap_igc_driver_name[] = "igc" NETMAP_LINUX_DRIVER_SUFFIX;
@@ -63,7 +66,7 @@ igc_netmap_configure_srrctl(struct igc_ring *rxr)
 	struct igc_adapter *adapter = netdev_priv(ifp);
 	u32 srrctl;
 
-	/* set descriptor configuration not using spilit header */
+	/* set descriptor configuration not using split header */
 	srrctl = ALIGN(NETMAP_BUF_SIZE(na), 1024) >> IGC_SRRCTL_BSIZEPKT_SHIFT;
 	srrctl |= IGC_SRRCTL_DESCTYPE_ADV_ONEBUF;
 	// XXX: DROP_ENABLE neither defined or enabled in the main driver
