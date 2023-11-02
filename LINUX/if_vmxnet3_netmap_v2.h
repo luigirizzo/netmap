@@ -8,7 +8,10 @@
 
 #define SOFTC_T vmxnet3_adapter
 
-static int vmxnet3_rq_create_all(struct vmxnet3_adapter *adapter);
+#ifdef NETMAP_LINUX_HAVE_VMXNET3_STATIC_RQ_CREATE
+static
+#endif /* NETMAP_LINUX_HAVE_STATIC_RQ_CREATE */
+int vmxnet3_rq_create_all(struct vmxnet3_adapter *adapter);
 
 static int
 vmxnet3_netmap_reg(struct netmap_adapter *na, int onoff)

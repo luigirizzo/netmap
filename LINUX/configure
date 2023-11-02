@@ -2423,6 +2423,21 @@ EOF
   	#define NETMAP_LINUX_CONFIG_H
 EOF
 
+  if drv enabled vmxnet3; then
+    add_test 'have VMXNET3_STATIC_RQ_CREATE' <<EOF
+        #include "vmxnet3/vmxnet3_int.h"
+
+	static int vmxnet3_rq_create_all(struct vmxnet3_adapter *adapter) {
+		(void)adapter;
+		return 0;
+	}
+	int dummy(struct vmxnet3_adapter *adapter) {
+		return vmxnet3_rq_create_all(adapter);
+	}
+EOF
+
+  fi # vmxnet3
+
   # the TESTPOSTPROC script will add macros to $configh
   message " NOTE  " <<EOF
 Now running compile tests to adapt the code to your
