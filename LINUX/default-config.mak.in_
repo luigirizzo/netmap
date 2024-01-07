@@ -116,7 +116,7 @@ $(1)@distclean  := rm -rf mlnx-en-$($(1)@pv) mlnx-en-$(2)
 $(1)@force	:= 1
 endef
 
-$(eval $(call default,mlx5,5.3-1.0.0.1))
+$(eval $(call default,mlx5,5.4-1.0.3.0))
 mlx5@pv		= $(firstword $(subst -, ,$(mlx5@v)))
 mlx5@conf	= CONFIG_MLX5_CORE_EN
 mlx5@cflags	= -Wframe-larger-than=2000
