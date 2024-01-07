@@ -1305,6 +1305,16 @@ EOF
 	}
 EOF
 
+  # check for netif_rx_ni
+  add_test 'have NETIF_RX_NI' <<EOF
+	#include <linux/skbuff.h>
+
+	void dummy(struct sk_buff *skb)
+	{
+	    netif_rx_ni(skb);
+	}
+EOF
+
   # poll_table key field
   for k in _key key; do
 	add_test "define PWAIT_KEY $k" <<EOF
