@@ -520,7 +520,7 @@ function check-patch()
 				--kernel-opts=CONFIG_STACK_VALIDATION= \
 				$config_opts \
 				--cache=$cache >>$log
-			(make get-$driver && make -j $PARALLEL_MAKE) >>$log 2>&1 && ok=true
+			(make get-$driver && KBUILD_MODPOST_WARN=1 make -j $PARALLEL_MAKE) >>$log 2>&1 && ok=true
 			grep -q warning: $log && { warn=true; echo $warn > $cwarn; }
 			cat config.log >>$log
 			cat netmap_linux_config.h >>$log 2>/dev/null
