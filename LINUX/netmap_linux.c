@@ -419,7 +419,12 @@ nm_os_send_up(struct ifnet *ifp, struct mbuf *m, struct mbuf *prev)
 	(void)ifp;
 	(void)prev;
 	m->priority = NM_MAGIC_PRIORITY_RX; /* do not reinject to netmap */
+#ifdef NETMAP_LINUX_HAVE_NETIF_RX_NI
+	netif_rx_ni(m);
+#else
 	netif_rx(m);
+#endif
+
 	return NULL;
 }
 
