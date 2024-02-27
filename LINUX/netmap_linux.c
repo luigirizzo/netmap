@@ -850,7 +850,7 @@ tc_configure(struct ifnet *ifp, const char *qdisc_name,
 	}
 
 	/* Push TCA_KIND attr. */
-	attr_kind = (struct nlattr *)(((void *)&nlreq.hdr) +
+	attr_kind = (struct nlattr *)(((void *)&nlreq) +
 				 NLMSG_ALIGN(nlreq.hdr.nlmsg_len));
 	attr_kind->nla_len = NLA_HDRLEN + strlen(qdisc_name) + 1;
 	attr_kind->nla_type = TCA_KIND;
@@ -860,7 +860,7 @@ tc_configure(struct ifnet *ifp, const char *qdisc_name,
 
 	if (limit > 0) {
 		/* Push TCA_OPTIONS attr. */
-		attr_opt = (struct nlattr *)(((void *)&nlreq.hdr) +
+		attr_opt = (struct nlattr *)(((void *)&nlreq) +
 					 NLMSG_ALIGN(nlreq.hdr.nlmsg_len));
 		attr_opt->nla_len = NLA_HDRLEN + sizeof(uint32_t);
 		attr_opt->nla_type = TCA_OPTIONS;
@@ -2207,7 +2207,6 @@ netmap_sink_init(void)
 	netdev->netdev_ops = &nm_sink_netdev_ops ;
 	strlcpy(netdev->name, "nmsink", sizeof(netdev->name));
 	netdev->features = NETIF_F_HIGHDMA;
-	strcpy(netdev->name, "nmsink%d");
 	err = register_netdev(netdev);
 	if (err) {
 		free_netdev(netdev);
