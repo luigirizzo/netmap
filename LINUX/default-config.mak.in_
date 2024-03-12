@@ -105,8 +105,8 @@ e1000e@fetch := test -e @SRCDIR@/ext-drivers/e1000e-$(e1000e@v).tar.gz || wget h
 endif
 
 define mellanox_driver
-$(1)@fetch	:= test -e @SRCDIR@/ext-drivers/mlnx-en-$(2)-ubuntu18.04-x86_64.tgz || wget http://content.mellanox.com/ofed/MLNX_EN-$(2)/mlnx-en-$(2)-ubuntu18.04-x86_64.tgz -P @SRCDIR@/ext-drivers
-$(1)@src	:= tar xf @SRCDIR@/ext-drivers/mlnx-en-$(2)-ubuntu18.04-x86_64.tgz && tar xf mlnx-en-$(2)-ubuntu18.04-x86_64/src/MLNX_EN_SRC-$(2).tgz && tar xf MLNX_EN_SRC-$(2)/SOURCES/mlnx-en_$($(1)@pv).orig.tar.gz && ln -s mlnx-en-$($(1)@pv) $(1)
+$(1)@fetch	:= test -e @SRCDIR@/ext-drivers/MLNX_EN_SRC-debian-$(2).tgz || wget https://content.mellanox.com/ofed/MLNX_EN-$(2)/MLNX_EN_SRC-debian-$(2).tgz -P @SRCDIR@/ext-drivers
+$(1)@src	:= tar xf @SRCDIR@/ext-drivers/MLNX_EN_SRC-debian-$(2).tgz&& tar xf MLNX_EN_SRC-$(2)/SOURCES/mlnx-en_$($(1)@pv).orig.tar.gz && ln -s mlnx-en-$($(1)@pv) $(1)
 $(1)@patch	:= patches/mellanox--$(1)--$($(1)@pv)
 $(1)@prepare	:= @SRCDIR@/mlx5-prepare.sh @KSRC@
 $(1)@build	:= make -C $(1) NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ EXTRA_CFLAGS="$$($(1)@cflags) $(EXTRA_CFLAGS)"
