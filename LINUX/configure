@@ -442,6 +442,15 @@ add_test() {
 	NEXTTEST=$(($NEXTTEST+1))
 }
 
+PERTESTFLAGS=
+# add_test_flags flags...
+# 	call this immediately before add_test to set special compilation flags
+# 	for the next test
+add_test_flags() {
+	PERTESTFLAGS="$PERTESTFLAGS
+CFLAGS___test__$NEXTTEST.o := $@"
+}
+
 reset_tests() {
 	rm -rf $TMPDIR
 	mkdir $TMPDIR
@@ -516,6 +525,7 @@ run_tests() {
 SRCDIR=$SRCDIR
 ifneq (\$(KERNELRELEASE),)
 obj-m := $TESTOBJS
+$PERTESTFLAGS
 else
 WARN_CFLAGS := -Werror \$(addprefix -Wno-error=,$REC_DISABLED_WARNINGS)
 S_DRIVERS := $(drv print)
@@ -2392,6 +2402,7 @@ EOF
   fi # i40e
 
   if drv enabled ice; then
+    add_test_flags '-I$M/ice'
     add_test 'have ICE_XRINGS' <<EOF
 	#include "ice/ice.h"
 
