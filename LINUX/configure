@@ -448,7 +448,7 @@ PERTESTFLAGS=
 # 	for the next test
 add_test_flags() {
 	PERTESTFLAGS="$PERTESTFLAGS
-CFLAGS___test__$NEXTTEST.o := $@"
+CFLAGS_test__$NEXTTEST.o := $@"
 }
 
 reset_tests() {
