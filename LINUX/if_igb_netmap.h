@@ -101,6 +101,11 @@ static inline void NM_WRITE_SRRCTL(struct igb_adapter *adapter, struct igb_ring 
 #define	rx_buffer_info			buffer_info
 #endif
 
+#ifdef NETMAP_LINUX_HAVE_IGB_STATE_INDIR
+#define NM_IGB_STATE(a_) (&(a_)->state)
+#else
+#define NM_IGB_STATE(a_) ((a_)->state)
+#endif /* NETMAP_LINUX_HAVE_IGB_STATE_INDIR */
 
 /*
  * Register/unregister. We are already under netmap lock.
@@ -113,7 +118,7 @@ igb_netmap_reg(struct netmap_adapter *na, int onoff)
 	struct SOFTC_T *adapter = netdev_priv(ifp);
 
 	/* protect against other reinit */
-	while (test_and_set_bit(__IGB_RESETTING, &adapter->state))
+	while (test_and_set_bit(__IGB_RESETTING, NM_IGB_STATE(adapter)))
 		usleep_range(1000, 2000);
 
 	if (netif_running(adapter->netdev))
@@ -130,7 +135,7 @@ igb_netmap_reg(struct netmap_adapter *na, int onoff)
 	else
 		igb_reset(adapter); // XXX is it needed ?
 
-	clear_bit(__IGB_RESETTING, &adapter->state);
+	clear_bit(__IGB_RESETTING, NM_IGB_STATE(adapter));
 	return (0);
 }
 

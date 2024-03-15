@@ -2435,6 +2435,14 @@ EOF
 		return ring->next_to_alloc;
        }
 EOF
+
+    add_test 'have IGB_STATE_INDIR' <<EOF
+	#include "igb/igb.h"
+
+	void dummy(struct igb_adapter *adapter) {
+		clear_bit(0, &adapter->state);
+	}
+EOF
   fi # igb
 
   # END_TESTS
