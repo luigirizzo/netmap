@@ -437,7 +437,7 @@ EOF
 #     explicitly naming the test.
 NEXTTEST=1
 add_test() {
-	local t="__test__$NEXTTEST"
+	local t="test__$NEXTTEST"
 	add_named_test $t "$@"
 	NEXTTEST=$(($NEXTTEST+1))
 }
@@ -529,6 +529,9 @@ all: \$(S_DRIVERS:%=get-%) \$(TOBUILD:%=build-%) \$(I_DRIVERS:%=patch-%) tests
 
 tests:
 	\$(MAKE) -C $ksrc M=\$\$PWD EXTRA_CFLAGS="\$(WARN_CFLAGS)" $kopts
+
+test__%:
+	\$(MAKE) -C $ksrc M=\$\$PWD EXTRA_CFLAGS="\$(WARN_CFLAGS)" $kopts \$@.o
 
 -include $BUILDDIR/extdrv-versions.mak
 -include $BUILDDIR/default-config.mak
