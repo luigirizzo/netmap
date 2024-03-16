@@ -836,7 +836,7 @@ EOF
 DISABLED_WARNINGS="unused-but-set-variable attributes packed-not-aligned \
 	stringop-truncation missing-attributes format-truncation \
 	maybe-uninitialized unused-variable unused-label \
-	implicit-fallthrough enum-int-mismatch"
+	implicit-fallthrough enum-int-mismatch missing-prototypes"
 REC_DISABLED_WARNINGS=
 disable_warning() {
 	REC_DISABLED_WARNINGS="$1 $REC_DISABLED_WARNINGS"
