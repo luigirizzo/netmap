@@ -1404,7 +1404,7 @@ ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	macaddr[3] = (macreg >> 16) & 0xff;
 	macaddr[4] = (macreg >> 8) & 0xff;
 	macaddr[5] = macreg & 0xff;
-	memcpy(netdev->dev_addr, macaddr, netdev->addr_len);
+	NM_DEV_ADDR_SET(netdev, macaddr);
 
 	netdev->features = NETIF_F_HIGHDMA;
 

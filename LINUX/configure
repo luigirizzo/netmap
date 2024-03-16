@@ -1954,6 +1954,15 @@ EOF
 	}
 EOF
 
+  # check for dev_addr_set()
+  add_test 'have DEV_ADDR_SET' <<EOF
+	#include <linux/netdevice.h>
+
+	void dummy(struct net_device *dev, const unsigned char *addr) {
+		dev_addr_set(dev, addr);
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################

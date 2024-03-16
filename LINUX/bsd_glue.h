@@ -610,4 +610,10 @@ void netmap_bns_unregister(void);
 #define NM_NETIF_NAPI_ADD	netif_napi_add
 #endif /* NETMAP_LINUX_HAVE_NAPI_POLL_WEIGHT */
 
+#ifdef NETMAP_LINUX_HAVE_DEV_ADDR_SET
+#define NM_DEV_ADDR_SET(a_, m_)	dev_addr_set(a_, m_)
+#else
+#define NM_DEV_ADDR_SET(a_, m_)	memcpy((a_)->dev_addr, m_, (a_)->addr_len)
+#endif	/* NETMAP_LINUX_HAVE_DEV_ADDR_SET */
+
 #endif /* NETMAP_BSD_GLUE_H */
