@@ -616,4 +616,8 @@ void netmap_bns_unregister(void);
 #define NM_DEV_ADDR_SET(a_, m_)	memcpy((a_)->dev_addr, m_, (a_)->addr_len)
 #endif	/* NETMAP_LINUX_HAVE_DEV_ADDR_SET */
 
+#ifdef NETMAP_LINUX_HAVE_STRSCPY
+#define strlcpy	strscpy
+#endif /* NETMAP_LINUX_HAVE_STRSCPY */
+
 #endif /* NETMAP_BSD_GLUE_H */

@@ -1963,6 +1963,15 @@ EOF
 	}
 EOF
 
+  # check for strscpy()
+  add_test 'have STRSCPY' <<EOF
+	#include <linux/fortify-string.h>
+
+	ssize_t dummy(char *d, const char *s, size_t l) {
+		return strscpy(d, s, l);
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################
