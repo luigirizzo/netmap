@@ -1370,14 +1370,13 @@ int netmap_rx_irq(if_t, u_int, u_int *);
 #define netmap_tx_irq(_n, _q) netmap_rx_irq(_n, _q, NULL)
 int netmap_common_irq(struct netmap_adapter *, u_int, u_int *work_done);
 
-
+const char *netmap_bdg_name(struct netmap_vp_adapter *);
 #ifdef WITH_VALE
 /* functions used by external modules to interface with VALE */
 #define netmap_vp_to_ifp(_vp)	((_vp)->up.ifp)
 #define netmap_ifp_to_vp(_ifp)	(NA(_ifp)->na_vp)
 #define netmap_ifp_to_host_vp(_ifp) (NA(_ifp)->na_hostvp)
 #define netmap_bdg_idx(_vp)	((_vp)->bdg_port)
-const char *netmap_bdg_name(struct netmap_vp_adapter *);
 #else /* !WITH_VALE */
 #define netmap_vp_to_ifp(_vp)	NULL
 #define netmap_ifp_to_vp(_ifp)	NULL
@@ -2122,6 +2121,8 @@ struct netmap_monitor_adapter {
 #endif /* WITH_MONITOR */
 
 
+int nm_os_generic_find_num_desc(if_t ifp, u_int *tx, u_int *rx);
+void nm_os_generic_find_num_queues(if_t ifp, u_int *txq, u_int *rxq);
 #ifdef WITH_GENERIC
 /*
  * generic netmap emulation for devices that do not have
@@ -2156,8 +2157,6 @@ struct nm_os_gen_arg {
 };
 
 int nm_os_generic_xmit_frame(struct nm_os_gen_arg *);
-int nm_os_generic_find_num_desc(if_t ifp, u_int *tx, u_int *rx);
-void nm_os_generic_find_num_queues(if_t ifp, u_int *txq, u_int *rxq);
 void nm_os_generic_set_features(struct netmap_generic_adapter *gna);
 
 static inline if_t

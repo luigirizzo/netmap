@@ -1390,6 +1390,9 @@ linux_netmap_change_mtu(struct net_device *dev, int new_mtu)
  *
  * Linux calls this while holding the rtnl_lock().
  */
+#ifdef NETMAP_LINUX_HAVE_AX25PTR
+static
+#endif
 int
 linux_netmap_set_ringparam(struct net_device *dev,
 	struct ethtool_ringparam *e
@@ -2071,7 +2074,7 @@ ptnetmap_guest_init(void)
 /*
  * Driver Exit Cleanup Routine
  */
-void
+static void
 ptnetmap_guest_fini(void)
 {
 	/* unregister pci driver */
@@ -2193,7 +2196,7 @@ static const struct net_device_ops nm_sink_netdev_ops = {
 	.ndo_start_xmit = nm_sink_start_xmit,
 };
 
-int
+static int
 netmap_sink_init(void)
 {
 	struct netmap_adapter na;
@@ -2228,7 +2231,7 @@ netmap_sink_init(void)
 	return 0;
 }
 
-void
+static void
 netmap_sink_fini(void)
 {
 	struct net_device *netdev = nm_sink_netdev;

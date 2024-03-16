@@ -28,7 +28,7 @@ extern int ix_crcstrip;
  * methods should be handled by the individual drivers.
  */
 
-int
+static int
 ice_netmap_txsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;
@@ -203,7 +203,7 @@ ice_netmap_txsync(struct netmap_kring *kring, int flags)
  * If (flags & NAF_FORCE_READ) also check for incoming packets irrespective
  * of whether or not we received an interrupt.
  */
-int
+static int
 ice_netmap_rxsync(struct netmap_kring *kring, int flags)
 {
 	struct netmap_adapter *na = kring->na;

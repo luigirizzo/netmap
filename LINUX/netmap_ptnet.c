@@ -41,6 +41,10 @@ extern int ptnet_vnet_hdr;
 static bool ptnet_gso = true;
 module_param(ptnet_gso, bool, 0644);
 
+int ptnet_probe(struct pci_dev *pdev, const struct pci_device_id *id);
+void ptnet_remove(struct pci_dev *pdev);
+void ptnet_shutdown(struct pci_dev *pdev);
+
 /* Enable to debug RX-side hangs */
 //#define HANGCTRL
 
@@ -755,7 +759,7 @@ ptnet_netpoll(struct net_device *netdev)
 #endif
 
 
-unsigned int
+static unsigned int
 ptnet_get_irq_vector(struct ptnet_info *pi, unsigned int i)
 {
 #ifdef NETMAP_LINUX_HAVE_PCI_ENABLE_MSIX
