@@ -620,4 +620,10 @@ void netmap_bns_unregister(void);
 #define strlcpy	strscpy
 #endif /* NETMAP_LINUX_HAVE_STRSCPY */
 
+#ifdef NETMAP_LINUX_HAVE_EVENTFD_SIG_2ARGS
+#define NM_EVENTFD_SIGNAL(c_)	eventfd_signal(c_, 1)
+#else
+#define NM_EVENTFD_SIGNAL	eventfd_signal
+#endif /* NETMAP_LINUX_HAVE_EVENTFD_SIG_2ARGS */
+
 #endif /* NETMAP_BSD_GLUE_H */

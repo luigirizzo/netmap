@@ -1972,6 +1972,15 @@ EOF
 	}
 EOF
 
+  # check for 2nd param of eventfd_signal()
+  add_test 'have EVENTFD_SIG_2ARGS' <<EOF
+	#include <linux/eventfd.h>
+
+	void dummy(struct eventfd_ctx *ctx) {
+		eventfd_signal(ctx, 1);
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################

@@ -255,7 +255,7 @@ netmap_sync_kloop_tx_ring(const struct sync_kloop_ring_args *a)
 		if (a->irq_ctx && more_txspace && csb_atok_intr_enabled(csb_atok)) {
 			/* We could disable kernel --> application kicks here,
 			 * to avoid spurious interrupts. */
-			eventfd_signal(a->irq_ctx, 1);
+			NM_EVENTFD_SIGNAL(a->irq_ctx);
 			more_txspace = false;
 		}
 #endif /* SYNC_KLOOP_POLL */
@@ -297,7 +297,7 @@ netmap_sync_kloop_tx_ring(const struct sync_kloop_ring_args *a)
 
 #ifdef SYNC_KLOOP_POLL
 	if (a->irq_ctx && more_txspace && csb_atok_intr_enabled(csb_atok)) {
-		eventfd_signal(a->irq_ctx, 1);
+		NM_EVENTFD_SIGNAL(a->irq_ctx);
 	}
 #endif /* SYNC_KLOOP_POLL */
 }
@@ -394,7 +394,7 @@ netmap_sync_kloop_rx_ring(const struct sync_kloop_ring_args *a)
 		if (a->irq_ctx && some_recvd && csb_atok_intr_enabled(csb_atok)) {
 			/* We could disable kernel --> application kicks here,
 			 * to avoid spurious interrupts. */
-			eventfd_signal(a->irq_ctx, 1);
+			NM_EVENTFD_SIGNAL(a->irq_ctx);
 			some_recvd = false;
 		}
 #endif /* SYNC_KLOOP_POLL */
@@ -440,7 +440,7 @@ netmap_sync_kloop_rx_ring(const struct sync_kloop_ring_args *a)
 #ifdef SYNC_KLOOP_POLL
 	/* Interrupt the application if needed. */
 	if (a->irq_ctx && some_recvd && csb_atok_intr_enabled(csb_atok)) {
-		eventfd_signal(a->irq_ctx, 1);
+		NM_EVENTFD_SIGNAL(a->irq_ctx);
 	}
 #endif /* SYNC_KLOOP_POLL */
 }
@@ -529,7 +529,7 @@ sync_kloop_tx_irq_wake_fun(wait_queue_t *wait, unsigned mode,
 		struct eventfd_ctx *irq_ctx = poll_ctx->entries[i].irq_ctx;
 
 		if (irq_ctx) {
-			eventfd_signal(irq_ctx, 1);
+			NM_EVENTFD_SIGNAL(irq_ctx);
 		}
 	}
 
@@ -561,7 +561,7 @@ sync_kloop_rx_irq_wake_fun(wait_queue_t *wait, unsigned mode,
 		struct eventfd_ctx *irq_ctx = poll_ctx->entries[i].irq_ctx;
 
 		if (irq_ctx) {
-			eventfd_signal(irq_ctx, 1);
+			NM_EVENTFD_SIGNAL(irq_ctx);
 		}
 	}
 
