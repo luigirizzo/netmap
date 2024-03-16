@@ -704,4 +704,10 @@ virtio_netmap_attach(struct virtnet_info *vi)
 			na.num_tx_rings, na.num_tx_desc,
 			na.num_rx_rings, na.num_rx_desc);
 }
+
+static inline void
+nm_napi_complete(struct napi_struct *napi)
+{
+	napi_complete(napi);
+}
 /* end of file */
