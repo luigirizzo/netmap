@@ -2105,7 +2105,11 @@ ptnetmap_guest_fini(void)
 static int sink_delay_ns = 100;
 module_param(sink_delay_ns, int, 0644);
 static struct net_device *nm_sink_netdev = NULL; /* global sink netdev */
-s64 nm_sink_next_link_idle; /* for link emulation */
+
+struct netmap_sink_adapter {
+	struct netmap_hw_adapter up;
+	s64 next_link_idle;
+};
 
 #define NM_SINK_SLOTS	1024
 #define NM_SINK_DELAY_NS \
@@ -2114,36 +2118,41 @@ s64 nm_sink_next_link_idle; /* for link emulation */
 static int
 nm_sink_register(struct netmap_adapter *na, int onoff)
 {
+	struct netmap_sink_adapter *sa =
+		(struct netmap_sink_adapter *)na;
+
 	if (onoff)
 		nm_set_native_flags(na);
 	else
 		nm_clear_native_flags(na);
 
-	nm_sink_next_link_idle = ktime_get_ns();
+	sa->next_link_idle = ktime_get_ns();
 
 	return 0;
 }
 
 static inline void
-nm_sink_emu(unsigned int n)
+nm_sink_emu(struct netmap_adapter *na, unsigned int n)
 {
-	u64 wait_until = nm_sink_next_link_idle;
+	struct netmap_sink_adapter *sa =
+		(struct netmap_sink_adapter *)na;
+	u64 wait_until = sa->next_link_idle;
 	u64 now = ktime_get_ns();
 
-	if (sink_delay_ns < 0 || nm_sink_next_link_idle < now) {
+	if (sink_delay_ns < 0 || sa->next_link_idle < now) {
 		/* If we are emulating packet consumer mode or the link went
 		 * idle some time ago, we need to update the link emulation
 		 * variable, because we don't want the caller to accumulate
 		 * credit. */
-		nm_sink_next_link_idle = now;
+		sa->next_link_idle = now;
 	}
 	/* Schedule new transmissions. */
-	nm_sink_next_link_idle += n * NM_SINK_DELAY_NS;
+	sa->next_link_idle += n * NM_SINK_DELAY_NS;
 	if (sink_delay_ns < 0) {
 		/* In packet consumer mode we emulate synchronous
 		 * transmission, so we have to wait right now for the link
 		 * to become idle. */
-		wait_until = nm_sink_next_link_idle;
+		wait_until = sa->next_link_idle;
 	}
 	while (ktime_get_ns() < wait_until) ;
 }
@@ -2162,7 +2171,7 @@ nm_sink_txsync(struct netmap_kring *kring, int flags)
 	kring->nr_hwcur = head;
 	kring->nr_hwtail = nm_prev(kring->nr_hwcur, lim);
 
-	nm_sink_emu(n);
+	nm_sink_emu(kring->na, n);
 
 	return 0;
 }
@@ -2186,7 +2195,7 @@ static netdev_tx_t
 nm_sink_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 {
 	kfree_skb(skb);
-	nm_sink_emu(1);
+	nm_sink_emu(NA(netdev), 1);
 	return NETDEV_TX_OK;
 }
 
@@ -2223,7 +2232,9 @@ netmap_sink_init(void)
 	na.nm_txsync = nm_sink_txsync;
 	na.nm_rxsync = nm_sink_rxsync;
 	na.num_tx_rings = na.num_rx_rings = 1;
-	netmap_attach(&na);
+	if (netmap_attach_ext(&na, sizeof(struct netmap_sink_adapter), 1)) {
+		dev_err(&netdev->dev, "failed to attach netmap adapter");
+	}
 
 	netif_carrier_on(netdev);
 	nm_sink_netdev = netdev;
