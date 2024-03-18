@@ -2104,7 +2104,11 @@ ptnetmap_guest_fini(void)
  */
 static int sink_delay_ns = 100;
 module_param(sink_delay_ns, int, 0644);
-static struct net_device *nm_sink_netdev = NULL; /* global sink netdev */
+#define NM_MAX_SINKS	100
+static int sink_num = 1;
+static int sink_actual_num = 0;
+module_param(sink_num, int, 0644);
+static struct net_device **nm_sink_netdev = NULL; /* global sink netdev */
 
 struct netmap_sink_adapter {
 	struct netmap_hw_adapter up;
@@ -2210,47 +2214,72 @@ netmap_sink_init(void)
 {
 	struct netmap_adapter na;
 	struct net_device *netdev;
-	int err;
+	int i, err = 0;
 
-	netdev = alloc_etherdev(0);
-	if (!netdev) {
+	sink_actual_num = sink_num;
+
+	if (sink_actual_num > NM_MAX_SINKS) {
+		pr_err("too many netmap sink devices (max %d)", NM_MAX_SINKS);
+		return -EINVAL;
+	}
+
+	nm_sink_netdev = nm_os_malloc(sizeof(struct netdev *) * sink_actual_num);
+	if (!nm_sink_netdev) {
 		return -ENOMEM;
 	}
-	netdev->netdev_ops = &nm_sink_netdev_ops ;
-	strlcpy(netdev->name, "nmsink", sizeof(netdev->name));
-	netdev->features = NETIF_F_HIGHDMA;
-	err = register_netdev(netdev);
-	if (err) {
-		free_netdev(netdev);
+
+	for (i = 0; i < sink_actual_num; i++) {
+		netdev = alloc_etherdev(0);
+		if (!netdev) {
+			err = -ENOMEM;
+			break;
+		}
+		netdev->netdev_ops = &nm_sink_netdev_ops ;
+		strlcpy(netdev->name, "nmsink%d", sizeof(netdev->name));
+		netdev->features = NETIF_F_HIGHDMA;
+		err = register_netdev(netdev);
+		if (err) {
+			free_netdev(netdev);
+			break;
+		}
+
+		bzero(&na, sizeof(na));
+		na.ifp = netdev;
+		na.num_tx_desc = NM_SINK_SLOTS;
+		na.num_rx_desc = NM_SINK_SLOTS;
+		na.nm_register = nm_sink_register;
+		na.nm_txsync = nm_sink_txsync;
+		na.nm_rxsync = nm_sink_rxsync;
+		na.num_tx_rings = na.num_rx_rings = 1;
+		if (netmap_attach_ext(&na, sizeof(struct netmap_sink_adapter), 1)) {
+			dev_err(&netdev->dev, "failed to attach netmap adapter");
+			unregister_netdev(netdev);
+			free_netdev(netdev);
+			break;
+		}
+
+		netif_carrier_on(netdev);
+		nm_sink_netdev[i] = netdev;
 	}
+	sink_actual_num = i;
 
-	bzero(&na, sizeof(na));
-	na.ifp = netdev;
-	na.num_tx_desc = NM_SINK_SLOTS;
-	na.num_rx_desc = NM_SINK_SLOTS;
-	na.nm_register = nm_sink_register;
-	na.nm_txsync = nm_sink_txsync;
-	na.nm_rxsync = nm_sink_rxsync;
-	na.num_tx_rings = na.num_rx_rings = 1;
-	if (netmap_attach_ext(&na, sizeof(struct netmap_sink_adapter), 1)) {
-		dev_err(&netdev->dev, "failed to attach netmap adapter");
-	}
-
-	netif_carrier_on(netdev);
-	nm_sink_netdev = netdev;
-
-	return 0;
+	return err;
 }
 
 static void
 netmap_sink_fini(void)
 {
-	struct net_device *netdev = nm_sink_netdev;
+	struct net_device *netdev;
+	int i;
 
+	for (i = 0; i < sink_actual_num; i++) {
+		netdev = nm_sink_netdev[i];
+		unregister_netdev(netdev);
+		netmap_detach(netdev);
+		free_netdev(netdev);
+	}
+	kfree(nm_sink_netdev);
 	nm_sink_netdev = NULL;
-	unregister_netdev(netdev);
-	netmap_detach(netdev);
-	free_netdev(netdev);
 }
 #endif  /* WITH_SINK */
 
