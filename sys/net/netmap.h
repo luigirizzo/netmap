@@ -323,7 +323,7 @@ struct netmap_ring {
 #endif
 
 	/* the slots follow. This struct has variable size */
-	struct netmap_slot slot[0];	/* array of slots. */
+	struct netmap_slot slot[];	/* array of slots. */
 };
 
 
@@ -402,7 +402,7 @@ struct netmap_if {
 	 * The area is filled up by the kernel on NETMAP_REQ_REGISTER,
 	 * and then only read by userspace code.
 	 */
-	const ssize_t	ring_ofs[0];
+	const ssize_t	ring_ofs[];
 };
 
 /* Legacy interface to interact with a netmap control device.
@@ -940,7 +940,7 @@ struct nmreq_opt_sync_kloop_eventfds {
 		int32_t ioeventfd;
 		/* Notifier for the kernel loop --> application direction. */
 		int32_t irqfd;
-	} eventfds[0];
+	} eventfds[];
 };
 
 struct nmreq_opt_sync_kloop_mode {
