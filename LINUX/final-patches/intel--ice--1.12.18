@@ -1,5 +1,5 @@
 diff --git a/ice/Makefile b/ice/Makefile
-index 62548b3..65ac0f4 100644
+index 62548b3..018ca55 100644
 --- a/ice/Makefile
 +++ b/ice/Makefile
 @@ -52,9 +52,9 @@ ifneq ($(KERNELRELEASE),)
@@ -23,18 +23,18 @@ index 62548b3..65ac0f4 100644
 -ice-y += ice_peer_support.o
 -ice-y += ice_idc.o
 -ice-$(CONFIG_DEBUG_FS) += ice_debugfs.o
-+ice-$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_NET_DEVLINK:m=y) += ice_devlink.o ice_fw_update.o
-+ice-$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_NET_DEVLINK:m=y) += ice_eswitch.o ice_repr.o
-+ice-$(NETMAP_DRIVER_SUFFIX)-y += ice_peer_support.o
-+ice-$(NETMAP_DRIVER_SUFFIX)-y += ice_idc.o
-+ice-$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_DEBUG_FS) += ice_debugfs.o
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_NET_DEVLINK:m=y) += ice_devlink.o ice_fw_update.o
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_NET_DEVLINK:m=y) += ice_eswitch.o ice_repr.o
++ice$(NETMAP_DRIVER_SUFFIX)-y += ice_peer_support.o
++ice$(NETMAP_DRIVER_SUFFIX)-y += ice_idc.o
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_DEBUG_FS) += ice_debugfs.o
  
 -ice-$(CONFIG_PCI_IOV) +=		\
 +ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_PCI_IOV) +=		\
  	ice_dcf.o			\
  	ice_sriov.o			\
  	ice_vf_mbx.o			\
-@@ -115,20 +115,20 @@ ice-$(CONFIG_PCI_IOV) +=		\
+@@ -115,37 +115,37 @@ ice-$(CONFIG_PCI_IOV) +=		\
  	ice_vf_lib.o
  
  ifneq (${ENABLE_SIOV_SUPPORT},)
@@ -46,11 +46,11 @@ index 62548b3..65ac0f4 100644
 -ice-$(CONFIG_RFS_ACCEL) += ice_arfs.o
 -ice-$(CONFIG_XDP_SOCKETS) += ice_xsk.o
 -ice-y += kcompat.o
-+ice-$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_PTP_1588_CLOCK:m=y) += ice_ptp.o ice_ptp_hw.o
-+ice-$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_DCB) += ice_dcb.o ice_dcb_nl.o ice_dcb_lib.o
-+ice-$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_RFS_ACCEL) += ice_arfs.o
-+ice-$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_XDP_SOCKETS) += ice_xsk.o
-+ice-$(NETMAP_DRIVER_SUFFIX)-y += kcompat.o
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_PTP_1588_CLOCK:m=y) += ice_ptp.o ice_ptp_hw.o
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_DCB) += ice_dcb.o ice_dcb_nl.o ice_dcb_lib.o
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_RFS_ACCEL) += ice_arfs.o
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_XDP_SOCKETS) += ice_xsk.o
++ice$(NETMAP_DRIVER_SUFFIX)-y += kcompat.o
  # Use kcompat pldmfw.c if kernel does not provide CONFIG_PLDMFW
  ifndef CONFIG_PLDMFW
 -ice-y += kcompat_pldmfw.o
@@ -63,6 +63,27 @@ index 62548b3..65ac0f4 100644
  endif
  # Use kcompat GNSS if kernel doesn't provide it
  ifneq (${CONFIG_GNSS}, y)
+ ifneq (${CONFIG_GNSS}, m)
+-ice-y += kcompat_gnss.o
++ice$(NETMAP_DRIVER_SUFFIX)-y += kcompat_gnss.o
+ endif
+ endif
+ 
+ ifeq (${CONFIG_SUSE_KERNEL}, y)
+-ice-y += kcompat_gnss.o
++ice$(NETMAP_DRIVER_SUFFIX)-y += kcompat_gnss.o
+ endif
+ 
+ ifneq (${ENABLE_LM_SUPPORT},)
+ obj-$(CONFIG_VFIO_PCI_CORE:y=m) += ice-vfio-pci.o
+ 
+-ice-vfio-pci-y := ice_vfio_pci.o
+-ice-$(CONFIG_VFIO_PCI_CORE:m=y) += ice_migration.o
++ice$(NETMAP_DRIVER_SUFFIX)-vfio-pci-y := ice_vfio_pci.o
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_VFIO_PCI_CORE:m=y) += ice_migration.o
+ endif
+ 
+ 
 @@ -157,7 +157,7 @@ endif
  else	# ifneq($(KERNELRELEASE),)
  # normal makefile

@@ -1,5 +1,5 @@
 diff --git a/ice/Makefile b/ice/Makefile
-index 5f29380..e6499f6 100644
+index 5f29380..ae7008b 100644
 --- a/ice/Makefile
 +++ b/ice/Makefile
 @@ -26,9 +26,9 @@ ifneq ($(KERNELRELEASE),)
@@ -32,7 +32,7 @@ index 5f29380..e6499f6 100644
  	ice_dcf.o			\
  	ice_sriov.o			\
  	ice_vf_mbx.o			\
-@@ -87,20 +87,20 @@ ice-$(CONFIG_PCI_IOV) +=		\
+@@ -87,30 +87,30 @@ ice-$(CONFIG_PCI_IOV) +=		\
  	ice_vf_lib.o
  
  ifneq (${ENABLE_SIOV_SUPPORT},)
@@ -44,11 +44,11 @@ index 5f29380..e6499f6 100644
 -ice-$(CONFIG_RFS_ACCEL) += ice_arfs.o
 -ice-$(CONFIG_XDP_SOCKETS) += ice_xsk.o
 -ice-y += kcompat.o
-+ice-$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_PTP_1588_CLOCK:m=y) += ice_ptp.o ice_ptp_hw.o
-+ice-$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_DCB) += ice_dcb.o ice_dcb_nl.o ice_dcb_lib.o
-+ice-$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_RFS_ACCEL) += ice_arfs.o
-+ice-$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_XDP_SOCKETS) += ice_xsk.o
-+ice-$(NETMAP_DRIVER_SUFFIX)-y += kcompat.o
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_PTP_1588_CLOCK:m=y) += ice_ptp.o ice_ptp_hw.o
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_DCB) += ice_dcb.o ice_dcb_nl.o ice_dcb_lib.o
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_RFS_ACCEL) += ice_arfs.o
++ice$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_XDP_SOCKETS) += ice_xsk.o
++ice$(NETMAP_DRIVER_SUFFIX)-y += kcompat.o
  # Use kcompat pldmfw.c if kernel does not provide CONFIG_PLDMFW
  ifndef CONFIG_PLDMFW
 -ice-y += kcompat_pldmfw.o
@@ -61,6 +61,18 @@ index 5f29380..e6499f6 100644
  endif
  # Use kcompat GNSS if kernel doesn't provide it
  ifneq (${CONFIG_GNSS}, y)
+ ifneq (${CONFIG_GNSS}, m)
+-ice-y += kcompat_gnss.o
++ice$(NETMAP_DRIVER_SUFFIX)-y += kcompat_gnss.o
+ endif
+ endif
+ 
+ ifeq (${CONFIG_SUSE_KERNEL}, y)
+-ice-y += kcompat_gnss.o
++ice$(NETMAP_DRIVER_SUFFIX)-y += kcompat_gnss.o
+ endif
+ 
+ 
 @@ -123,7 +123,7 @@ endif
  else	# ifneq($(KERNELRELEASE),)
  # normal makefile
