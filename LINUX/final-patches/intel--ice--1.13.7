@@ -162,7 +162,7 @@ index c020e40..c1e82a2 100644
  	return 0;
  }
 diff --git a/ice/ice_main.c b/ice/ice_main.c
-index e9cc474..60bc2ef 100644
+index e9cc474..0eed1e5 100644
 --- a/ice/ice_main.c
 +++ b/ice/ice_main.c
 @@ -107,6 +107,11 @@ static unsigned long fwlog_events; /* no enabled events by default */
@@ -177,18 +177,27 @@ index e9cc474..60bc2ef 100644
  /**
   * ice_hw_to_dev - Get device pointer from the hardware structure
   * @hw: pointer to the device HW structure
-@@ -7008,6 +7013,10 @@ static int ice_init_devlink(struct ice_pf *pf)
+@@ -7008,6 +7013,7 @@ static int ice_init_devlink(struct ice_pf *pf)
  	if (need_register)
  		ice_devlink_register(pf);
  #endif /* !HAVE_DEVLINK_PARAMS_PUBLISH */
 +
-+#ifdef DEV_NETMAP
-+	ice_netmap_attach(pf);
-+#endif
  	return 0;
  }
  
-@@ -7385,6 +7394,10 @@ static void ice_remove(struct pci_dev *pdev)
+@@ -7294,6 +7300,11 @@ ice_probe(struct pci_dev *pdev, const struct pci_device_id __always_unused *ent)
+ 	err = ice_init_features(pf);
+ 	if (err)
+ 		goto err_init_features;
++
++#ifdef DEV_NETMAP
++	ice_netmap_attach(pf);
++#endif
++
+ 	return 0;
+ 
+ err_init_features:
+@@ -7385,6 +7396,10 @@ static void ice_remove(struct pci_dev *pdev)
  	if (!pf)
  		return;
  
