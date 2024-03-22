@@ -191,31 +191,6 @@ static inline int skb_checksum_start_offset(const struct sk_buff *skb) {
 #define page_to_virt(p) 		phys_to_virt(page_to_phys(p))
 #endif /* NETMAP_LINUX_HAVE_PAGE_TO_VIRT */
 
-#ifdef NETMAP_LINUX_HAVE_SKB_VLAN_UNTAG
-#ifndef NETMAP_LINUX_HAVE_ETH_TYPE_VLAN
-static inline bool eth_type_vlan(__be16 ethertype)
-{
-	return ethertype == htons(ETH_P_8021Q) ||
-		ethertype == htons(ETH_P_8021AD);
-}
-#endif /* NETMAP_LINUX_HAVE_ETH_TYPE_VLAN */
-
-#ifndef NETMAP_LINUX_HAVE_SKB_VLAN_TAG_PRESENT
-#define skb_vlan_tag_present(__skb)	vlan_tx_tag_present(__skb)
-#endif /* NETMAP_LINUX_HAVE_SKB_VLAN_TAG_PRESENT */
-
-#ifndef NETMAP_LINUX_HAVE_VLAN_HWACCEL_PUSH_INSIDE
-static inline struct sk_buff *__vlan_hwaccel_push_inside(struct sk_buff *skb)
-{
-	skb = __vlan_put_tag(skb, skb->vlan_proto,
-			vlan_tx_tag_get(skb));
-	if (likely(skb))
-		skb->vlan_tci = 0;
-	return skb;
-}
-#endif /* NETMAP_LINUX_HAVE_VLAN_HWACCESS_PUSH_INSIDE */
-#endif /* NETMAP_LINUX_HAVE_SKB_VLAN_UNTAG */
-
 /*----------- end of LINUX_VERSION_CODE dependencies ----------*/
 
 /* Type redefinitions. XXX check them */
