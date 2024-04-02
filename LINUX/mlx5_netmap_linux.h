@@ -711,7 +711,7 @@ void mlx5e_netmap_attach(struct NM_MLX5E_ADAPTER *adapter) {
   na.nm_config = mlx5e_netmap_config;
 
   /* each channel has 1 rx ring and a tx for each tc */
-  na.num_tx_rings = adapter->channels.params.num_channels * adapter->channels.params.num_tc;
+  na.num_tx_rings = adapter->channels.params.num_channels * adapter->channels.params.mqprio.num_tc;
   na.num_rx_rings = adapter->channels.params.num_channels;
   na.rx_buf_maxsize = 1500; /* will be overwritten by nm_config */
   netmap_attach(&na);
