@@ -397,7 +397,7 @@ static inline void mtx_unlock(safe_spinlock_t *m)
 }
 
 #define mtx_init(a, b, c, d)	spin_lock_init(&((a)->sl))
-#define mtx_destroy(a)
+#define mtx_destroy(a)		do {} while(0)
 
 #define mtx_lock_spin(a)	mtx_lock(a)
 #define mtx_unlock_spin(a)	mtx_unlock(a)
