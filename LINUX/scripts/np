@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC1091,SC2064,SC2012
 ## Manage linux driver patches for netmap.
 ##
 ## Initial setup: 
@@ -53,7 +54,7 @@
 PROGNAME=$0
 
 [ -n "$1" ] || {
-	scripts/help $PROGNAME;
+	scripts/help "$PROGNAME";
 	exit 1
 }
 
@@ -76,21 +77,21 @@ function error {
 }
 
 function get-params {
-	local params=$1; shift
-	err_msg="$PROGNAME $COMMAND $(echo $params| perl -pe 's/\S+/<$&>/g')"
-	local param
+	local params param
+	params=$1; shift
+	err_msg="$PROGNAME $COMMAND $(echo "$params"| perl -pe 's/\S+/<$&>/g')"
 	for param in $params; do
-		[[ -z "$@" ]] && error "$err_msg"
-		pname=$(echo -n $param | perl -pe 's/\W/_/g')
-		eval $pname="$1"
+		[[ -z "$*" ]] && error "$err_msg"
+		pname=$(echo -n "$param" | perl -pe 's/\W/_/g')
+		eval "$pname=$1"
 		shift
 	done
-	[[ -n "$@" ]] && error "$err_msg"
+	[[ -n "$*" ]] && error "$err_msg"
 }
 
 function need {
 	eval "local v=\${$1}"
-	[ -n "$v" ] && [ -d "$v${2:+/$2}" ] || error "Variable $1 not set or not valid"
+	{ [ -n "$v" ] && [ -d "$v${2:+/$2}" ]; } || error "Variable $1 not set or not valid"
 }
 
 ## The following environment variables must be set:
@@ -127,16 +128,18 @@ need LINUX_CONFIGS
 ##	file system search.
 function driver-path()
 {
+	declare driver version
 	get-params "driver version" "$@"
 	
-	cat cache/$version/vanilla-$driver/path 2>/dev/null && return
-	local kern=$(get-kernel $version)
+	cat cache/"$version"/vanilla-"$driver"/path 2>/dev/null && return
+	local kern
+	kern="$(get-kernel "$version")"
 	[ -z "$kern" ] && error "no such kernel version: $version"
-	mkdir -p cache/$version/vanilla-$driver
+	mkdir -p cache/"$version"/vanilla-"$driver"
 	(
-		cd $kern
-		find drivers/net -name $driver
-	) | tee cache/$version/vanilla-$driver/path
+		cd "$kern" || exit
+		find drivers/net -name "$driver"
+	) | tee cache/"$version"/vanilla-"$driver"/path
 }
 
 
@@ -153,25 +156,27 @@ function get-patch()
 	local use_cache
 	[ "$1" = -c ] && { use_cache=1; shift; }
 
+	declare driver version
 	get-params "driver version" "$@"
 
+	local v1 v2 patchname out drvpath drvdir
 	# convert kernel version to fixed notation
-	local v1=$(scripts/vers $version -c)
+	v1=$(scripts/vers "$version" -c)
 	# compute next kernel version (in fixed notation)
-	local v2=$(scripts/vers $version -i -c)
-	local patchname=vanilla--$driver--$v1--$v2
-	local out=tmp-patches/$patchname
-	[ -n "$use_cache" ] && [ -s $out ] && { echo $out; return; }
-	local drvpath=$(driver-path $driver $version)
+	v2=$(scripts/vers "$version" -i -c)
+	patchname=vanilla--$driver--$v1--$v2
+	out=tmp-patches/$patchname
+	[ -n "$use_cache" ] && [ -s "$out" ] && { echo "$out"; return; }
+	drvpath=$(driver-path "$driver" "$version")
 	[ -n "$drvpath" ] || return
-	local drvdir=$(dirname $drvpath)
+	drvdir=$(dirname "$drvpath")
 	(
-		cd $GITDIR
-		git diff --relative=$drvdir v$version..netmap-$version -- $drvpath
-	) > $out
+		cd "$GITDIR" || exit
+		git diff --relative="$drvdir" "v$version..netmap-$version" -- "$drvpath"
+	) > "$out"
 	# an empty patch means no netmap support for this driver
-	[ -s $out ] || { rm $out; return 1; }
-	echo $out
+	[ -s "$out" ] || { rm "$out"; return 1; }
+	echo "$out"
 	return 0;
 }
 
@@ -183,22 +188,23 @@ function get-patch()
 ##	and their names are output to stdout.
 function get-range()
 {
+	declare driver version1 version2
 	get-params "driver version1 version2"	 "$@"
 
-	local v=$version1
-	local nv
+	local v nv V1 V2 p
+	v=$version1
 	# while version is less than $version2
-	while scripts/vers -b $v $version2 -L; do
+	while scripts/vers -b "$v" "$version2" -L; do
 		# compute next version
-		nv=$(scripts/vers $v -i)
+		nv=$(scripts/vers "$v" -i)
 		if [ -z "$EXTDRV" ]; then
-			get-patch $driver $v
+			get-patch "$driver" "$v"
 		else
-			local V1=$(scripts/vers $v -c)
-			local V2=$(scripts/vers $nv -c)
-			local p=tmp-patches/external--$driver--$V1--$V2
-			touch $p
-			echo $p
+			V1=$(scripts/vers "$v" -c)
+			V2=$(scripts/vers "$nv" -c)
+			p=tmp-patches/external--$driver--$V1--$V2
+			touch "$p"
+			echo "$p"
 		fi
 		v=$nv
 	done
@@ -212,12 +218,14 @@ function get-range()
 ##	directory.
 function get-src()
 {
+	declare driver version dest
 	get-params "driver version dest" "$@"
 
-	local kern=$(get-kernel $version)
+	local kern src
+	kern=$(get-kernel "$version")
 	[ -z "$kern" ] && error "no such kernel version: $version"
-	local src=$(driver-path $driver $version)
-	cp -r $kern/$src $dest
+	src=$(driver-path "$driver" "$version")
+	cp -r "$kern/$src" "$dest"
 }
 
 
@@ -228,13 +236,15 @@ function get-src()
 ##	It returns 0 on success and 1 on failure.
 function extend()
 {
+	declare patch version
 	get-params "patch version" "$@"
 
-	local _patch=$(realpath $patch)
+	local _patch driver tmpdir1 tmpdir2 patch2
+	_patch=$(realpath "$patch")
 	# extract the driver name from the patch name
-	local driver=$(scripts/vers $_patch -s -p -p)
-	local tmpdir1=$(mktemp -d)
-	local tmpdir2=$(mktemp -d)
+	driver=$(scripts/vers "$_patch" -s -p -p)
+	tmpdir1=$(mktemp -d)
+	tmpdir2=$(mktemp -d)
 	trap "rm -rf $tmpdir1 $tmpdir2" 0
 	# we get the driver sources for the given <version> and
 	# we apply two patches separately:
@@ -243,19 +253,19 @@ function extend()
 	# We declare <patch> to be extendable if
 	# - it is still applicable AND
 	# - we obtain the same files from i) and ii) (ignoring whitespace)
-	get-src $driver $version $tmpdir1
-	get-src $driver $version $tmpdir2
+	get-src "$driver" "$version" "$tmpdir1"
+	get-src "$driver" "$version" "$tmpdir2"
 	(
-		cd $tmpdir1
-		patch --no-backup-if-mismatch -p1 < $_patch >/dev/null 2>&1
+		cd "$tmpdir1" || exit 1
+		patch --no-backup-if-mismatch -p1 < "$_patch" >/dev/null 2>&1
 	) || return 1
-	local patch2=$(get-patch -c $driver $version)
-	patch2=$(realpath $patch2)
+	patch2=$(get-patch -c "$driver" "$version")
+	patch2=$(realpath "$patch2")
 	(
-		cd $tmpdir2
-		patch -p1 < $patch2 >/dev/null 2>&1
+		cd "$tmpdir2" || exit 1
+		patch -p1 < "$patch2" >/dev/null 2>&1
 	) # this will certainly apply
-	diff -qbBr $tmpdir1 $tmpdir2 >/dev/null || return 1
+	diff -qbBr "$tmpdir1" "$tmpdir2" >/dev/null || return 1
 	return 0
 } 
 
@@ -268,15 +278,17 @@ function extend()
 ##	they are deleted first.
 function minimize()
 {
+	declare driver
 	get-params "driver" "$@"
 
 	mkdir -p final-patches
-	local drv=$(basename $driver)
-	local patches=$(ls tmp-patches/vanilla--$drv--* 2>/dev/null)
+	local drv patches pivot ple pre nle nre
+	drv=$(basename "$driver")
+	patches=$(ls tmp-patches/vanilla--"$drv"--* 2>/dev/null)
 	[ -n "$patches" ] || return 1
 	# put the patch names in $1, $2, ...
 	set $patches
-	rm -f final-patches/vanilla--$drv--*
+	rm -f final-patches/vanilla--"$drv"--*
 	# the original patches (in tmp-patches) are ordered by version number.
 	# We consider one patch in turn (the 'pivot') and try
 	# to extend its range to cover the range of the next
@@ -284,19 +296,19 @@ function minimize()
 	# pivot, otherwise the current pivot is output and the
 	# next patch becomes the new pivot. The process
 	# is repeated until there are no more patches to consider.
-	local pivot=$1
+	pivot=$1
 	[ -n "$pivot" ] && [ -e "$pivot" ] || return 1
 	# extract the left end and right end of the pivot's range
-	local ple=$(scripts/vers $pivot -s -p -C)
-	local pre=$(scripts/vers $pivot -s -C)
+	ple=$(scripts/vers "$pivot" -s -p -C)
+	pre=$(scripts/vers "$pivot" -s -C)
 	while [ -n "$pivot" ]; do
 		shift
 		if [ -n "$1" ]; then 
 			# extract the left end and right end of the next patch
-			local nle=$(scripts/vers $1 -s -p -C)
-			local nre=$(scripts/vers $1 -s -C)
+			nle=$(scripts/vers "$1" -s -p -C)
+			nre=$(scripts/vers "$1" -s -C)
 			# we admit no gaps in the range
-			if [ $pre = $nle ] && extend $pivot $nle; then
+			if [ "$pre" = "$nle" ] && extend "$pivot" "$nle"; then
 				pre=$nre
 				continue
 			fi
@@ -304,8 +316,8 @@ function minimize()
 		# either out of patches or failed merge.
 		# Compute the file name of the current pivot and store
 		# the patch in its final location
-		out=$(scripts/vers vanilla $drv $ple -c $pre -c -S4)
-		cp $pivot final-patches/$out
+		out=$(scripts/vers vanilla "$drv" "$ple" -c "$pre" -c -S4)
+		cp "$pivot" final-patches/"$out"
 		# the new pivot becomes the next patch (if any)
 		pivot=$1
 		pre=$nre
@@ -321,32 +333,36 @@ function minimize()
 ##	Do nothing otherwise.
 function infty()
 {
+	declare driver version
 	get-params "driver version" "$@"
 
-	local drv=$(basename $driver)
+	local drv v last
+	drv=$(basename "$driver")
 	# convert kernel version to fixed notation
-	local v=$(scripts/vers $version -c)
-	local last=$(ls final-patches/vanilla--$drv--*--$v 2>/dev/null|tail -n1)
+	v=$(scripts/vers "$version" -c)
+	last=$(ls final-patches/vanilla--"$drv"--*--"$v" 2>/dev/null|tail -n1)
 	[ -n "$last" ] || return 1
-	mv -n $last $(scripts/vers $last -s -p 99999 -S4) 2>/dev/null
+	mv -n "$last" "$(scripts/vers "$last" -s -p 99999 -S4)" 2>/dev/null
 }
 
 function get-kernel()
 {
+	declare version
 	get-params "version" "$@"
 
-	local dst="$(realpath $LINUX_SOURCES)/linux-$version"
+	local dst v
+	dst=$(realpath "$LINUX_SOURCES")/linux-"$version"
 
-	[ -d $dst ] && { echo $dst; return; }
+	[ -d "$dst" ] && { echo "$dst"; return; }
 
-	local v=$version
+	v=$version
 
 	(
-		cd $GITDIR
+		cd "$GITDIR" || exit
 		if git show-ref --tags --quiet --verify -- "refs/tags/v$v"; then
-			mkdir -p $dst
-			git archive v$v | tar xf - -C $dst
-			echo $dst
+			mkdir -p "$dst"
+			git archive v"$v" | tar xf - -C "$dst"
+			echo "$dst"
 		fi
 	)
 }
@@ -368,23 +384,25 @@ function get-kernel()
 ##	output.
 function build-prep()
 {
+	declare version
 	get-params "version" "$@"
 
-	local dst=$(get-kernel $version)
+	local dst
+	dst=$(get-kernel "$version")
 	local last
 
-	[ -f $dst/.build-prep ] && { echo $dst; return; }
+	[ -f "$dst"/.build-prep ] && { echo "$dst"; return; }
 
 	(
-		cd $dst
+		cd "$dst" || exit 1
 		# fix for incompatible GNU make change
 		sed -i -e '/^squote/a\
 pound	:= \\#
 			/\<printf\>/{s/\\#/$(pound)/}' tools/build/Build.include || true
 		last=compiler-gcc.h
 		for i in $(seq 13); do
-			[ -e include/linux/compiler-gcc$i.h ] ||
-				ln -s $last include/linux/compiler-gcc$i.h
+			[ -e include/linux/compiler-gcc"$i".h ] ||
+				ln -s "$last" include/linux/compiler-gcc"$i".h
 			last=compiler-gcc$i.h
 		done
 		# force disabling PIE and fcf-protection
@@ -401,8 +419,8 @@ KBUILD_CPPFLAGS += $(call cc-option, -fno-pie)' Makefile
 		# make sure per_cpu_load_addr is static
 		sed -i -e 's/^[[:blank:]]*Elf_Addr[[:blank:]][[:blank:]]*per_cpu_load_addr;/static &/' \
 			arch/x86/tools/relocs.c
-		if [ -f $LINUX_CONFIGS/config-$version ]; then
-			cp $LINUX_CONFIGS/config-$version .config
+		if [ -f "$LINUX_CONFIGS/config-$version" ]; then
+			cp "$LINUX_CONFIGS/config-$version" .config
 			yes '' | make oldconfig
 		else
 			make allmodconfig
@@ -417,8 +435,8 @@ KBUILD_CPPFLAGS += $(call cc-option, -fno-pie)' Makefile
 		sed -i 's/-Werror/-Wno-error/g' $(grep -Rl -- -Werror tools)
 		make scripts modules_prepare
 		touch .build-prep
-	) >$dst.log 2>&1 || error "build-prep failed for linux $version. Please check $dst.log"
-	echo $dst
+	) >"$dst".log 2>&1 || error "build-prep failed for linux $version. Please check $dst.log"
+	echo "$dst"
 }
 
 ##
@@ -428,68 +446,71 @@ KBUILD_CPPFLAGS += $(call cc-option, -fno-pie)' Makefile
 ##	Errors are logged to log/<patch>.
 function check-patch()
 {
+	declare patch
 	get-params "patch" "$@"
 
-	local _patch=$(basename $patch)
+	local _patch v1 v2 end driver dtype p log nmcommit warn
+	_patch=$(basename "$patch")
 	# extract the left version
-	local v1=$(scripts/vers $_patch -s -p -C)
+	v1=$(scripts/vers "$_patch" -s -p -C)
 	# extract the right version
-	local v2=$(scripts/vers $_patch -s -C)
+	v2=$(scripts/vers "$_patch" -s -C)
 	# extract the unconverted right version (might be 99999)
-	local end=$(scripts/vers $_patch -s)
+	end=$(scripts/vers "$_patch" -s)
 	# extract the driver name
-	local driver=$(scripts/vers $_patch -s -p -p)
+	driver=$(scripts/vers "$_patch" -s -p -p)
 	# possibly extract the selected driver version
 	driver_version=$(echo "$driver" | sed -n 's/^.*://p')
 	driver=${driver%%:*}
 	# extract the driver type (vanilla or external)
-	local dtype=$(scripts/vers $_patch -s -p -p -p)
-	local p=$(realpath $patch)
+	dtype=$(scripts/vers "$_patch" -s -p -p -p)
+	p=$(realpath "$patch")
 	mkdir -p log
-	local log="$(realpath log)/$(basename $patch)"
-	local nmcommit=$(cd ..; git show-ref -s heads/$NETMAP_BRANCH)
-	local warn=false
+	log=$(realpath log)/$(basename "$patch")
+	nmcommit=$(cd .. || exit 1; git show-ref -s heads/"$NETMAP_BRANCH")
+	warn=false
 
-	rm -f $log
+	rm -f "$log"
 
-	echo -n $patch...
+	echo -n "$patch..."
 
-	while scripts/vers -b $v1 $v2 -L; do
+	local cache cpatch cnmcommit cstatus cwarn clog ksrc tmpdir
+	while scripts/vers -b "$v1" "$v2" -L; do
 		# cache lookup
-		local cache=$PWD/cache/$v1/$dtype-$driver${driver_version:+:$driver_version}
-		mkdir -p $cache
-		local cpatch=$cache/patch
-		local cnmcommit=$cache/nmcommit
-		local cstatus=$cache/status
-		local cwarn=$cache/warn
-		local clog=$cache/log
-		if [ -f $cpatch ]				&&
-		   cmp -s $cpatch $patch			&&
-		   [ "$nmcommit" = "$(cat $cnmcommit)" ]; then
-			cp $clog $log
-			ok=$(cat $cstatus)
-			if [ -f "$cwarn" ]; then warn=$(cat $cwarn); fi
+		cache=$PWD/cache/$v1/$dtype-$driver${driver_version:+:$driver_version}
+		mkdir -p "$cache"
+		cpatch=$cache/patch
+		cnmcommit=$cache/nmcommit
+		cstatus=$cache/status
+		cwarn=$cache/warn
+		clog=$cache/log
+		if [ -f "$cpatch" ]				&&
+		   cmp -s "$cpatch" "$patch"			&&
+		   [ "$nmcommit" = "$(cat "$cnmcommit")" ]; then
+			cp "$clog" "$log"
+			ok=$(cat "$cstatus")
+			if [ -f "$cwarn" ]; then warn=$(cat "$cwarn"); fi
 		else
 			# update cache
-			cp $patch $cpatch
-			echo $nmcommit > $cnmcommit
+			cp "$patch" "$cpatch"
+			echo "$nmcommit" > "$cnmcommit"
 
-			local ksrc=$(build-prep $v1)
+			ksrc=$(build-prep "$v1")
 			if [ -z "$ksrc" ]; then
-				rm -rf $cache
+				rm -rf "$cache"
 				if [ "$end" = 99999 ]; then
 					ok=true
 					break
 				fi
 				error "no such kernel version: $v1"
 			fi
-			local tmpdir=$(mktemp -d)
+			tmpdir=$(mktemp -d)
 			if [ "$NP_DEBUG" -lt 1 ]; then
-				trap "rm -rf $tmpdir" 0
+				trap "rm -rf '$tmpdir'" 0
 			fi
-			echo "====== $tmpdir =====" >>$log
-			(cd ..; git archive $NETMAP_BRANCH | tar xf - -C $tmpdir )
-			pushd $tmpdir/LINUX >/dev/null
+			echo "====== $tmpdir =====" >>"$log"
+			(cd ..; git archive "$NETMAP_BRANCH" | tar xf - -C "$tmpdir" )
+			pushd "$tmpdir"/LINUX >/dev/null || exit
 			rm -f patches
 			ok=false
 			config_opts=
@@ -497,10 +518,10 @@ function check-patch()
 				config_opts=--no-ext-drivers
 				mkdir single-patch
 				ln -s single-patch patches
-				cp $p single-patch
+				cp "$p" single-patch
 			else
 				rm -rf ext-drivers
-				ln -s $EXT_DRIVERS ext-drivers
+				ln -s "$EXT_DRIVERS" ext-drivers
 				ln -s final-patches patches
 				if [ -n "$driver_version" ]; then
 					config_opts="$config_opts --select-version=$driver:$driver_version"
@@ -509,8 +530,8 @@ function check-patch()
 			if [ "$driver" != "veth.c" ]; then
 				config_opts="$config_opts --disable-pipe"
 			fi
-			./configure --kernel-dir=$ksrc --driver-suffix=$DRIVER_SUFFIX \
-				--drivers=$driver \
+			./configure --kernel-dir="$ksrc" --driver-suffix="$DRIVER_SUFFIX" \
+				--drivers="$driver" \
 				--disable-generic \
 				--disable-vale \
 				--disable-monitor \
@@ -519,21 +540,21 @@ function check-patch()
 				--no-apps \
 				--kernel-opts=CONFIG_STACK_VALIDATION= \
 				$config_opts \
-				--cache=$cache >>$log
-			(make get-$driver && KBUILD_MODPOST_WARN=1 make -j $PARALLEL_MAKE) >>$log 2>&1 && ok=true
-			grep -q warning: $log && { warn=true; echo $warn > $cwarn; }
-			cat config.log >>$log
-			cat netmap_linux_config.h >>$log 2>/dev/null
-			popd >/dev/null
-			cp $log $clog
+				--cache="$cache" >>"$log"
+			(make get-"$driver" && KBUILD_MODPOST_WARN=1 make -j "$PARALLEL_MAKE") >>"$log" 2>&1 && ok=true
+			grep -q warning: "$log" && { warn=true; echo "$warn" > "$cwarn"; }
+			cat config.log >>"$log"
+			cat netmap_linux_config.h >>"$log" 2>/dev/null
+			popd >/dev/null || exit
+			cp "$log" "$clog"
 		fi
-		[ "$ok" = true ] || { echo FAILED; echo false > $cstatus; return 1; }
-		echo true > $cstatus
+		[ "$ok" = true ] || { echo FAILED; echo false > "$cstatus"; return 1; }
+		echo true > "$cstatus"
 		if [ "$NP_DEBUG" -lt 2 ]; then
-			rm -rf $tmpdir
+			rm -rf "$tmpdir"
 		fi
 		# compute next version
-		v1=$(scripts/vers $v1 -i)
+		v1=$(scripts/vers "$v1" -i)
 	done
 	if [ "$warn" = true ]; then
 		echo WARNING
@@ -549,18 +570,19 @@ function check-patch()
 ##	are moved to failed-patches.
 function build-check()
 {
+	declare driver
 	get-params "driver" "$@"
 
 	mkdir -p failed-patches
-	local dtype=vanilla
+	local dtype drv patches p
+	dtype=vanilla
 	if [ "$EXTDRV" = 1 ]; then
 		dtype=external
 	fi
-	local drv=$(basename $driver)
-	local patches=$(ls tmp-patches/$dtype--$drv--* 2>/dev/null)
-	local p
+	drv=$(basename "$driver")
+	patches=$(ls tmp-patches/"$dtype"--"$drv"--* 2>/dev/null)
 	for p in $patches; do
-		check-patch $p || mv $p failed-patches
+		check-patch "$p "|| mv "$p" failed-patches
 	done
 }
 
@@ -574,30 +596,31 @@ NEXTVERS=
 ##	available netmap-* branches in GITDIR
 function auto()
 {
+	decleare driver
 	get-params "driver" "$@"
 
+	local branches b v
 	if [ -z "$MAXVERS" ]; then 
 		# get the latest netmap-* branch
-		local branches=$(
-			cd $GITDIR;
+		branches=$(
+			cd "$GITDIR" || exit 1
 			git for-each-ref refs/heads/netmap-[0-9]* --format='%(refname:short)'
 		)
 		MAXVERS=$MINVERS
-		local b
 		for b in $branches; do
-			local v=${b#netmap-}
-			if scripts/vers -b $MAXVERS $v -L; then
+			v=${b#netmap-}
+			if scripts/vers -b "$MAXVERS" "$v" -L; then
 				MAXVERS=$v
 			fi
 		done
 		echo "Latest netmap linux branch: $MAXVERS"
-		NEXTVERS=$(scripts/vers $MAXVERS -i)
+		NEXTVERS=$(scripts/vers "$MAXVERS" -i)
 	fi
-	get-range $driver $MINVERS $NEXTVERS
-	build-check $driver
+	get-range "$driver" "$MINVERS" "$NEXTVERS"
+	build-check "$driver"
 	if [ -z "$EXTDRV" ]; then
-		minimize $driver
-		infty $driver $NEXTVERS
+		minimize "$driver"
+		infty "$driver" "$NEXTVERS"
 	fi
 }
 
@@ -606,12 +629,12 @@ function auto()
 ##	exec <cmd> <driver> [args...] for all known drivers.
 function forall()
 {
-	local cmd=$1
+	local cmd driver
+	cmd=$1
 	shift
 
-	local driver
-	for driver in $(./configure --show${EXTDRV:+-ext}-drivers); do
-		$cmd $(basename $driver) "$@"
+	for driver in $(./configure --show"${EXTDRV:+-ext}"-drivers); do
+		"$cmd" "$(basename "$driver")" "$@"
 	done
 }
 
@@ -638,12 +661,12 @@ case $COMMAND in
 ##  <cmd>-all [args...]
 ##	same as: forall <cmd> [args...]
 *-all)
-	forall ${COMMAND%-all} "$@"
+	forall "${COMMAND%-all}" "$@"
 	;;
 -[hH]|--help|-help|help)
-	scripts/help $PROGNAME
+	scripts/help "$PROGNAME"
 	;;
 *)
-	$COMMAND "$@"
+	"$COMMAND" "$@"
 	;;
 esac

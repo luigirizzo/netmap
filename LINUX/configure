@@ -1,7 +1,8 @@
 #!/bin/sh
+# shellcheck disable=SC3043,SC2034,SC2012,SC1091
 
 BUILDDIR=$PWD
-SRCDIR=$(cd $(dirname $0); pwd)
+SRCDIR=$(cd "$(dirname "$0")" || exit; pwd)
 MODNAME=netmap
 DEBUG=1
 UTILS=1
@@ -13,8 +14,8 @@ setelem2n()
 {
 	local i=1
 	local n
-	for n in $(eval echo \$$1_avail); do
-		if [ $n = $2 ]; then
+	for n in $(eval echo \$"$1"_avail); do
+		if [ "$n" = "$2" ]; then
 			echo $i
 			return
 		fi
@@ -50,7 +51,7 @@ setop()
 	esac
 
 	if [ -n "$3" ]; then
-		w=$(setelem2n $1 $3)
+		w=$(setelem2n "$1" "$3")
 		[ -n "$w" ] || {
 			echo "unknown $1: $3" | warning
 			return
@@ -58,14 +59,14 @@ setop()
 	fi
 	case "$2" in
 	is-empty)
-		[ $(eval echo \$$1) -eq 0 ]
+		[ "$(eval echo \$"$1")" -eq 0 ]
 		;;
 	disable-all)
 		eval "$1=0"
 		;;
 	enable-all)
 		eval "$1=0"
-		s=$(eval echo \$$1_avail)
+		s=$(eval echo \$"$1"_avail)
 		for n in $s; do
 			eval "$1=\$(( ($1 << 1) | 1))"
 		done
@@ -78,17 +79,17 @@ setop()
 		;;
         enabled)
 		eval "w=\$(($1 & $w))"
-		[ $w -ne 0 ]
+		[ "$w" -ne 0 ]
 		;;
 	print)
-		s=$(eval echo \$$1_avail)
+		s=$(eval echo \$"$1"_avail)
 		e=
 		for n in $s; do
-			w=$(setelem2n $1 $n)
+			w=$(setelem2n "$1" "$n")
 			eval "w=\$(($1 & $w))"
-			[ $w -ne 0 ] && e="$n $e"
+			[ "$w" -ne 0 ] && e="$n $e"
 		done
-		echo $e
+		echo "$e"
 		;;
         esac
 }
@@ -179,7 +180,7 @@ ld=ld
 
 # with <command>: success iff <command> is available
 with() {
-	type $1 >/dev/null 2>&1
+	type "$1" >/dev/null 2>&1
 }
 
 print_realpath() {
@@ -193,19 +194,20 @@ print_realpath() {
 
 decode_version() {
 	if [ -n "$1" ] && with perl; then
-		echo " [$($SRCDIR/scripts/vers $1 -C)]"
+		echo " [$("$SRCDIR"/scripts/vers "$1" -C)]"
 	fi
 }
 
 # report: print the current state of the configuration variables
 report() {
 	echo "kernel directory            $ksrc"
-	print_realpath $ksrc
+	print_realpath "$ksrc"
 	echo "kernel sources              $src"
 	print_realpath "$src"
-	local v=$lin_ver
+	local v="$lin_ver"
 	[ -n "$v" ] || v="-"
-	local dv="$(decode_version $lin_ver)"
+	local dv
+	dv="$(decode_version "$lin_ver")"
 	echo "linux version               $v $dv"
 	echo "module file                 $MODNAME.ko"
 	echo
@@ -278,7 +280,6 @@ replace_vars()
 		-e "s|@SUBSYS@|$(subsys print)|g" \
 		-e "s|@LIN_VER@|$lin_ver|g" \
 		-e "s|@MOD_LIST@|$mod_list|g" \
-		-e "s|@PATCHES@|$(echo $patches)|g" \
 		-e "s|@S_DRIVERS@|$(drv print)|g" \
 		-e "s|@E_DRIVERS@|$(edrv print)|g" \
 		-e "s|@I_DRIVERS@|$(idrv print)|g" \
@@ -291,7 +292,7 @@ replace_vars()
 		-e "s|@DEBUG@|$DEBUG|g" \
 		-e "s|@UTILS@|$UTILS|g" \
 		-e "s|@REC_DISABLED_WARNINGS@|$REC_DISABLED_WARNINGS|g" \
-		$1
+		"$1"
 }
 
 # print_help
@@ -415,14 +416,14 @@ EOF
 		cat <<EOF
 	MODULE_LICENSE("GPL");
 EOF
-	} > $TMPDIR/$1.c
+	} > "$TMPDIR/$1".c
 	{
 		cat <<EOF
 ##############################################################################
 ##            TEST:  $1
 ##############################################################################
 EOF
-		cat $TMPDIR/$1.c
+		cat "$TMPDIR/$1".c
 	} >> config.log
 	# add the module to the running list
 	TESTOBJS="$1.o $TESTOBJS"
@@ -439,7 +440,7 @@ NEXTTEST=1
 add_test() {
 	local t="test__$NEXTTEST"
 	add_named_test $t "$@"
-	NEXTTEST=$(($NEXTTEST+1))
+	NEXTTEST=$((NEXTTEST+1))
 }
 
 PERTESTFLAGS=
@@ -448,12 +449,12 @@ PERTESTFLAGS=
 # 	for the next test
 add_test_flags() {
 	PERTESTFLAGS="$PERTESTFLAGS
-CFLAGS_test__$NEXTTEST.o := $@"
+CFLAGS_test__$NEXTTEST.o := $*"
 }
 
 reset_tests() {
-	rm -rf $TMPDIR
-	mkdir $TMPDIR
+	rm -rf "$TMPDIR"
+	mkdir "$TMPDIR"
 
 	TESTOBJS=
 	TESTPOSTPROC=
@@ -474,7 +475,7 @@ run_preliminary_tests() {
 ifneq (\$(KERNELRELEASE),)
 obj-m := $TESTOBJS
 EOF
-		if [ -e $TMPDIR/extra.mk ]; then cat $TMPDIR/extra.mk; fi
+		if [ -e "$TMPDIR"/extra.mk ]; then cat "$TMPDIR"/extra.mk; fi
 		cat <<EOF
 else
 
@@ -482,7 +483,7 @@ all:
 	\$(MAKE) -C $ksrc M=\$\$PWD EXTRA_CFLAGS="\$(EXTRA_CFLAGS)" $kopts
 endif
 EOF
-	} > $TMPDIR/Makefile
+	} > "$TMPDIR"/Makefile
 	NPROC=$(grep -c processor /proc/cpuinfo)
 	MAKE_OPT=-O
 	{
@@ -492,21 +493,21 @@ EOF
 ##############################################################################
 ## Makefile:
 EOF
-		cat $TMPDIR/Makefile
+		cat "$TMPDIR"/Makefile
 		cat <<EOF
 ##############################################################################
 EOF
 	} >> config.log
 	(
-		cd $TMPDIR
-		LANG=C make $MAKE_OPT -k -j $NPROC
+		cd "$TMPDIR" || exit
+		LANG=C make $MAKE_OPT -k -j "$NPROC"
 	) >> config.log 2>&1
 	if grep -q ": invalid option -- 'O'" config.log; then
 		MAKE_OPT=
 		# let us try again without -O
 		(
-			cd $TMPDIR
-			make -k -j $NPROC
+			cd "$TMPDIR" || exit
+			make -k -j "$NPROC"
 		) >> config.log 2>&1
 	fi
 	eval "$TESTPOSTPROC"
@@ -520,8 +521,8 @@ EOF
 # run_tests: run all accumulated tests and exec the pertinent
 #   success/failure actions for each one.
 run_tests() {
-	ln -s $BUILDDIR/patches $TMPDIR
-	cat > $TMPDIR/Makefile <<EOF
+	ln -s "$BUILDDIR"/patches "$TMPDIR"
+	cat > "$TMPDIR"/Makefile <<EOF
 SRCDIR=$SRCDIR
 ifneq (\$(KERNELRELEASE),)
 obj-m := $TESTOBJS
@@ -543,13 +544,13 @@ tests:
 test__%:
 	\$(MAKE) -C $ksrc M=\$\$PWD EXTRA_CFLAGS="\$(WARN_CFLAGS)" $kopts \$@.o
 
--include $BUILDDIR/extdrv-versions.mak
--include $BUILDDIR/default-config.mak
--include $BUILDDIR/config.mak
--include $BUILDDIR/drivers.mak
+-include "$BUILDDIR"/extdrv-versions.mak
+-include "$BUILDDIR"/default-config.mak
+-include "$BUILDDIR"/config.mak
+-include "$BUILDDIR"/drivers.mak
 EOF
 	for d in $(drv print); do
-		cat >> $TMPDIR/Makefile <<EOF
+		cat >> "$TMPDIR"/Makefile <<EOF
 get-$d:
 	\$($d@fetch)
 	\$($d@src)
@@ -565,7 +566,7 @@ patch-$d: get-$d
 	touch patch-$d
 EOF
 	done
-	echo endif >> $TMPDIR/Makefile
+	echo endif >> "$TMPDIR"/Makefile
 	{
 		cat <<EOF
 ##############################################################################
@@ -573,14 +574,14 @@ EOF
 ##############################################################################
 ## Makefile:
 EOF
-		cat $TMPDIR/Makefile
+		cat "$TMPDIR"/Makefile
 		cat <<EOF
 ##############################################################################
 EOF
 	} >> config.log
 	(
-		cd $TMPDIR
-		make $MAKE_OPT -k -j $NPROC
+		cd "$TMPDIR" || exit
+		make $MAKE_OPT -k -j "$NPROC"
 	) >> config.log 2>&1
 	eval "$TESTPOSTPROC"
 	cat >> config.log <<EOF
@@ -752,7 +753,7 @@ exec 2>> config.log
 cp pre-commit .git/hooks
 
 appl_arch=$($cc -dumpmachine | cut -d '-' -f 1)
-if [ $appl_arch != "x86_64" ]; then
+if [ "$appl_arch" != x86_64 ]; then
     # dedup uses inline x86_64 assembly
     app disable dedup
 fi
@@ -797,7 +798,7 @@ Otherwise, check that the 'build' symlink in
 is not broken.
 EOF
 fi
-ksrc=$(cd $ksrc; pwd)
+ksrc=$(cd "$ksrc" || exit; pwd)
 
 # check that ksrc has been prepared for external modules compilation
 # It should contain a version.h file (in one of two possible places,
@@ -811,7 +812,7 @@ kernel not configured.
 The kernel directory must be ready for external module compilation.
 You may need to issue the following or equivalent commands:
 
-    cd $ksrc
+    cd "$ksrc"
     make oldconfig
     make modules_prepare
 EOF
@@ -845,8 +846,8 @@ disable_warning() {
 i=1
 for w in $DISABLED_WARNINGS; do
 	add_named_test "__warn__$i" "disable_warning $w" < /dev/null
-	echo "CFLAGS___warn__$i.o = -Wno-error=$w" >> $TMPDIR/extra.mk
-	i=$(($i+1))
+	echo "CFLAGS___warn__$i.o = -Wno-error=$w" >> "$TMPDIR"/extra.mk
+	i=$((i+1))
 done
 
   message " NOTE  " <<EOF
@@ -859,14 +860,14 @@ rm -f extdrv-versions.mak
 for dv in $(echo "$versions" | sed 's/,/ /g'); do
 	d=${dv%:*}
 	v=${dv#*:}
-	if ! edrv enabled $d; then
+	if ! edrv enabled "$d"; then
 		echo "$d is not an external driver" | warning
 	fi
 	echo "$d@v := $v" >> extdrv-versions.mak
 done
 
-replace_vars $SRCDIR/default-config.mak.in_ > default-config.mak
-replace_vars $SRCDIR/intel-fix.sh_ > intel-fix.sh
+replace_vars "$SRCDIR"/default-config.mak.in_ > default-config.mak
+replace_vars "$SRCDIR"/intel-fix.sh_ > intel-fix.sh
 chmod +x intel-fix.sh
 
 ###############################################################
@@ -882,13 +883,13 @@ chmod +x intel-fix.sh
 
 mod_list=
 if ! drv is-empty; then
-	[ -d patches ] || { rm -f patches; ln -s $SRCDIR/final-patches patches; }
+	[ -d patches ] || { rm -f patches; ln -s "$SRCDIR"/final-patches patches; }
 fi
 
-ln -s $SRCDIR/read-vars.mak 2>/dev/null || true
+ln -s "$SRCDIR"/read-vars.mak 2>/dev/null . || true
 rm -f drivers.mak
 # read in all the kernel .config, we use it below
-. $ksrc/.config
+. "$ksrc"/.config
 # check for full kernel sources just once
 src_checked=
 src_found=
@@ -901,19 +902,19 @@ for d in $(drv print); do
 	drv_patch=
 	drv_build=
 	drv_distclean=
-	drv_conf="CONFIG_$(basename $d .c | tr a-z- A-Z_)"
+	drv_conf="CONFIG_$(basename "$d" .c | tr a-z- A-Z_)"
 	# possibly override from config.mak
-	eval $(make -snrf read-vars.mak $d@vars E_DRIVERS="$e_drivers")
+	eval "$(make -snrf read-vars.mak "$d"@vars E_DRIVERS="$e_drivers")"
 
 	# check that the original driver had been compiled as a module, otherwise
 	# skip this driver
 	# (we do this mainly to be sure that any module dependency has already
 	#  been taken care of)
 	if [ -z "$drv_force" ]; then
-		m="$(eval echo \$$drv_conf)"
+		m="$(eval echo \$"$drv_conf")"
 		[ -n "$m" ] || {
 			echo "$drv_conf not set in $ksrc/.config, skipping $d" | warning
-			drv disable $d
+			drv disable "$d"
 			continue
 		}
 	fi
@@ -939,12 +940,12 @@ $d using the following command:
   $drv_fetch
 
 If this fails, please download the above file and put it
-in $SRCDIR/ext-drivers/, then run configure again.
+in "$SRCDIR/ext-drivers/", then run configure again.
 EOF
-		eval $drv_fetch 2>&1 || { drverror <<EOF
+		eval "$drv_fetch" 2>&1 || { drverror <<EOF
 Unable to fetch the sources for driver $d. Disabling driver.
 EOF
-			drv disable $d
+			drv disable "$d"
 			continue
 		}
 	fi
@@ -982,20 +983,20 @@ EOF
 				fi
 			} | warning
 			else
-				src=$(cd $src; pwd)
+				src=$(cd "$src" || exit; pwd)
 				src_found=1
 			fi
 			src_checked=1
 		fi
 		drv_kernel_src=
 		if [ -n "$src_found" ]; then
-			drv_kernel_src=$(find $src/drivers/ -name "$d" -print -quit)
+			drv_kernel_src=$(find "$src"/drivers/ -name "$d" -print -quit)
 		fi
 		if [ -z "$drv_kernel_src" ]; then
 			drverror <<EOF
 '$d': sources not found.  Disabling driver.
 EOF
-			drv disable $d
+			drv disable "$d"
 			continue
 		fi
 		drv_src="cp -Rp $drv_kernel_src $d"
@@ -1004,13 +1005,13 @@ EOF
 	if [ -z "$drv_patch" ]; then
 		# check that we have a patch for this driver
 		# XXX the selection is based only on the kernel version
-		drv_patch=$(ls patches/vanilla--$d--* | awk -v v=$lin_ver -F -- '($3 != "*") && ($3 <= v"") && (v"" < $4)')
+		drv_patch=$(ls patches/vanilla--"$d"--* | awk -v v="$lin_ver" -F -- '($3 != "*") && ($3 <= v"") && (v"" < $4)')
 		if [ -z "$drv_patch" ]; then
 			drverror <<EOF
 '$d': no applicable patch found and no override provided.
 Disabling driver.
 EOF
-			drv disable $d
+			drv disable "$d"
 			continue
 		fi
 	elif [ "$drv_patch" = none ]; then
@@ -1027,7 +1028,7 @@ EOF
 	cat >> drivers.mak <<EOF
 $d@conf := $drv_conf
 $d@src := $drv_src
-$d@patch := $(echo $drv_patch)
+$d@patch := $drv_patch
 EOF
 done
 
@@ -1068,12 +1069,12 @@ points to the correct path containing the driver sources.
 
 Disabling $1.
 EOF
-	drv disable $1
-	edrv disable $1
+	drv disable "$1"
+	edrv disable "$1"
   }
 
   for d in $(drv print); do
-	add_file_exists_check get-$d true "drv_source_error $d"
+	add_file_exists_check get-"$d" true "drv_source_error $d"
   done
 
   # check that we can build the unpatched external drivers
@@ -1087,13 +1088,13 @@ that were not applied.
 
 Disabling $1.
 EOF
-	drv disable $1
-	edrv disable $1
+	drv disable "$1"
+	edrv disable "$1"
   }
 
   for d in $(edrv print); do
-	if ! cdrv enabled $d; then
-            add_file_exists_check build-$d true "edrv_build_error $d"
+	if ! cdrv enabled "$d"; then
+            add_file_exists_check build-"$d" true "edrv_build_error $d"
 	fi
   done
 
@@ -1105,12 +1106,12 @@ There were problems patching the driver $1.
 
 Disabling $1.
 EOF
-	drv disable $1
+	drv disable "$1"
   }
 
   for d in $(drv print); do
-	  edrv enabled $d && continue
-	  add_file_exists_check patch-$d true "drv_patch_error $d"
+	  edrv enabled "$d" && continue
+	  add_file_exists_check patch-"$d" true "drv_patch_error $d"
   done
 
   # ax25_ptr
@@ -2009,7 +2010,7 @@ EOF
   	}
 EOF
 
-  add_test "grep -q '\<e1000_rx_desc_extended\>' $TMPDIR/e1000e/netdev.c \
+  add_test "grep -q '\<e1000_rx_desc_extended\>' '$TMPDIR'/e1000e/netdev.c \
   	&& have E1000E_EXT_RXDESC" </dev/null
   fi # e1000e
 
@@ -2429,7 +2430,7 @@ EOF
   fi # i40e
 
   if drv enabled ice; then
-    add_test_flags '-I$M/ice'
+    add_test_flags -I\$M/ice
     add_test 'have ICE_XRINGS' <<EOF
 	#include "ice/ice.h"
 
@@ -2511,16 +2512,16 @@ EOF
 ## CHECKING FOR split_page
 ##############################################################################
 EOF
-  symf=$ksrc/Module.symvers
-  if [ -e $symf ]; then
-	  if cut -f2 $symf | grep -q split_page; then
-		  echo "found in $symf" >> config.log
+  symf="$ksrc"/Module.symvers
+  if [ -e "$symf" ]; then
+	  if cut -f2 "$symf" | grep -q split_page; then
+		  echo "found in '$symf'" >> config.log
 		  have SPLIT_PAGE
 	  else
-		  echo "not found in $symf" >> config.log
+		  echo "not found in '$symf'" >> config.log
 	  fi
   else
-	  echo "$symf file not found" >> config.log
+	  echo "'$symf' file not found" >> config.log
   fi
   cat >> config.log <<EOF
 ##############################################################################
@@ -2530,7 +2531,7 @@ EOF
 	  have DMASYNC
   fi
 
-  define DRIVER_SUFFIX \"$drvsuffix\"
+  define DRIVER_SUFFIX \""$drvsuffix"\"
 
   # file end
   cat >> $configh <<EOF
@@ -2545,14 +2546,14 @@ EOF
 fi # ! -f $cache/netmap_config_h
 
 # create netmap.mak and Kbuild
-for f in $SRCDIR/*.in; do
-	replace_vars $f > $(basename $f .in)
+for f in "$SRCDIR"/*.in; do
+	replace_vars "$f" > "$(basename "$f" .in)"
 done
 
 # if we are in SRCDIR this will fail, since
 # Makefile already exists
-ln -s $SRCDIR/../GNUmakefile || true
-ln -s $SRCDIR/drv-subdir.mak || true
+ln -s "$SRCDIR"/../GNUmakefile . || true
+ln -s "$SRCDIR"/drv-subdir.mak . || true
 
 
 
@@ -2560,20 +2561,20 @@ report
 
 # create the build directory for libnetmap
 mkdir -p build-libnetmap
-ln -s $SRCDIR/../libnetmap/GNUmakefile build-libnetmap 2>/dev/null || true
+ln -s "$SRCDIR"/../libnetmap/GNUmakefile build-libnetmap 2>/dev/null || true
 
 # create the build directory for the examples
 mkdir -p build-apps
 for a in $(app print); do
-	mkdir -p build-apps/$a
-	ln -s $SRCDIR/../apps/$a/GNUmakefile build-apps/$a/GNUmakefile 2> /dev/null || true
+	mkdir -p build-apps/"$a"
+	ln -s "$SRCDIR"/../apps/"$a"/GNUmakefile build-apps/"$a"/GNUmakefile 2> /dev/null || true
 done
 
 # create the build directory for the utils
 if [ -n "$UTILS" ]; then
 	mkdir -p build-utils
-	ln -s $SRCDIR/../utils/GNUmakefile build-utils/GNUmakefile 2>/dev/null || true
-	ln -s $SRCDIR/../utils/tests 2>/dev/null || true
+	ln -s "$SRCDIR"/../utils/GNUmakefile build-utils/GNUmakefile 2>/dev/null || true
+	ln -s "$SRCDIR"/../utils/tests 2>/dev/null . || true
 fi
 
 # config.status can be used to rerun configure with the
