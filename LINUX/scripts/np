@@ -596,7 +596,7 @@ NEXTVERS=
 ##	available netmap-* branches in GITDIR
 function auto()
 {
-	decleare driver
+	declare driver
 	get-params "driver" "$@"
 
 	local branches b v

@@ -544,10 +544,10 @@ tests:
 test__%:
 	\$(MAKE) -C $ksrc M=\$\$PWD EXTRA_CFLAGS="\$(WARN_CFLAGS)" $kopts \$@.o
 
--include "$BUILDDIR"/extdrv-versions.mak
--include "$BUILDDIR"/default-config.mak
--include "$BUILDDIR"/config.mak
--include "$BUILDDIR"/drivers.mak
+-include $BUILDDIR/extdrv-versions.mak
+-include $BUILDDIR/default-config.mak
+-include $BUILDDIR/config.mak
+-include $BUILDDIR/drivers.mak
 EOF
 	for d in $(drv print); do
 		cat >> "$TMPDIR"/Makefile <<EOF
