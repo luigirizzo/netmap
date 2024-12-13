@@ -1991,6 +1991,15 @@ EOF
 	}
 EOF
 
+  # check for NETIF_F_LLTX
+  add_test 'have NETIF_F_LLTX' <<EOF
+	#include <linux/netdevice.h>
+
+	u64 dummy(void) {
+		return NETIF_F_LLTX;
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################

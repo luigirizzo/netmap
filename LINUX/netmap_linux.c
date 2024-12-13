@@ -2440,6 +2440,11 @@ static const struct net_device_ops nm_vi_ops = {
 	.ndo_get_stats64 = linux_nm_vi_get_stats,
 #endif
 };
+#ifdef NETMAP_LINUX_HAVE_NETIF_F_LLTX
+#define linux_nm_set_lltx(dev_) do { (dev_)->features |= NETIF_F_LLTX; } while (0)
+#else /* !NETMAP_LINUX_HAVE_NETIF_F_LLTX */
+#define linux_nm_set_lltx(dev_)	do { (dev_)->lltx = true; } while (0)
+#endif /* NETMAP_LINUX_HAVE_NETIF_F_LLTX */
 /* dev->name is not initialized yet */
 static void
 linux_nm_vi_setup(struct ifnet *dev)
@@ -2455,10 +2460,11 @@ linux_nm_vi_setup(struct ifnet *dev)
 #endif
 	dev->tx_queue_len = 0;
 	/* XXX */
-	dev->features = NETIF_F_LLTX | NETIF_F_SG | NETIF_F_FRAGLIST |
+	dev->features = NETIF_F_SG | NETIF_F_FRAGLIST |
 		NETIF_F_HIGHDMA | NETIF_F_HW_CSUM | NETIF_F_TSO;
+	linux_nm_set_lltx(dev);
 #ifdef NETMAP_LINUX_HAVE_HW_FEATURES
-	dev->hw_features = dev->features & ~NETIF_F_LLTX;
+	dev->hw_features = dev->features;
 #endif
 #ifdef NETMAP_LINUX_HAVE_ADDR_RANDOM
 	eth_hw_addr_random(dev);
