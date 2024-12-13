@@ -1297,6 +1297,9 @@ linux_netmap_poll(struct file *file, struct poll_table_struct *pwait)
 	return netmap_poll(priv, events, &sr);
 }
 
+#ifndef NETMAP_LINUX_HAVE_SETPAGESWAPBACKED
+#define SetPageSwapBacked(p_)
+#endif /* NETMAP_LINUX_HAVE_SETPAGESWAPBACKED */
 #ifdef NETMAP_LINUX_HAVE_VMFAULT_T
 static vm_fault_t
 #else

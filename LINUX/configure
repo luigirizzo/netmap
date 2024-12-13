@@ -1982,6 +1982,15 @@ EOF
 	}
 EOF
 
+  # check for SetPageSwapBacked
+  add_test 'have SETPAGESWAPBACKED' <<EOF
+	#include <linux/mm.h>
+
+	void dummy(struct page *page) {
+		SetPageSwapBacked(page);
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################
