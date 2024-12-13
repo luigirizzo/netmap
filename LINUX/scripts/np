@@ -400,7 +400,7 @@ function build-prep()
 pound	:= \\#
 			/\<printf\>/{s/\\#/$(pound)/}' tools/build/Build.include || true
 		last=compiler-gcc.h
-		for i in $(seq 13); do
+		for i in $(seq 14); do
 			[ -e include/linux/compiler-gcc"$i".h ] ||
 				ln -s "$last" include/linux/compiler-gcc"$i".h
 			last=compiler-gcc$i.h
