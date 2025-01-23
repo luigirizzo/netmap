@@ -438,7 +438,10 @@ generic_mbuf_destructor(struct mbuf *m)
 	unsigned int r_orig = r;
 
 	if (unlikely(!nm_netmap_on(na) || r >= na->num_tx_rings)) {
-		nm_prerr("Error: no netmap adapter on device %s", na->name);
+		nm_prerr("Error: no netmap adapter on device %s hw RX %u TX %u host RX %u TX %u r %u",
+			 na->name, na->num_rx_rings, na->num_tx_rings,
+			 na->num_host_rx_rings, na->num_host_rx_rings,
+			 r);
 		return;
 	}
 
