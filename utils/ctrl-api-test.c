@@ -1041,6 +1041,28 @@ infinite_options2(struct TestContext *ctx)
 	return (errno == EINVAL ? 0 : -1);
 }
 
+static int
+invalid_valid_options3(struct TestContext *ctx)
+{
+	struct nmreq_option opt[100];
+	unsigned int i;
+
+	printf("Testing infinite list of options on %s (invalid and valid option)\n", ctx->ifname_ext);
+
+	memset(&opt, 0, sizeof(opt));
+	for (i = 0; i < (sizeof(opt)/sizeof(struct nmreq_option) - 1); i++) {
+		opt[i].nro_reqtype = NETMAP_REQ_OPT_MAX;
+		opt[i].nro_next = (uintptr_t)&opt[i+1];
+	}
+	opt[i].nro_size = 1000;
+	opt[i].nro_reqtype = NETMAP_REQ_OPT_SYNC_KLOOP_EVENTFDS;
+	ctx->nr_opt = opt;
+	if (port_register_hwall(ctx) >= 0)
+		return -1;
+	clear_options(ctx);
+	return (errno == EMSGSIZE ? 0 : -1);
+}
+
 #ifdef CONFIG_NETMAP_EXTMEM
 int
 change_param(const char *pname, unsigned long newv, unsigned long *poldv)
@@ -2068,6 +2090,7 @@ static struct mytest tests[] = {
 	decltest(unsupported_option),
 	decltest(infinite_options),
 	decltest(infinite_options2),
+	decltest(invalid_valid_options3),
 #ifdef CONFIG_NETMAP_EXTMEM
 	decltest(extmem_option),
 	decltest(bad_extmem_option),
