@@ -59,6 +59,17 @@
 # all the intel drivers are compiled in much the same way, so we factor them
 # here. $(1) is the driver name, while $(2) is the driver version
 define intel_driver
+$(1)@fetch	:= test -e @SRCDIR@/ext-drivers/$(1)/v$(2).zip || wget https://github.com/intel/ethernet-linux-$(1)/archive/refs/tags/v$(2).zip -P @SRCDIR@/ext-drivers/$(1)
+$(1)@src 	:= unzip -u @SRCDIR@/ext-drivers/$(1)/v$(2).zip && ln -s ethernet-linux-$(1)-$(2)/src $(1)
+$(1)@patch 	:= patches/intel--$(1)--$(2)
+$(1)@build 	 = make -C $(1) CFLAGS_EXTRA="$$($(1)@cflags) $(EXTRA_CFLAGS)" @KOPTS@ NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@ KBUILD_EXTRA_SYMBOLS=@BUILDDIR@/Module.symvers
+$(1)@install 	 = make -C $(1) install INSTALL_MOD_PATH=@MODPATH@ CFLAGS_EXTRA="$$($(1)@cflags) $(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@ KBUILD_EXTRA_SYMBOLS=@BUILDDIR@/Module.symvers
+$(1)@clean 	 = if [ -d $(1) ]; then make -C $(1) clean CFLAGS_EXTRA="$$($(1)@cflags) $(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@; fi
+$(1)@distclean	:= rm -rf ethernet-linux-$(1)-$(2)
+$(1)@force	:= 1
+endef
+
+define intel_legacy_driver
 $(1)@fetch	:= test -e @SRCDIR@/ext-drivers/$(1)-$(2).tar.gz || wget https://sourceforge.net/projects/e1000/files/$(1)%20stable/$(2)/$(1)-$(2).tar.gz -P @SRCDIR@/ext-drivers/
 $(1)@src 	:= tar xf @SRCDIR@/ext-drivers/$(1)-$(2).tar.gz && ln -s $(1)-$(2)/src $(1)
 $(1)@patch 	:= patches/intel--$(1)--$(2)
@@ -98,7 +109,8 @@ ice@prepare := $(if $(filter $(ice@v),1.7.16 1.8.8 1.8.9 1.9.7 1.9.11 1.10.1.2 1
 stmmac@conf := CONFIG_STMMAC_ETH
 
 # only define the drivers that are selected after the --(no-)ext-drivers= processing (variable E_DRIVERS)
-$(foreach d,$(filter ixgbe ixgbevf e1000e igb ice i40e,$(E_DRIVERS)),$(eval $(call intel_driver,$d,$($(d)@v))))
+$(foreach d,$(filter ixgbe ixgbevf igb ice i40e,$(E_DRIVERS)),$(eval $(call intel_driver,$d,$($(d)@v))))
+$(foreach d,$(filter e1000e,$(E_DRIVERS)),$(eval $(call intel_legacy_driver,$d,$($(d)@v))))
 
 ifneq ($(filter e1000e,$(E_DRIVERS)),)
 e1000e@fetch := test -e @SRCDIR@/ext-drivers/e1000e-$(e1000e@v).tar.gz || wget https://sourceforge.net/projects/e1000/files/e1000e%20historic%20archive/$(e1000e@v)/e1000e-$(e1000e@v).tar.gz -P @SRCDIR@/ext-drivers/
