@@ -145,6 +145,12 @@ ixgbe_netmap_configure_srrctl(struct NM_IXGBE_ADAPTER *adapter, struct NM_IXGBE_
 #define NETMAP_LINUX_HAVE_NTA
 #endif /* NETMAP_LINUX_IXGBE_HAVE_NTA */
 
+#ifdef NETMAP_LINUX_IXGBE_HAVE_STATE_BITMAP
+#define NM_IXGBE_STATE(adapter) (&(adapter)->state)
+#else
+#define NM_IXGBE_STATE(adapter) ((adapter)->state)
+#endif /* NETMAP_LINUX_IXGBE_HAVE_STATE_BITMAP */
+
 #else
 /***********************************************************************
  *                        ixgbevf                                      *
@@ -196,6 +202,8 @@ ixgbe_netmap_configure_srrctl(struct NM_IXGBE_ADAPTER *adapter, struct NM_IXGBE_
 #define NETMAP_LINUX_HAVE_NTA
 #endif /* NETMAP_LINUX_IXGBEVF_HAVE_NTA */
 
+#define NM_IXGBE_STATE(adapter)	(&(adapter)->state)
+
 #endif /* NM_IXGBE */
 /**********************************************************************/
 
@@ -227,7 +235,7 @@ ixgbe_netmap_reg(struct netmap_adapter *na, int onoff)
 
 	// adapter->netdev->trans_start = jiffies; // disable watchdog ?
 	/* protect against other reinit */
-	while (test_and_set_bit(NM_IXGBE_RESETTING, &adapter->state))
+	while (test_and_set_bit(NM_IXGBE_RESETTING, NM_IXGBE_STATE(adapter)))
 		usleep_range(1000, 2000);
 
 	if (netif_running(adapter->netdev))
@@ -242,7 +250,7 @@ ixgbe_netmap_reg(struct netmap_adapter *na, int onoff)
 	/* XXX SRIOV might need another 2sec wait */
 	if (netif_running(adapter->netdev))
 		NM_IXGBE_UP(adapter);	/* also enables intr */
-	clear_bit(NM_IXGBE_RESETTING, &adapter->state);
+	clear_bit(NM_IXGBE_RESETTING, NM_IXGBE_STATE(adapter));
 	return (0);
 }
 

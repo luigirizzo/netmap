@@ -2137,6 +2137,14 @@ EOF
        }
 EOF
 
+  # state bitmap or unsigned long?
+  add_test "have IXGBE_STATE_BITMAP" <<EOF
+	#include "ixgbe/ixgbe.h"
+	int dummy(struct ixgbe_adapter *adapter) {
+		return test_and_set_bit(0, &adapter->state);
+	}
+EOF
+
   fi # ixgbe
 
   if drv enabled ixgbevf; then
