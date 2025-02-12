@@ -457,6 +457,7 @@ reset_tests() {
 	mkdir "$TMPDIR"
 
 	TESTOBJS=
+	TESTPOSTPROC=
 	DRIVERTEST=
 	NEXTTEST=1
 	cat >> config.log <<EOF
