@@ -426,7 +426,7 @@ EOF
 		cat "$TMPDIR/$1".c
 	} >> config.log
 	# add the module to the running list
-	TESTOBJS="$1.o $TESTOBJS"
+	eval TESTOBJS$DRIVERTEST=\"$1.o \$TESTOBJS$DRIVERTEST\"
 	# add the postprocess script for this test
 	if [ -n "$2" ]; then
 		add_file_exists_check "$1.o" "$2" "$3"
@@ -438,7 +438,7 @@ EOF
 #     explicitly naming the test.
 NEXTTEST=1
 add_test() {
-	local t="test__$NEXTTEST"
+	local t="${TESTPREFIX}test__$NEXTTEST"
 	add_named_test $t "$@"
 	NEXTTEST=$((NEXTTEST+1))
 }
@@ -457,7 +457,7 @@ reset_tests() {
 	mkdir "$TMPDIR"
 
 	TESTOBJS=
-	TESTPOSTPROC=
+	DRIVERTEST=
 	NEXTTEST=1
 	cat >> config.log <<EOF
 ##############################################################################
@@ -525,8 +525,15 @@ run_tests() {
 	cat > "$TMPDIR"/Makefile <<EOF
 SRCDIR=$SRCDIR
 ifneq (\$(KERNELRELEASE),)
-obj-m := $TESTOBJS
+obj-\$(NETMAP_ALL) := $TESTOBJS
 $PERTESTFLAGS
+EOF
+	for d in $(drv print); do
+		cat >> "$TMPDIR"/Makefile <<EOF
+obj-\$(NETMAP_$d) := $(eval echo \$TESTOBJS$d)
+EOF
+	done
+	cat >> "$TMPDIR"/Makefile <<EOF
 else
 WARN_CFLAGS := -Werror \$(addprefix -Wno-error=,$REC_DISABLED_WARNINGS)
 S_DRIVERS := $(drv print)
@@ -536,13 +543,13 @@ I_DRIVERS := $(idrv print)
 
 TOBUILD := \$(filter-out \$(C_DRIVERS),\$(E_DRIVERS))
 
-all: \$(S_DRIVERS:%=get-%) \$(TOBUILD:%=build-%) \$(I_DRIVERS:%=patch-%) tests
+all: \$(S_DRIVERS:%=get-%) \$(TOBUILD:%=build-%) \$(TOBUILD:%=tests-%) \$(I_DRIVERS:%=patch-%) tests
 
 tests:
-	\$(MAKE) -C $ksrc M=\$\$PWD EXTRA_CFLAGS="\$(WARN_CFLAGS)" $kopts
+	+\$(MAKE) -C $ksrc M=\$\$PWD EXTRA_CFLAGS="\$(WARN_CFLAGS)" $kopts NETMAP_ALL=m
 
 test__%:
-	\$(MAKE) -C $ksrc M=\$\$PWD EXTRA_CFLAGS="\$(WARN_CFLAGS)" $kopts \$@.o
+	\$(MAKE) -C $ksrc M=\$\$PWD EXTRA_CFLAGS="\$(WARN_CFLAGS)" $kopts NETMAP_ALL=m \$@.o
 
 -include $BUILDDIR/extdrv-versions.mak
 -include $BUILDDIR/default-config.mak
@@ -564,6 +571,8 @@ build-$d: prepare-$d
 patch-$d: get-$d
 	\$(foreach p,\$($d@patch),patch --quiet --force -p1 < \$(p);)
 	touch patch-$d
+tests-$d: build-$d
+	+\$(MAKE) -C $ksrc M=\$\$PWD EXTRA_CFLAGS="\$(WARN_CFLAGS)" $kopts NETMAP_ALL=n NETMAP_$d=m
 EOF
 	done
 	echo endif >> "$TMPDIR"/Makefile
@@ -2009,6 +2018,8 @@ EOF
 
   add_file_exists_check e1000e/e1000.h true "drv_source_error e1000e"
 
+  DRIVERTEST=e1000e
+
   add_test 'have E1000E_HWADDR' <<EOF
   	#include "e1000e/e1000.h"
 
@@ -2058,6 +2069,8 @@ EOF
   if drv enabled ixgbe; then
 
   add_file_exists_check ixgbe/ixgbe.h true "drv_source_error ixgbe"
+
+  DRIVERTEST=ixgbe
 
   # different versions of IXGBE_?X_DESC
   add_test 'define IXGBE_DESC 1' <<EOF
@@ -2130,6 +2143,8 @@ EOF
 
   add_file_exists_check ixgbevf/ixgbevf.h true "drv_source_error ixgbevf"
 
+  DRIVERTEST=ixgbevf
+
   # IXGBEVF_* or IXGBE_*?
   add_test true 'define IXGBEVF_IXGBE_MACROS' <<EOF
   	#include "ixgbevf/ixgbevf.h"
@@ -2169,6 +2184,8 @@ EOF
     fi
 
     add_file_exists_check ${VNETDIR}virtio_net.c true "drv_source_error virtio_net.c"
+
+    DRIVERTEST=
 
     add_test 'define VIRTIO_NET_HDR_FROM_SKB_5ARGS' <<EOF
 	#include <linux/virtio_net.h>
@@ -2426,6 +2443,10 @@ EOF
   fi # virtio-net
 
   if drv enabled i40e; then
+
+    DRIVERTEST=i40e
+
+    add_test_flags -I\$M/i40e
     add_test 'define I40E_PTR_ARRAY' <<EOF
   	#include "i40e/i40e.h"
 
@@ -2435,6 +2456,7 @@ EOF
   	}
 EOF
 
+   add_test_flags -I\$M/i40e
    add_test 'define I40E_PTR_STATE' <<EOF
    	#include "i40e/i40e.h"
 	#include <linux/bitops.h>
@@ -2449,6 +2471,9 @@ EOF
 
   if drv enabled ice; then
     add_test_flags -I\$M/ice
+
+    DRIVERTEST=ice
+
     add_test 'have ICE_XRINGS' <<EOF
 	#include "ice/ice.h"
 
@@ -2464,6 +2489,9 @@ EOF
   fi # ice
 
   if drv enabled igb; then
+
+    DRIVERTEST=igb
+
     add_test 'have IGB_RD32' <<EOF
         #include "igb/e1000_regs.h"
 
@@ -2502,6 +2530,9 @@ EOF
 EOF
 
   if drv enabled vmxnet3; then
+
+    DRIVERTEST=vmxnet3
+
     add_test 'have VMXNET3_STATIC_RQ_CREATE' <<EOF
         #include "vmxnet3/vmxnet3_int.h"
 
