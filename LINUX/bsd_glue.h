@@ -300,7 +300,7 @@ struct thread;
  * for netmap-capable is some magic in the area pointed by that.
  */
 #define if_setnetmapadapter(_ifp, _na)	do { 				\
-	(_ifp)->ax25_ptr = _na;						\
+	(_ifp)->ax25_ptr = (void *)_na;					\
 } while (0)
 #define if_getnetmapadapter(_ifp)	((struct netmap_adapter *)(_ifp)->ax25_ptr)
 
