@@ -1128,9 +1128,10 @@ EOF
   add_test 'have AX25PTR' <<EOF
 	#include <linux/netdevice.h>
 
-	void * dummy(struct net_device *dev)
+	extern struct netmap_adapter *na;
+	void dummy(struct net_device *dev)
 	{
-		return dev->ax25_ptr;
+		dev->ax25_ptr = na;
 	}
 EOF
 
