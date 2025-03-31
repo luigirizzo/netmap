@@ -145,7 +145,7 @@ ixgbe_netmap_configure_srrctl(struct NM_IXGBE_ADAPTER *adapter, struct NM_IXGBE_
 #define NETMAP_LINUX_HAVE_NTA
 #endif /* NETMAP_LINUX_IXGBE_HAVE_NTA */
 
-#ifdef NETMAP_LINUX_IXGBE_HAVE_STATE_BITMAP
+#ifdef NETMAP_LINUX_HAVE_IXGBE_STATE_BITMAP
 #define NM_IXGBE_STATE(adapter) (&(adapter)->state)
 #else
 #define NM_IXGBE_STATE(adapter) ((adapter)->state)
