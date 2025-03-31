@@ -542,7 +542,7 @@ E_DRIVERS := $(edrv print)
 C_DRIVERS := $(cdrv print)
 I_DRIVERS := $(idrv print)
 
-TOBUILD := \$(filter-out \$(C_DRIVERS),\$(E_DRIVERS))
+TOBUILD := \$(filter-out \$(C_DRIVERS),\$(S_DRIVERS))
 
 all: \$(S_DRIVERS:%=get-%) \$(TOBUILD:%=build-%) \$(TOBUILD:%=tests-%) \$(I_DRIVERS:%=patch-%) tests
 
