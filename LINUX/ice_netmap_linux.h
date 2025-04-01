@@ -462,7 +462,7 @@ ice_netmap_attach(struct ice_pf *pf)
 	na.num_rx_desc = vsi->rx_rings[0]->count;
 	na.num_tx_rings = vsi->num_txq;
 	na.num_rx_rings = vsi->num_rxq;
-	na.rx_buf_maxsize = vsi->rx_buf_len;
+	na.rx_buf_maxsize = vsi->rx_rings[0]->rx_buf_len;
 	na.nm_txsync = ice_netmap_txsync;
 	na.nm_rxsync = ice_netmap_rxsync;
 	na.nm_register = ice_netmap_reg;
