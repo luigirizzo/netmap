@@ -79,7 +79,7 @@ forcedeth_netmap_reg(struct netmap_adapter *na, int onoff)
 
 	// first half of nv_change_mtu() - down
 	nv_disable_irq(ifp);
-	nv_napi_disable(ifp);
+	napi_disable(&np->napi);
 	netif_tx_lock_bh(ifp);
 	netif_addr_lock(ifp);
 	spin_lock(&np->lock);
@@ -112,7 +112,7 @@ forcedeth_netmap_reg(struct netmap_adapter *na, int onoff)
 	spin_unlock(&np->lock);
 	netif_addr_unlock(ifp);
 	netif_tx_unlock_bh(ifp);
-	nv_napi_enable(ifp);
+	napi_enable(&np->napi);
 	nv_enable_irq(ifp);
 
 	return (0);
