@@ -8,6 +8,9 @@
 #define NM_ICE_RXRING ice_ring
 #define NM_ICE_TXRING ice_ring
 #endif /* NETMAP_LINUX_HAVE_ICE_XRINGS */
+#ifndef NETMAP_LINUX_HAVE_ICE_VSI_DOWN
+#define ICE_VSI_DOWN __ICE_DOWN
+#endif /* !NETMAP_LINUX_HAVE_ICE_VSI_DOWN */
 
 extern int ix_crcstrip;
 

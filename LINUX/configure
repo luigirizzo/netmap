@@ -2480,10 +2480,10 @@ EOF
   fi # i40e
 
   if drv enabled ice; then
-    add_test_flags -I\$M/ice
 
     DRIVERTEST=ice
 
+    add_test_flags -I\$M/ice
     add_test 'have ICE_XRINGS' <<EOF
 	#include "ice/ice.h"
 
@@ -2494,6 +2494,15 @@ EOF
 	struct ice_rx_ring *
 	dummy2(struct ice_vsi *vsi) {
 		return vsi->rx_rings[0];
+	}
+EOF
+
+    add_test_flags -I\$M/ice
+    add_test 'have ICE_VSI_DOWN' <<EOF
+	#include "ice/ice.h"
+
+	enum ice_vsi_state dummy(void) {
+		return ICE_VSI_DOWN;
 	}
 EOF
   fi # ice
