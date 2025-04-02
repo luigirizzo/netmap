@@ -209,7 +209,7 @@ index 112e871..202face 100644
  	/* ICE_PREPPED_RECOVERY_MODE is set when the up and running
  	 * driver transitions to recovery mode. If this is not set
 diff --git a/ice/ice_txrx.c b/ice/ice_txrx.c
-index 582e2cf..e2c6401 100644
+index 582e2cf..f5e07bd 100644
 --- a/ice/ice_txrx.c
 +++ b/ice/ice_txrx.c
 @@ -32,6 +32,10 @@
@@ -234,24 +234,7 @@ index 582e2cf..e2c6401 100644
  
  	/* get the bql data ready */
  #ifdef HAVE_XDP_SUPPORT
-@@ -419,6 +427,16 @@ void ice_clean_rx_ring(struct ice_rx_ring *rx_ring)
- 	u32 size;
- 	u16 i;
- 
-+#ifdef DEV_NETMAP
-+    if (rx_ring->netdev) {
-+        int dummy, nm_irq;
-+        nm_irq = netmap_rx_irq(rx_ring->netdev, rx_ring->q_index, &dummy);
-+        if (nm_irq != NM_IRQ_PASS) {
-+            return;
-+        }
-+    }
-+#endif /* DEV_NETMAP */
-+
- 	/* ring already cleared, nothing to do */
- 	if (!rx_ring->rx_buf)
- 		return;
-@@ -1670,6 +1688,16 @@ int ice_clean_rx_irq(struct ice_rx_ring *rx_ring, int budget)
+@@ -1670,6 +1678,16 @@ int ice_clean_rx_irq(struct ice_rx_ring *rx_ring, int budget)
  #endif
  	bool failure;
  
