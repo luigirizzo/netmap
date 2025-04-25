@@ -165,6 +165,7 @@ struct netmap_slot {
 	uint16_t len;		/* length for this slot */
 	uint16_t flags;		/* buf changed, etc. */
 	uint64_t ptr;		/* pointer for indirect buffers */
+	uint64_t ts;		/* timestamp of buffer */
 };
 
 /*
@@ -222,6 +223,12 @@ struct netmap_slot {
 #define NS_TXMON	0x0040
 	/* (monitor ports only) the packet comes from the TX
 	 * ring of the monitored port
+	 */
+
+#define NS_TIMESTAMP 0x0080
+	/* the packet has a receive or transmit timestamp
+	   Note: this is using the NIC hardware clock and
+	         not the PC clock
 	 */
 
 #define	NS_PORT_SHIFT	8
