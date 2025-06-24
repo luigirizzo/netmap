@@ -47,6 +47,7 @@ struct netmap_veth_adapter {
 static struct netmap_adapter *
 veth_get_peer_na(struct netmap_adapter *na)
 {
+	struct netmap_adapter *ona;
 	struct ifnet *ifp = na->ifp;
 	struct veth_priv *priv = netdev_priv(ifp);
 	struct ifnet *peer_ifp;
@@ -63,8 +64,13 @@ veth_get_peer_na(struct netmap_adapter *na)
 		/* Cross link the peer netmap adapters. Note that we
 		 * can retrieve the peer to do our clean-up even if
 		 * the peer_ifp is detached from us. */
-		vna->peer = (struct netmap_veth_adapter *)NA(peer_ifp);
+		ona = NA(peer_ifp);
+		vna->peer = (struct netmap_veth_adapter *)ona;
 		vna->peer->peer = vna;
+
+		/* Both endpoints must have identical ring configurations */
+		ona->num_rx_rings = na->num_tx_rings;
+		ona->num_tx_rings = na->num_rx_rings;
 
 		/* Get a reference to the other endpoint. */
 		netmap_adapter_get(&vna->peer->up.up);
@@ -223,6 +229,18 @@ veth_netmap_krings_delete(struct netmap_adapter *na)
 	vna->peer = NULL;
 }
 
+static int
+veth_netmap_config(struct netmap_adapter *na, struct nm_config_info *info)
+{
+	/* To maintain identical ring configurations,
+	 * only one of the two endpoint should be configured. */
+	if (((struct netmap_veth_adapter *)na)->peer != NULL) {
+		return EBUSY;
+	}
+
+	return nm_os_config(na, info);
+}
+
 static void
 veth_netmap_attach(struct ifnet *ifp)
 {
@@ -240,6 +258,7 @@ veth_netmap_attach(struct ifnet *ifp)
 	na.nm_krings_create = veth_netmap_krings_create;
 	na.nm_krings_delete = veth_netmap_krings_delete;
 	na.nm_dtor = veth_netmap_dtor;
+	na.nm_config = veth_netmap_config;
 	na.num_tx_rings = na.num_rx_rings = 1;
 	netmap_attach_ext(&na, sizeof(struct netmap_veth_adapter),
 			0 /* do not override reg */);
