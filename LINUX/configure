@@ -1445,10 +1445,7 @@ EOF
   add_test 'have HRTIMER_MODE_REL' <<EOF
 	#include <linux/hrtimer.h>
 
-	void dummy(struct hrtimer *timer, clockid_t which_clock)
-	{
-	        hrtimer_init(timer, which_clock, HRTIMER_MODE_REL);
-	}
+	int dummy = HRTIMER_MODE_REL;
 EOF
 
   # check for IFF_LIVE_ADDR_CHANGE
