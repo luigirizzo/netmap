@@ -2008,6 +2008,18 @@ EOF
 	}
 EOF
 
+  # check for hrtimer_setup
+  add_test 'have HRTIMER_SETUP' <<EOF
+	#include <linux/hrtimer.h>
+
+	void dummy(struct hrtimer *timer,
+		enum hrtimer_restart (*function)(struct hrtimer *),
+		clockid_t clock_id, enum hrtimer_mode mode)
+	{
+		hrtimer_setup(timer, function, clock_id, mode);
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################

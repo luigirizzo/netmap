@@ -510,8 +510,8 @@ void
 nm_os_mitigation_init(struct nm_generic_mit *mit, int idx,
 			struct netmap_adapter *na)
 {
-	hrtimer_init(&mit->mit_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	mit->mit_timer.function = &generic_timer_handler;
+	nm_hrtimer_setup(&mit->mit_timer, &generic_timer_handler,
+			CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	mit->mit_pending = 0;
 	mit->mit_ring_idx = idx;
 	mit->mit_na = na;

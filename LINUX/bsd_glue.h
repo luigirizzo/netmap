@@ -78,6 +78,15 @@
 #define HRTIMER_MODE_REL	HRTIMER_REL
 #endif
 
+#ifdef NETMAP_LINUX_HAVE_HRTIMER_SETUP
+#define nm_hrtimer_setup	hrtimer_setup
+#else
+#define nm_hrtimer_setup(t_, f_, c_, m_) do {	\
+	hrtimer_init(t_, c_, m_);		\
+	(t_)->function = (c_);			\
+} while (0)
+#endif
+
 #ifndef NETMAP_LINUX_HAVE_SKB_COPY_LINEAR
 #define skb_copy_from_linear_data_offset(skb, offset, to, copy)	\
 	memcpy(to, (skb)->data + offset, copy)
