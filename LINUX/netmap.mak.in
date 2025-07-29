@@ -46,7 +46,7 @@ DRIVERS = $(shell [ -n "$(S_DRIVERS)" ] && ls -dAp $(S_DRIVERS) 2> /dev/null)
 # external drivers after copy and patch
 DRIVERS_EXT = $(shell [ -n "$(E_DRIVERS)" ] && ls -dAp $(E_DRIVERS) 2> /dev/null)
 
-COMMON_OPTS=-C $(KSRC) M=$(BUILDDIR) EXTRA_CFLAGS='$(EXTRA_CFLAGS)' $(KOPTS) modules
+COMMON_OPTS=-C $(KSRC) M=$(BUILDDIR) ccflags-y='$(EXTRA_CFLAGS)' $(KOPTS) modules
 
 define common_driver
 get-$(1):
