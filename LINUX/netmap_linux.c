@@ -1225,8 +1225,8 @@ out:
 EXPORT_SYMBOL(netmap_rings_config_get);
 
 /* Default nm_config implementation for netmap_hw_adapter on Linux. */
-static int
-netmap_linux_config(struct netmap_adapter *na, struct nm_config_info *info)
+int
+nm_os_config(struct netmap_adapter *na, struct nm_config_info *info)
 {
 	int ret = netmap_rings_config_get(na, info);
 
@@ -1239,6 +1239,7 @@ netmap_linux_config(struct netmap_adapter *na, struct nm_config_info *info)
 
 	return 0;
 }
+EXPORT_SYMBOL(nm_os_config);
 
 /* ######################## FILE OPERATIONS ####################### */
 
@@ -2559,7 +2560,7 @@ nm_os_onattach(struct ifnet *ifp)
 #endif /* NETMAP_LINUX_HAVE_SET_CHANNELS */
 #endif /* NETMAP_LINUX_HAVE_AX25PTR */
 	if (na->nm_config == NULL) {
-		hwna->up.nm_config = netmap_linux_config;
+		hwna->up.nm_config = nm_os_config;
 	}
 }
 
