@@ -1783,6 +1783,8 @@ netmap_reload_map(struct netmap_adapter *na,
 
 #else /* linux */
 
+int nm_os_config(struct netmap_adapter *na, struct nm_config_info *info);
+
 int nm_iommu_group_id(bus_dma_tag_t dev);
 #include <linux/dma-mapping.h>
 
