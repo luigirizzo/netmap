@@ -83,7 +83,7 @@
 #else
 #define nm_hrtimer_setup(t_, f_, c_, m_) do {	\
 	hrtimer_init(t_, c_, m_);		\
-	(t_)->function = (c_);			\
+	(t_)->function = (f_);			\
 } while (0)
 #endif
 
