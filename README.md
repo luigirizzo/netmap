@@ -101,7 +101,8 @@ directory will let you patch device driver sources and build
 some netmap-enabled device drivers.
 Please look [here](LINUX/README.md) for more instructions.
 
-Make sure you have kernel headers matching your installed kernel.
+Make sure you have kernel headers matching your installed kernel and
+the `zip` package installed (e.g., `sudo apt install zip`).
 The sources for e1000e, igb, ixgbe and i40e will be downloaded
 from the Intel e1000 project on sourceforce.
 If you need the netmap enabled drivers for e1000, veth, forcedeth,
