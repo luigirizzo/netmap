@@ -44,6 +44,7 @@
 # SRCDIR	absolute path of the netmap/LINUX directory
 # KSRC		source directory of the linux kernel (headers should be sufficient
 # 		for external drivers)
+# SRC		source directory of the full kernel sources
 # KOPTS		options intended for the linux make (accumulated via the
 # 		--kernel-opts= configure option
 # DRVSUFFIX	the netmap driver suffix (--driver-suffix= configure option)
@@ -62,9 +63,9 @@ define intel_driver
 $(1)@fetch	:= test -e @SRCDIR@/ext-drivers/$(1)/v$(2).zip || wget https://github.com/intel/ethernet-linux-$(1)/archive/refs/tags/v$(2).zip -P @SRCDIR@/ext-drivers/$(1)
 $(1)@src 	:= unzip -u @SRCDIR@/ext-drivers/$(1)/v$(2).zip && ln -s ethernet-linux-$(1)-$(2)/src $(1)
 $(1)@patch 	:= patches/intel--$(1)--$(2)
-$(1)@build 	 = make -C $(1) CFLAGS_EXTRA="$$($(1)@cflags) $(EXTRA_CFLAGS)" @KOPTS@ NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@ KBUILD_EXTRA_SYMBOLS=@BUILDDIR@/Module.symvers
-$(1)@install 	 = make -C $(1) install INSTALL_MOD_PATH=@MODPATH@ CFLAGS_EXTRA="$$($(1)@cflags) $(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@ KBUILD_EXTRA_SYMBOLS=@BUILDDIR@/Module.symvers
-$(1)@clean 	 = if [ -d $(1) ]; then make -C $(1) clean CFLAGS_EXTRA="$$($(1)@cflags) $(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@KSRC@; fi
+$(1)@build 	 = make -C $(1) CFLAGS_EXTRA="$$($(1)@cflags) $(EXTRA_CFLAGS)" @KOPTS@ NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@SRC@ KBUILD_EXTRA_SYMBOLS=@BUILDDIR@/Module.symvers
+$(1)@install 	 = make -C $(1) install INSTALL_MOD_PATH=@MODPATH@ CFLAGS_EXTRA="$$($(1)@cflags) $(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@SRC@ KBUILD_EXTRA_SYMBOLS=@BUILDDIR@/Module.symvers
+$(1)@clean 	 = if [ -d $(1) ]; then make -C $(1) clean CFLAGS_EXTRA="$$($(1)@cflags) $(EXTRA_CFLAGS)" NETMAP_DRIVER_SUFFIX=@DRVSUFFIX@ KSRC=@SRC@; fi
 $(1)@distclean	:= rm -rf ethernet-linux-$(1)-$(2)
 $(1)@force	:= 1
 endef

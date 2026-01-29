@@ -786,6 +786,7 @@ fi
 	# user did not provide the path for the full kernel sources
 	# we try to find one by ourselves
 	[ -d "$ksrc/source" ] && src="$ksrc/source"
+	[ -d "/lib/modules/${kernelver}/source" ] && src="/lib/modules/${kernelver}/source"
 	[ -n "$src" ] || src=$ksrc
 }
 
