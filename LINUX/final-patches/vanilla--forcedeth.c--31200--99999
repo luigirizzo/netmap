@@ -1,8 +1,8 @@
 diff --git a/forcedeth.c b/forcedeth.c
-index 9c0b1bac6af6..b081d6ba11a2 100644
+index f39cae620f61..3af3ef806b45 100644
 --- a/forcedeth.c
 +++ b/forcedeth.c
-@@ -1865,12 +1865,25 @@ static void nv_init_tx(struct net_device *dev)
+@@ -1962,12 +1962,25 @@ static void nv_init_tx(struct net_device *dev)
  	}
  }
  
@@ -28,7 +28,7 @@ index 9c0b1bac6af6..b081d6ba11a2 100644
  
  	if (!nv_optimized(np))
  		return nv_alloc_rx(dev);
-@@ -3386,6 +3399,11 @@ static irqreturn_t nv_nic_irq_tx(int foo, void *data)
+@@ -3660,6 +3673,11 @@ static irqreturn_t nv_nic_irq_tx(int foo, void *data)
  	int i;
  	unsigned long flags;
  
@@ -39,8 +39,8 @@ index 9c0b1bac6af6..b081d6ba11a2 100644
 +
  	for (i = 0;; i++) {
  		events = readl(base + NvRegMSIXIrqStatus) & NVREG_IRQ_TX_ALL;
- 		writel(NVREG_IRQ_TX_ALL, base + NvRegMSIXIrqStatus);
-@@ -3497,6 +3515,11 @@ static irqreturn_t nv_nic_irq_rx(int foo, void *data)
+ 		writel(events, base + NvRegMSIXIrqStatus);
+@@ -3772,6 +3790,11 @@ static irqreturn_t nv_nic_irq_rx(int foo, void *data)
  	int i;
  	unsigned long flags;
  
@@ -51,8 +51,8 @@ index 9c0b1bac6af6..b081d6ba11a2 100644
 +
  	for (i = 0;; i++) {
  		events = readl(base + NvRegMSIXIrqStatus) & NVREG_IRQ_RX_ALL;
- 		writel(NVREG_IRQ_RX_ALL, base + NvRegMSIXIrqStatus);
-@@ -5645,6 +5668,10 @@ static int __devinit nv_probe(struct pci_dev *pci_dev, const struct pci_device_i
+ 		writel(events, base + NvRegMSIXIrqStatus);
+@@ -5988,6 +6011,10 @@ static int nv_probe(struct pci_dev *pci_dev, const struct pci_device_id *id)
  		goto out_error;
  	}
  
@@ -62,8 +62,8 @@ index 9c0b1bac6af6..b081d6ba11a2 100644
 +
  	netif_carrier_off(dev);
  
- 	dev_info(&pci_dev->dev, "ifname %s, PHY OUI 0x%x @ %d, addr %pM\n",
-@@ -5728,6 +5755,10 @@ static void __devexit nv_remove(struct pci_dev *pci_dev)
+ 	/* Some NICs freeze when TX pause is enabled while NIC is
+@@ -6084,6 +6111,10 @@ static void nv_remove(struct pci_dev *pci_dev)
  
  	unregister_netdev(dev);
  

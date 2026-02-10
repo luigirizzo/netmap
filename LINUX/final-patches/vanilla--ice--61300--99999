@@ -1,8 +1,8 @@
 diff --git a/ice/ice_base.c b/ice/ice_base.c
-index 136d7911adb4..a9caf17a5160 100644
+index eadb1e3d12b3..bed56a61e5ce 100644
 --- a/ice/ice_base.c
 +++ b/ice/ice_base.c
-@@ -6,6 +6,11 @@
+@@ -7,6 +7,11 @@
  #include "ice_lib.h"
  #include "ice_dcb_lib.h"
  #include "ice_sriov.h"
@@ -12,11 +12,11 @@ index 136d7911adb4..a9caf17a5160 100644
 +#endif
 +
  
- static bool ice_alloc_rx_buf_zc(struct ice_rx_ring *rx_ring)
- {
-@@ -461,6 +466,10 @@ static int ice_setup_rx_ctx(struct ice_rx_ring *ring)
- 	/* Rx queue threshold in units of 64 */
- 	rlan_ctx.lrxqthresh = 1;
+ /**
+  * __ice_vsi_get_qs_contig - Assign a contiguous chunk of queues to VSI
+@@ -575,6 +580,10 @@ static int ice_setup_rx_ctx(struct ice_rx_ring *ring)
+ 		rxdid = ICE_RXDID_FLEX_NIC_2;
+ 	}
  
 +#ifdef DEV_NETMAP
 +	ice_netmap_preconfigure_rx_ring(ring, &rlan_ctx);
@@ -25,7 +25,7 @@ index 136d7911adb4..a9caf17a5160 100644
  	/* Enable Flexible Descriptors in the queue context which
  	 * allows this driver to select a specific receive descriptor format
  	 * increasing context priority to pick up profile ID; default is 0x01;
-@@ -583,6 +592,11 @@ int ice_vsi_cfg_rxq(struct ice_rx_ring *ring)
+@@ -745,6 +754,11 @@ static int ice_vsi_cfg_rxq(struct ice_rx_ring *ring)
  		return 0;
  	}
  
@@ -34,25 +34,26 @@ index 136d7911adb4..a9caf17a5160 100644
 +		return 0;
 +#endif /* DEV_NETMAP */
 +
- 	ice_alloc_rx_bufs(ring, num_bufs);
- 
- 	return 0;
-@@ -849,6 +863,10 @@ ice_vsi_cfg_txq(struct ice_vsi *vsi, struct ice_tx_ring *ring,
- 	if (pf_q == le16_to_cpu(txq->txq_id))
- 		ring->txq_teid = le32_to_cpu(txq->q_teid);
- 
+ 	if (ring->vsi->type == ICE_VSI_CTRL)
+ 		ice_init_ctrl_rx_descs(ring, num_bufs);
+ 	else
+@@ -1127,6 +1141,11 @@ ice_vsi_cfg_txq(const struct ice_vsi *vsi, struct ice_tx_ring *ring,
+ 			goto err_cfg_tstamp;
+ 		}
+ 	}
++
 +#ifdef DEV_NETMAP
 +	ice_netmap_configure_tx_ring(ring);
 +#endif /* DEV_NETMAP */
 +
  	return 0;
- }
  
+ err_cfg_tstamp:
 diff --git a/ice/ice_main.c b/ice/ice_main.c
-index 963a5f40e071..49e1adb1e4da 100644
+index d04605d3e61a..f2398e0119bc 100644
 --- a/ice/ice_main.c
 +++ b/ice/ice_main.c
-@@ -48,6 +48,11 @@ static DEFINE_IDA(ice_aux_ida);
+@@ -56,6 +56,11 @@ MODULE_PARM_DESC(debug, "netif level (0=none,...,16=all)");
  DEFINE_STATIC_KEY_FALSE(ice_xdp_locking_key);
  EXPORT_SYMBOL(ice_xdp_locking_key);
  
@@ -64,18 +65,20 @@ index 963a5f40e071..49e1adb1e4da 100644
  /**
   * ice_hw_to_dev - Get device pointer from the hardware structure
   * @hw: pointer to the device HW structure
-@@ -4854,6 +4859,10 @@ ice_probe(struct pci_dev *pdev, const struct pci_device_id __always_unused *ent)
- 	}
+@@ -5066,6 +5071,12 @@ static int ice_init(struct ice_pf *pf)
+ 	/* since everything is good, start the service timer */
+ 	mod_timer(&pf->serv_tmr, round_jiffies(jiffies + pf->serv_tmr_period));
  
- 	ice_devlink_register(pf);
++	ice_devlink_register(pf);
 +
 +#ifdef DEV_NETMAP
 +	ice_netmap_attach(pf);
 +#endif
++
  	return 0;
  
- err_init_aux_unroll:
-@@ -4954,6 +4963,10 @@ static void ice_remove(struct pci_dev *pdev)
+ err_init_link:
+@@ -5421,6 +5432,10 @@ static void ice_remove(struct pci_dev *pdev)
  	struct ice_pf *pf = pci_get_drvdata(pdev);
  	int i;
  
@@ -83,15 +86,15 @@ index 963a5f40e071..49e1adb1e4da 100644
 +	ice_netmap_detach(pf);
 +#endif /* DEV_NETMAP */
 +
- 	ice_devlink_unregister(pf);
  	for (i = 0; i < ICE_MAX_RESET_WAIT; i++) {
  		if (!ice_is_reset_in_progress(pf->state))
+ 			break;
 diff --git a/ice/ice_txrx.c b/ice/ice_txrx.c
-index f9bf008471c9..59b8d5769068 100644
+index ad76768a4232..65baa7edc636 100644
 --- a/ice/ice_txrx.c
 +++ b/ice/ice_txrx.c
-@@ -22,6 +22,10 @@
- #define FDIR_DESC_RXDID 0x40
+@@ -24,6 +24,10 @@
+ 
  #define ICE_FDIR_CLEAN_DELAY 10
  
 +#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
@@ -101,7 +104,7 @@ index f9bf008471c9..59b8d5769068 100644
  /**
   * ice_prgm_fdir_fltr - Program a Flow Director filter
   * @vsi: VSI to send dummy packet
-@@ -221,6 +225,10 @@ static bool ice_clean_tx_irq(struct ice_tx_ring *tx_ring, int napi_budget)
+@@ -276,6 +280,10 @@ static bool ice_clean_tx_irq(struct ice_tx_ring *tx_ring, int napi_budget)
  	s16 i = tx_ring->next_to_clean;
  	struct ice_tx_desc *tx_desc;
  	struct ice_tx_buf *tx_buf;
@@ -112,8 +115,8 @@ index f9bf008471c9..59b8d5769068 100644
  
  	/* get the bql data ready */
  	netdev_txq_bql_complete_prefetchw(txring_txq(tx_ring));
-@@ -1116,6 +1124,16 @@ int ice_clean_rx_irq(struct ice_rx_ring *rx_ring, int budget)
- 	struct xdp_buff xdp;
+@@ -953,6 +961,16 @@ static int ice_clean_rx_irq(struct ice_rx_ring *rx_ring, int budget)
+ 	u32 xdp_xmit = 0;
  	bool failure;
  
 +#ifdef DEV_NETMAP
@@ -126,6 +129,6 @@ index f9bf008471c9..59b8d5769068 100644
 +	}
 +#endif /* DEV_NETMAP */
 +
- 	/* Frame size depend on rx_ring setup when PAGE_SIZE=4K */
- #if (PAGE_SIZE < 8192)
- 	frame_sz = ice_rx_frame_truesize(rx_ring, 0);
+ 	libeth_xdp_init_buff(xdp, &rx_ring->xdp, &rx_ring->xdp_rxq);
+ 
+ 	xdp_prog = READ_ONCE(rx_ring->xdp_prog);

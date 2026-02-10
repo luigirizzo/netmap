@@ -1,9 +1,9 @@
 diff --git a/ixgbe/ixgbe_main.c b/ixgbe/ixgbe_main.c
-index 467948e9ecd9..568104f44cae 100644
+index cc51554c9e99..a88dfd15d9d4 100644
 --- a/ixgbe/ixgbe_main.c
 +++ b/ixgbe/ixgbe_main.c
-@@ -204,6 +204,22 @@ static const struct ixgbe_reg_info ixgbe_reg_info_tbl[] = {
- 	{}
+@@ -443,6 +443,22 @@ static const struct ixgbe_reg_info ixgbe_reg_info_tbl[] = {
+ 	{ .name = NULL }
  };
  
 +#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
@@ -25,7 +25,7 @@ index 467948e9ecd9..568104f44cae 100644
  
  /*
   * ixgbe_regdump - register printout routine
-@@ -749,6 +765,17 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
+@@ -1068,6 +1084,17 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
  	if (test_bit(__IXGBE_DOWN, &adapter->state))
  		return true;
  
@@ -43,7 +43,7 @@ index 467948e9ecd9..568104f44cae 100644
  	tx_buffer = &tx_ring->tx_buffer_info[i];
  	tx_desc = IXGBE_TX_DESC(tx_ring, i);
  	i -= tx_ring->count;
-@@ -1629,6 +1656,16 @@ static bool ixgbe_clean_rx_irq(struct ixgbe_q_vector *q_vector,
+@@ -1991,6 +2018,16 @@ static int ixgbe_clean_rx_irq(struct ixgbe_q_vector *q_vector,
  #endif /* IXGBE_FCOE */
  	u16 cleaned_count = ixgbe_desc_unused(rx_ring);
  
@@ -57,10 +57,10 @@ index 467948e9ecd9..568104f44cae 100644
 +		return (nm_irq == NM_IRQ_RESCHED) ? budget : 1;
 +#endif /* DEV_NETMAP */
 +
- 	do {
- 		struct ixgbe_rx_buffer *rx_buffer;
+ 	while (likely(total_rx_packets < budget)) {
  		union ixgbe_adv_rx_desc *rx_desc;
-@@ -2668,6 +2705,10 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
+ 		struct sk_buff *skb;
+@@ -3013,6 +3050,10 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
  
  	clear_bit(__IXGBE_HANG_CHECK_ARMED, &ring->state);
  
@@ -71,7 +71,7 @@ index 467948e9ecd9..568104f44cae 100644
  	/* enable queue */
  	IXGBE_WRITE_REG(hw, IXGBE_TXDCTL(reg_idx), txdctl);
  
-@@ -3032,6 +3073,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
+@@ -3393,6 +3434,10 @@ void ixgbe_configure_rx_ring(struct ixgbe_adapter *adapter,
  	IXGBE_WRITE_REG(hw, IXGBE_RXDCTL(reg_idx), rxdctl);
  
  	ixgbe_rx_desc_queue_enable(adapter, ring);
@@ -82,19 +82,28 @@ index 467948e9ecd9..568104f44cae 100644
  	ixgbe_alloc_rx_buffers(ring, ixgbe_desc_unused(ring));
  }
  
-@@ -4764,6 +4809,7 @@ static int ixgbe_open(struct net_device *netdev)
+@@ -4706,6 +4751,9 @@ static void ixgbe_up_complete(struct ixgbe_adapter *adapter)
+ 			e_crit(drv, "Fan has stopped, replace the adapter\n");
+ 	}
+ 
++	/* enable transmits */
++	netif_tx_start_all_queues(adapter->netdev);
++
+ 	/* bring the link up in the watchdog, this could race with our first
+ 	 * link up interrupt but shouldn't be a problem */
+ 	adapter->flags |= IXGBE_FLAG_NEED_LINK_UPDATE;
+@@ -5518,6 +5566,7 @@ static int ixgbe_open(struct net_device *netdev)
  
  	ixgbe_up_complete(adapter);
  
 +
  	return 0;
  
- err_req_irq:
-@@ -7152,6 +7198,11 @@ static int __devinit ixgbe_probe(struct pci_dev *pdev,
+ err_set_queues:
+@@ -8364,6 +8413,10 @@ static int ixgbe_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 			IXGBE_LINK_SPEED_10GB_FULL | IXGBE_LINK_SPEED_1GB_FULL,
+ 			true);
  
- 	e_dev_info("%s\n", ixgbe_default_device_descr);
- 	cards_found++;
-+
 +#ifdef DEV_NETMAP
 +	ixgbe_netmap_attach(adapter);
 +#endif /* DEV_NETMAP */
@@ -102,14 +111,14 @@ index 467948e9ecd9..568104f44cae 100644
  	return 0;
  
  err_register:
-@@ -7187,6 +7238,10 @@ static void __devexit ixgbe_remove(struct pci_dev *pdev)
- 	struct ixgbe_adapter *adapter = pci_get_drvdata(pdev);
+@@ -8402,6 +8455,10 @@ static void ixgbe_remove(struct pci_dev *pdev)
  	struct net_device *netdev = adapter->netdev;
+ 	bool disable_dev;
  
 +#ifdef DEV_NETMAP
 +	ixgbe_netmap_detach(adapter);
 +#endif /* DEV_NETMAP */
 +
- 	set_bit(__IXGBE_DOWN, &adapter->state);
- 	cancel_work_sync(&adapter->service_task);
+ 	ixgbe_dbg_adapter_exit(adapter);
  
+ 	set_bit(__IXGBE_REMOVING, &adapter->state);

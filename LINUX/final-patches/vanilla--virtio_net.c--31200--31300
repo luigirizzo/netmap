@@ -1,8 +1,8 @@
 diff --git a/virtio_net.c b/virtio_net.c
-index 3d2a90a62649..435ad46baab3 100644
+index b0bc8ead47de..ef1a06d54185 100644
 --- a/virtio_net.c
 +++ b/virtio_net.c
-@@ -131,6 +131,10 @@ struct virtnet_info {
+@@ -139,6 +139,10 @@ struct virtnet_info {
  	struct notifier_block nb;
  };
  
@@ -13,7 +13,7 @@ index 3d2a90a62649..435ad46baab3 100644
  struct skb_vnet_hdr {
  	union {
  		struct virtio_net_hdr hdr;
-@@ -210,6 +214,10 @@ static void skb_xmit_done(struct virtqueue *vq)
+@@ -218,6 +222,10 @@ static void skb_xmit_done(struct virtqueue *vq)
  	/* Suppress further interrupts. */
  	virtqueue_disable_cb(vq);
  
@@ -24,25 +24,27 @@ index 3d2a90a62649..435ad46baab3 100644
  	/* We were probably waiting for more output buffers. */
  	netif_wake_subqueue(vi->dev, vq2txq(vq));
  }
-@@ -603,7 +611,17 @@ static int virtnet_poll(struct napi_struct *napi, int budget)
- 	struct virtnet_info *vi = rq->vq->vdev->priv;
- 	void *buf;
- 	unsigned int r, len, received = 0;
+@@ -759,6 +767,19 @@ static int virtnet_poll(struct napi_struct *napi, int budget)
+ 		container_of(napi, struct receive_queue, napi);
+ 	unsigned int r, received = 0;
+ 
 +#ifdef DEV_NETMAP
 +        int work_done = 0;
++	struct virtnet_info *vi = rq->vq->vdev->priv;
 +	int nm_irq = netmap_rx_irq(vi->dev, vq2rxq(rq->vq), &work_done);
- 
++
 +	if (nm_irq == NM_IRQ_COMPLETED) {
 +		napi_complete(napi);
 +                return 1;
-+	} else if (nm_irq == NM_IRQ_RESCHED) {
++        } else if (nm_irq == NM_IRQ_RESCHED) {
 +		return budget;
-+        }
++	}
 +#endif
++
  again:
- 	while (received < budget &&
- 	       (buf = virtqueue_get_buf(rq->vq, &len)) != NULL) {
-@@ -636,8 +654,14 @@ static int virtnet_open(struct net_device *dev)
+ 	received += virtnet_receive(rq, budget - received);
+ 
+@@ -818,8 +839,14 @@ static int virtnet_open(struct net_device *dev)
  {
  	struct virtnet_info *vi = netdev_priv(dev);
  	int i;
@@ -57,7 +59,7 @@ index 3d2a90a62649..435ad46baab3 100644
  		if (i < vi->curr_queue_pairs)
  			/* Make sure we have some buffers: if oom use wq. */
  			if (!try_fill_recv(&vi->rq[i], GFP_KERNEL))
-@@ -1592,6 +1616,10 @@ static int virtnet_probe(struct virtio_device *vdev)
+@@ -1862,6 +1889,10 @@ static int virtnet_probe(struct virtio_device *vdev)
  		goto free_recv_bufs;
  	}
  
@@ -68,7 +70,7 @@ index 3d2a90a62649..435ad46baab3 100644
  	/* Assume link up if device can't report link status,
  	   otherwise get link status from config. */
  	if (virtio_has_feature(vi->vdev, VIRTIO_NET_F_STATUS)) {
-@@ -1637,7 +1665,14 @@ static void remove_vq_common(struct virtnet_info *vi)
+@@ -1910,7 +1941,14 @@ static void remove_vq_common(struct virtnet_info *vi)
  static void virtnet_remove(struct virtio_device *vdev)
  {
  	struct virtnet_info *vi = vdev->priv;
@@ -82,4 +84,4 @@ index 3d2a90a62649..435ad46baab3 100644
 +#endif
  	unregister_hotcpu_notifier(&vi->nb);
  
- 	/* Prevent config work handler from accessing the device. */
+ 	/* Make sure no work handler is accessing the device. */

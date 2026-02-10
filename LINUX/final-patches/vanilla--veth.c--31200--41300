@@ -1,8 +1,8 @@
 diff --git a/veth.c b/veth.c
-index 07a4af0aa3dc..672375e5c5c8 100644
+index 8ad596573d17..a3cf12c2ede6 100644
 --- a/veth.c
 +++ b/veth.c
-@@ -36,6 +36,10 @@ struct veth_priv {
+@@ -37,6 +37,10 @@ struct veth_priv {
  	atomic64_t		dropped;
  };
  
@@ -13,10 +13,10 @@ index 07a4af0aa3dc..672375e5c5c8 100644
  /*
   * ethtool interface
   */
-@@ -234,11 +238,17 @@ static int veth_dev_init(struct net_device *dev)
+@@ -239,11 +243,17 @@ static int veth_dev_init(struct net_device *dev)
+ 	dev->vstats = netdev_alloc_pcpu_stats(struct pcpu_vstats);
  	if (!dev->vstats)
  		return -ENOMEM;
- 
 +#ifdef DEV_NETMAP
 +	veth_netmap_attach(dev);
 +#endif /* DEV_NETMAP */

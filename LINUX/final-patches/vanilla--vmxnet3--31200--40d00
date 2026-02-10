@@ -1,7 +1,7 @@
 diff --git a/vmxnet3/vmxnet3_drv.c b/vmxnet3/vmxnet3_drv.c
 old mode 100644
 new mode 100755
-index b76f7dcde0db..f87199abe09e
+index 6dfcbf523936..2d2f4a669aca
 --- a/vmxnet3/vmxnet3_drv.c
 +++ b/vmxnet3/vmxnet3_drv.c
 @@ -308,6 +308,11 @@ static u32 get_bitfield32(const __le32 *bitfield, u32 pos, u32 size)
@@ -47,7 +47,7 @@ index b76f7dcde0db..f87199abe09e
  	vmxnet3_getRxComp(rcd, &rq->comp_ring.base[rq->comp_ring.next2proc].rcd,
  			  &rxComp);
  	while (rcd->gen == rq->comp_ring.gen) {
-@@ -2262,6 +2284,10 @@ vmxnet3_activate_dev(struct vmxnet3_adapter *adapter)
+@@ -2263,6 +2285,10 @@ vmxnet3_activate_dev(struct vmxnet3_adapter *adapter)
  		adapter->rx_queue[0].rx_ring[0].size,
  		adapter->rx_queue[0].rx_ring[1].size);
  
@@ -58,7 +58,7 @@ index b76f7dcde0db..f87199abe09e
  	vmxnet3_tq_init_all(adapter);
  	err = vmxnet3_rq_init_all(adapter);
  	if (err) {
-@@ -3103,6 +3129,11 @@ vmxnet3_probe_device(struct pci_dev *pdev,
+@@ -3104,6 +3130,11 @@ vmxnet3_probe_device(struct pci_dev *pdev,
  		goto err_register;
  	}
  
@@ -70,7 +70,7 @@ index b76f7dcde0db..f87199abe09e
  	vmxnet3_check_link(adapter, false);
  	return 0;
  
-@@ -3154,6 +3185,10 @@ vmxnet3_remove_device(struct pci_dev *pdev)
+@@ -3155,6 +3186,10 @@ vmxnet3_remove_device(struct pci_dev *pdev)
  
  	unregister_netdev(netdev);
  
