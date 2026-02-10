@@ -865,9 +865,10 @@ netmap_krings_create(struct netmap_adapter *na, u_int tailroom)
 	n[NR_TX] = netmap_all_rings(na, NR_TX);
 	n[NR_RX] = netmap_all_rings(na, NR_RX);
 
-	len = nm_tailroom_align((n[NR_TX] + n[NR_RX]) *
-		sizeof(struct netmap_kring *) + tailroom) +
-		(n[NR_TX] + n[NR_RX]) * sizeof(struct netmap_kring);
+	len = (n[NR_TX] + n[NR_RX]) * sizeof(struct netmap_kring *) +
+		tailroom +
+		(n[NR_TX] + n[NR_RX]) * sizeof(struct netmap_kring) +
+		NM_KRING_ALIGNMENT;
 
 	na->tx_rings = nm_os_malloc((size_t)len);
 	if (na->tx_rings == NULL) {
