@@ -632,6 +632,17 @@ virtio_netmap_init_buffers(struct virtnet_info *vi)
 		for (i = 0; i < na->num_rx_desc; i++) {
 			void *addr;
 
+			/*
+			 * As the comment above states, we need to add exactly
+			 * num_rx_desc descriptors and so the queue is not
+			 * allowed to become full.
+			 */
+			if (vq->num_free == 0) {
+				nm_prerr("No space left in vq! %d/%d",
+					 i, na->num_rx_desc);
+				break;
+			}
+
 			slot = &ring->slot[i];
 			addr = NMB(na, slot);
 			COMPAT_INIT_SG(sg);
@@ -644,9 +655,6 @@ virtio_netmap_init_buffers(struct virtnet_info *vi)
 				return 0;
 			}
 			RXNUM_INC(vi, r);
-
-			if (VQ_FULL(vq, err))
-				break;
 		}
 		nm_prinf("added %d inbufs on queue %d", i, r);
 		virtqueue_kick(vq);
@@ -677,6 +685,20 @@ virtio_netmap_intr(struct netmap_adapter *na, int onoff)
 	}
 }
 
+static int
+virtio_netmap_config(struct netmap_adapter *na, struct nm_config_info *info)
+{
+	int ret = netmap_rings_config_get(na, info);
+	if (ret)
+		return ret;
+
+	/* Take whatever we had at init time. */
+	info->num_tx_descs = na->num_tx_desc;
+	info->num_rx_descs = na->num_rx_desc;
+	info->rx_buf_maxsize = na->rx_buf_maxsize;
+	return 0;
+}
+
 static void
 virtio_netmap_attach(struct virtnet_info *vi)
 {
@@ -686,13 +708,14 @@ virtio_netmap_attach(struct virtnet_info *vi)
 	bzero(&na, sizeof(na));
 
 	na.ifp = vi->dev;
-	na.num_tx_desc = virtqueue_get_vring_size(GET_TX_VQ(vi, 0));
-	na.num_rx_desc = virtqueue_get_vring_size(GET_RX_VQ(vi, 0));
+	na.num_tx_desc = virtqueue_get_vring_size(GET_TX_VQ(vi, 0)) / 2;
+	na.num_rx_desc = virtqueue_get_vring_size(GET_RX_VQ(vi, 0)) / 2;
 	na.num_tx_rings = na.num_rx_rings = 1;
 	na.nm_register = virtio_netmap_reg;
 	na.nm_txsync = virtio_netmap_txsync;
 	na.nm_rxsync = virtio_netmap_rxsync;
 	na.nm_intr = virtio_netmap_intr;
+	na.nm_config = virtio_netmap_config;
 
 	ret = netmap_attach_ext(&na, sizeof(struct netmap_virtio_adapter), 1);
 	if (ret) {
