@@ -324,6 +324,9 @@ int mlx5e_netmap_txsync(struct netmap_kring *kring, int flags) {
 
       /* unpack slot number from skb pointer */
       nm_i_done = (u32)((uintptr_t)skb & 0x00FFFFFF);
+      struct netmap_slot *slot = &ring->slot[nm_i_done];
+      slot->flags |= NS_TIMESTAMP;
+      slot->ts = mlx5_timecounter_cyc2time(sq->clock, get_cqe_ts(cqe));
 
       sqcc += num_wqebbs;
       kring->nr_hwtail = nm_prev(nm_i_done, lim);
@@ -491,6 +494,9 @@ int mlx5e_netmap_rxsync(struct netmap_kring *kring, int flags) {
 
     ring->slot[nm_i].len = bytes_recv;
     ring->slot[nm_i].flags = slot_flags;
+    ring->slot[nm_i].flags |= NS_TIMESTAMP;
+    ring->slot[nm_i].ts = mlx5_timecounter_cyc2time(rq->clock, get_cqe_ts(cqe));
+
     nm_i = nm_next(nm_i, lim);
 
   wq_cyc_pop:
