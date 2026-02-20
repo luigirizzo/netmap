@@ -114,7 +114,7 @@ subsys enable ptnetmap
 
 # available drivers
 driver_avail="stmmac r8169.c virtio_net.c forcedeth.c veth.c \
-	e1000 e1000e igb igc ixgbe ixgbevf ice i40e vmxnet3 mlx5"
+	e1000 e1000e igb igc ixgbe ixgbevf ice i40e vmxnet3 mlx5 bnxt"
 # enabled drivers (bitfield)
 driver=
 drv()
@@ -139,6 +139,7 @@ edrv enable i40e
 edrv enable ice
 edrv enable mlx5
 edrv enable virtio_net.c
+edrv enable bnxt
 
 # drivers built by patching the system drivers
 setop internal_driver new driver
