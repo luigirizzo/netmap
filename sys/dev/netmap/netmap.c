@@ -709,30 +709,42 @@ nm_bound_var(u_int *v, u_int dflt, u_int lo, u_int hi, const char *msg)
 
 /*
  * packet-dump function, user-supplied or static buffer.
- * The destination buffer must be at least 30+4*len
+ * The destination buffer must be at least (((len-1)/16+1) * (12 + 64 + 1) + 51 + 1) bytes size.
  */
 const char *
 nm_dump_buf(char *p, int len, int lim, char *dst)
 {
 	static char _dst[8192];
-	int i, j, i0;
+	int i, j, i0, print_size;
 	static char hex[] ="0123456789abcdef";
 	char *o;	/* output position */
+	char *dst_end;
 
 #define P_HI(x)	hex[((x) & 0xf0)>>4]
 #define P_LO(x)	hex[((x) & 0xf)]
 #define P_C(x)	((x) >= 0x20 && (x) <= 0x7e ? (x) : '.')
-	if (!dst)
+	if (!dst) {
 		dst = _dst;
+		dst_end = dst + sizeof(_dst);
+	} else {
+		/*
+		 * 51 == strlen("buf 0x0xffffffffffff len 2147483647 lim 2147483647\n")
+		 * 12 == strlen("2147483647: ")
+		 */
+		dst_end = dst + ((len-1)/16+1) * (12 + 64 + 1) + 51 + 1;
+	}
 	if (lim <= 0 || lim > len)
 		lim = len;
 	o = dst;
-	sprintf(o, "buf 0x%p len %d lim %d\n", p, len, lim);
-	o += strlen(o);
+	print_size = snprintf(o, dst_end-o, "buf 0x%p len %d lim %d\n", p, len, lim);
+	if (print_size >= dst_end-o) return dst;
+	o += print_size;
 	/* hexdump routine */
 	for (i = 0; i < lim; ) {
-		sprintf(o, "%5d: ", i);
-		o += strlen(o);
+		print_size = snprintf(o, dst_end-o, "%5d: ", i);
+		if (print_size >= dst_end-o) return dst;
+		o += print_size;
+		if (dst_end-o < 48+16+1+1) return dst;
 		memset(o, ' ', 48);
 		i0 = i;
 		for (j=0; j < 16 && i < lim; i++, j++) {
