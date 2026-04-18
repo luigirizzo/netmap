@@ -2035,6 +2035,18 @@ EOF
 	}
 EOF
 
+  # check for sockaddr_unsized
+  add_test 'have SOCKADDR_UNSIZED' <<EOF
+	#include <linux/net.h>
+
+	int dummy(struct socket *sock,
+		struct sockaddr_unsized *sa,
+		int sa_len)
+	{
+		return kernel_bind(sock, sa, sa_len);
+	}
+EOF
+
   #####################################################
   # checks related to drivers                         #
   #####################################################

@@ -70,6 +70,12 @@ static inline struct sk_buff *__vlan_hwaccel_push_inside(struct sk_buff *skb)
 #endif /* NETMAP_LINUX_HAVE_VLAN_HWACCESS_PUSH_INSIDE */
 #endif /* NETMAP_LINUX_HAVE_SKB_VLAN_UNTAG */
 
+#ifdef NETMAP_LINUX_HAVE_SOCKADDR_UNSIZED
+#define NM_SOCKADDR sockaddr_unsized
+#else /* !NETMAP_LINUX_HAVE_SOCKADDR_UNSIZED */
+#define NM_SOCKADDR sockaddr
+#endif /* NETMAP_LINUX_HAVE_SOCKADDR_UNSIZED */
+
 void *
 nm_os_malloc(size_t size)
 {
@@ -879,7 +885,7 @@ tc_configure(struct ifnet *ifp, const char *qdisc_name,
 	}
 
 
-	ret = kernel_bind(sock, (struct sockaddr *)&saddr, sizeof(saddr));
+	ret = kernel_bind(sock, (struct NM_SOCKADDR *)&saddr, sizeof(saddr));
 	if (ret) {
 		nm_prerr("Failed to bind() netlink socket (err=%d)", ret);
 		goto release;
