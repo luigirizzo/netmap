@@ -245,13 +245,14 @@ int mlx5e_netmap_txsync(struct netmap_kring *kring, int flags) {
 
       u8 opcode = MLX5_OPCODE_SEND;
       u16 ds_cnt;
+      u16 ds_cnt_inl = 0;
       u16 ihs; /* inline hdr size */
       u8 num_wqebbs = 0;
 
       wqe = mlx5_wq_cyc_get_wqe(wq, pi);
       cseg = &wqe->ctrl; /* ctrl seg */
       eseg = &wqe->eth;  /* ethernet seg */
-      ds_cnt = sizeof(*wqe) / MLX5_SEND_WQE_DS;
+      ds_cnt = MLX5E_TX_WQE_EMPTY_DS_COUNT;
 
       NM_CHECK_ADDR_LEN(na, addr, len); /* limit len to buf size */
 
@@ -268,13 +269,19 @@ int mlx5e_netmap_txsync(struct netmap_kring *kring, int flags) {
       if (unlikely(ihs > len))
         ihs = len; /* whole packet fits inline */
 
-      memcpy(eseg->inline_hdr.start, addr, ihs);
       eseg->inline_hdr.sz = cpu_to_be16(ihs);
+      memcpy(eseg->inline_hdr.start, addr,
+             min_t(u16, ihs, (u16)sizeof(eseg->inline_hdr.start)));
 
-      ds_cnt +=
-          DIV_ROUND_UP(ihs - sizeof(eseg->inline_hdr.start), MLX5_SEND_WQE_DS);
+      dseg = wqe->data;
+      if (ihs > sizeof(eseg->inline_hdr.start)) {
+        u16 rem = ihs - sizeof(eseg->inline_hdr.start);
 
-      dseg = (struct mlx5_wqe_data_seg *)cseg + ds_cnt;
+        memcpy(dseg, (char *)addr + sizeof(eseg->inline_hdr.start), rem);
+        ds_cnt_inl = DIV_ROUND_UP(rem, MLX5_SEND_WQE_DS);
+        ds_cnt += ds_cnt_inl;
+        dseg += ds_cnt_inl;
+      }
 
       /* Put all rest of packet into a single data segment */
       /* excluding bytes in the inline header */
