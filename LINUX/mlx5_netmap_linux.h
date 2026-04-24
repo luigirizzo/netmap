@@ -115,12 +115,17 @@ int mlx5e_netmap_reg(struct netmap_adapter *na, int onoff) {
   struct NM_MLX5E_ADAPTER *adapter = netdev_priv(ifp);
   int err = 0;
   int was_opened;
+  bool want_rx_cqe_compress;
+  bool have_rx_cqe_compress;
 
   nm_prinf("mlx5e switching %s native netmap mode", onoff ? "into" : "out of");
 
   /* Should we check and wait for any reset in progress to complete? */
   mutex_lock(&adapter->state_lock);
   was_opened = test_bit(MLX5E_STATE_OPENED, &adapter->state);
+  want_rx_cqe_compress = !onoff && adapter->channels.params.rx_cqe_compress_def;
+  have_rx_cqe_compress =
+      MLX5E_GET_PFLAG(&adapter->channels.params, MLX5E_PFLAG_RX_CQE_COMPRESS);
 
   if (was_opened) {
     mlx5e_close_locked(adapter->netdev);
@@ -133,6 +138,18 @@ int mlx5e_netmap_reg(struct netmap_adapter *na, int onoff) {
     nm_clear_native_flags(na);
   }
 
+  /*
+   * Native netmap RX polling does not consume compressed CQEs, so keep
+   * RX CQE compression disabled while netmap mode is active.
+   */
+  if (have_rx_cqe_compress != want_rx_cqe_compress) {
+    err = mlx5e_modify_rx_cqe_compression_locked(adapter,
+                                                 want_rx_cqe_compress,
+                                                 false);
+    if (err)
+      goto out_unlock;
+  }
+
   if (was_opened)
     err = mlx5e_open_locked(adapter->netdev);
 
@@ -141,6 +158,7 @@ int mlx5e_netmap_reg(struct netmap_adapter *na, int onoff) {
                "mlx5e_netmap_reg: mlx5e_open_locked returned err code %d\n",
                err);
 
+out_unlock:
   mutex_unlock(&adapter->state_lock);
 
   return err;
