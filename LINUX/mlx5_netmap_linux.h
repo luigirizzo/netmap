@@ -203,6 +203,7 @@ int mlx5e_netmap_txsync(struct netmap_kring *kring, int flags) {
   struct mlx5e_tx_wqe *wqe = NULL;
   struct mlx5_cqe64 *cqe = NULL;
   struct mlx5_wqe_ctrl_seg *cseg;
+  struct mlx5_wqe_ctrl_seg *last_cseg = NULL;
   struct mlx5_wqe_eth_seg *eseg;
   struct mlx5_wqe_data_seg *dseg;
   u16 sqcc;
@@ -308,13 +309,16 @@ int mlx5e_netmap_txsync(struct netmap_kring *kring, int flags) {
       sq->db.wqe_info[pi].skb = (void *)(uintptr_t)(nm_i & 0x00FFFFFF);
       sq->db.wqe_info[pi].num_wqebbs = num_wqebbs;
 
-      mlx5e_notify_hw(&sq->wq, sq->pc, sq->uar_map, cseg);
+      last_cseg = cseg;
 
       sq->stats->packets++;
 
       /* next netmap slot */
       nm_i = nm_next(nm_i, lim);
     } /* next packet */
+
+    if (last_cseg)
+      mlx5e_notify_hw(&sq->wq, sq->pc, sq->uar_map, last_cseg);
 
     kring->nr_hwcur = nm_i;
   }
