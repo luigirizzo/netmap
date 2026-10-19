@@ -25,8 +25,6 @@
  */
 
 /*
- * $FreeBSD$
- *
  * Monitors
  *
  * netmap monitors can be used to do monitoring of network traffic

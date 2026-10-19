@@ -1,5 +1,5 @@
 /*-
- * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ * SPDX-License-Identifier: BSD-2-Clause
  *
  * Copyright (C) 2012-2014 Matteo Landi
  * Copyright (C) 2012-2016 Luigi Rizzo
@@ -29,8 +29,6 @@
  */
 
 /*
- * $FreeBSD$
- *
  * (New) memory allocator for netmap
  */
 

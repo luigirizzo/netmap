@@ -1,5 +1,5 @@
 /*-
- * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ * SPDX-License-Identifier: BSD-2-Clause
  *
  * Copyright (C) 2011-2014 Matteo Landi
  * Copyright (C) 2011-2016 Luigi Rizzo
@@ -31,8 +31,6 @@
 
 
 /*
- * $FreeBSD$
- *
  * This module supports memory mapped access to network devices,
  * see netmap(4).
  *

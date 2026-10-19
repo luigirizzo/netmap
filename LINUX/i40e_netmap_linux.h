@@ -24,8 +24,6 @@
  */
 
 /*
- * $FreeBSD$
- *
  * netmap support for: i40e (LINUX version)
  *
  * derived from ixgbe

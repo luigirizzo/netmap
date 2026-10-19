@@ -1,5 +1,5 @@
 /*-
- * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ * SPDX-License-Identifier: BSD-2-Clause
  *
  * Copyright (C) 2018 Vincenzo Maffione
  *
@@ -23,8 +23,6 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- * $FreeBSD$
  */
 
 /*
@@ -218,7 +216,7 @@ port_info_get(struct TestContext *ctx)
 	printf("nr_mem_id %u\n", req.nr_mem_id);
 
 	success = req.nr_memsize && req.nr_tx_slots && req.nr_rx_slots &&
-	          req.nr_tx_rings && req.nr_rx_rings && req.nr_tx_rings;
+	          req.nr_tx_rings && req.nr_rx_rings;
 	if (!success) {
 		return -1;
 	}

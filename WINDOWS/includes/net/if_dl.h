@@ -27,7 +27,6 @@
  * SUCH DAMAGE.
  *
  *	@(#)if_dl.h	8.1 (Berkeley) 6/10/93
- * $FreeBSD: src/sys/net/if_dl.h,v 1.14 2005/01/07 01:45:34 imp Exp $
  */
 
 #ifndef _NET_IF_DL_H_

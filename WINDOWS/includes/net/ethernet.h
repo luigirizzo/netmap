@@ -1,8 +1,5 @@
 /*
  * Fundamental constants relating to ethernet.
- *
- * $FreeBSD: head/sys/net/ethernet.h 249925 2013-04-26 12:50:32Z glebius $
- *
  */
 
 #ifndef _NET_ETHERNET_H_

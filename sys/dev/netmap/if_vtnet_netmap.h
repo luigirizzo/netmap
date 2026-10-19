@@ -23,10 +23,6 @@
  * SUCH DAMAGE.
  */
 
-/*
- * $FreeBSD$
- */
-
 #include <net/netmap.h>
 #include <sys/selinfo.h>
 #include <vm/vm.h>

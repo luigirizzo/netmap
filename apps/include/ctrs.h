@@ -1,8 +1,6 @@
 #ifndef CTRS_H_
 #define CTRS_H_
 
-/* $FreeBSD$ */
-
 #include <errno.h>
 #include <stdlib.h>
 #include <sys/time.h>

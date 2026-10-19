@@ -1,5 +1,5 @@
 /*-
- * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ * SPDX-License-Identifier: BSD-2-Clause
  *
  * Copyright (C) 2011-2014 Luigi Rizzo. All rights reserved.
  *
@@ -26,8 +26,6 @@
  */
 
 /*
- * $FreeBSD$
- *
  * netmap support for: re
  *
  * For more details on netmap support please see ixgbe_netmap.h

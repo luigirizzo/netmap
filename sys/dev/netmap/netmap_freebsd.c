@@ -1,5 +1,5 @@
 /*-
- * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ * SPDX-License-Identifier: BSD-2-Clause
  *
  * Copyright (C) 2013-2014 Universita` di Pisa. All rights reserved.
  *
@@ -25,7 +25,6 @@
  * SUCH DAMAGE.
  */
 
-/* $FreeBSD$ */
 #include "opt_inet.h"
 #include "opt_inet6.h"
 

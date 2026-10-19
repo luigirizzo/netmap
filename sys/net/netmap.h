@@ -1,5 +1,5 @@
 /*-
- * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ * SPDX-License-Identifier: BSD-2-Clause
  *
  * Copyright (C) 2011-2014 Matteo Landi, Luigi Rizzo. All rights reserved.
  *
@@ -27,8 +27,6 @@
  */
 
 /*
- * $FreeBSD: head/sys/net/netmap.h 251139 2013-05-30 14:07:14Z luigi $
- *
  * Definitions of constants and the structures used by the netmap
  * framework, for the part visible to both kernel and userspace.
  * Detailed info on netmap is available with "man netmap" or at

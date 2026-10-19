@@ -1,5 +1,3 @@
-$FreeBSD$
-
 This directory contains miscellaneous programs related to netmap
 
 	ctrl-api-test.c		suite of unit tests for the netmap control ABI

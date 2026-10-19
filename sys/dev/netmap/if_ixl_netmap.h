@@ -24,8 +24,6 @@
  */
 
 /*
- * $FreeBSD$
- *
  * netmap support for: ixl
  *
  * derived from ixgbe
