@@ -2,12 +2,15 @@ diff --git a/mlx5/drivers/net/ethernet/mellanox/mlx5/core/Makefile b/mlx5/driver
 index 49d9987..d9f4e09 100644
 --- a/mlx5/drivers/net/ethernet/mellanox/mlx5/core/Makefile
 +++ b/mlx5/drivers/net/ethernet/mellanox/mlx5/core/Makefile
-@@ -10,12 +10,12 @@ ifeq ($(CONFIG_IS_AZURELINUX), y)
+@@ -10,12 +10,15 @@ ifeq ($(CONFIG_IS_AZURELINUX), y)
  EXTRA_CFLAGS += -fno-exceptions
  endif
  
 -obj-$(CONFIG_MLX5_CORE) += mlx5_core.o
 +obj-$(CONFIG_MLX5_CORE) += mlx5_core$(NETMAP_DRIVER_SUFFIX).o
++
++# The auxiliary devices are named after the module: their drivers must match
++ccflags-y += -DMLX5_ADEV_NAME=\"mlx5_core$(NETMAP_DRIVER_SUFFIX)\"
  
  #
  # mlx5 core basic
@@ -17,7 +20,7 @@ index 49d9987..d9f4e09 100644
  		health.o mcg.o cq.o alloc.o port.o mr.o pd.o \
  		transobj.o vport.o sriov.o fs_cmd.o fs_core.o pci_irq.o \
  		fs_counters.o fs_ft_pool.o rl.o lag/debugfs.o lag/lag.o dev.o events.o wq.o lib/gid.o \
-@@ -25,12 +25,11 @@ mlx5_core-y :=	main.o cmd.o debugfs.o fw.o eq.o uar.o pagealloc.o \
+@@ -25,12 +28,11 @@ mlx5_core-y :=	main.o cmd.o debugfs.o fw.o eq.o uar.o pagealloc.o \
  		sriov_sysfs.o crdump.o diag/diag_cnt.o fw_exp.o \
  		eswitch_devlink_compat.o ecpf.o wc.o auxiliary_sysfs_compat.o
  
@@ -32,7 +35,7 @@ index 49d9987..d9f4e09 100644
  		en/channels.o en_main.o en_common.o en_fs.o en_ethtool.o \
  		en_tx.o en_rx.o en_dim.o en_txrx.o en/xdp.o en_stats.o en_sysfs.o en_ecn.o\
  		en_selftest.o en/port.o en/monitor_stats.o en/health.o \
-@@ -42,14 +41,14 @@ mlx5_core-$(CONFIG_MLX5_CORE_EN) += en/rqt.o en/tir.o en/rss.o en/rx_res.o \
+@@ -42,14 +44,14 @@ mlx5_core-$(CONFIG_MLX5_CORE_EN) += en/rqt.o en/tir.o en/rss.o en/rx_res.o \
  #
  # Netdev extra
  #
@@ -53,7 +56,7 @@ index 49d9987..d9f4e09 100644
  					lib/fs_chains.o en/tc_tun.o \
  					esw/indir_table.o en/tc_tun_encap.o \
  					en/tc_tun_vxlan.o en/tc_tun_gre.o en/tc_tun_geneve.o \
-@@ -57,7 +56,7 @@ mlx5_core-$(CONFIG_MLX5_CLS_ACT)     += en_tc.o en/rep/tc.o en/rep/neigh.o \
+@@ -57,7 +59,7 @@ mlx5_core-$(CONFIG_MLX5_CLS_ACT)     += en_tc.o en/rep/tc.o en/rep/neigh.o \
  					en/tc/post_act.o en/tc/int_port.o en/tc/meter.o \
  					en/tc/post_meter.o en/tc/act_stats.o
  
@@ -62,9 +65,10 @@ index 49d9987..d9f4e09 100644
  					en/tc/act/accept.o en/tc/act/mark.o en/tc/act/goto.o \
  					en/tc/act/tun.o en/tc/act/csum.o en/tc/act/pedit.o \
  					en/tc/act/vlan.o en/tc/act/vlan_mangle.o en/tc/act/mpls.o \
-@@ -67,60 +66,60 @@ mlx5_core-$(CONFIG_MLX5_CLS_ACT)     += en/tc/act/act.o en/tc/act/drop.o en/tc/a
+@@ -67,60 +69,60 @@ mlx5_core-$(CONFIG_MLX5_CLS_ACT)     += en/tc/act/act.o en/tc/act/drop.o en/tc/a
  
- mlx5_core-$(CONFIG_MLX5_TC_CT) += en/tc_ct.o en/tc/ct_fs_dmfs.o en/tc/ct_fs_smfs.o en/tc/act/ct.o
+-mlx5_core-$(CONFIG_MLX5_TC_CT) += en/tc_ct.o en/tc/ct_fs_dmfs.o en/tc/ct_fs_smfs.o en/tc/act/ct.o
++mlx5_core$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_MLX5_TC_CT) += en/tc_ct.o en/tc/ct_fs_dmfs.o en/tc/ct_fs_smfs.o en/tc/act/ct.o
  
 -mlx5_core-$(CONFIG_MLX5_TC_SAMPLE)   += en/tc/sample.o
 +mlx5_core$(NETMAP_DRIVER_SUFFIX)-$(CONFIG_MLX5_TC_SAMPLE)   += en/tc/sample.o
@@ -140,7 +144,7 @@ index 49d9987..d9f4e09 100644
  					steering/dr_matcher.o steering/dr_rule.o \
  					steering/dr_icm_pool.o steering/dr_buddy.o \
  					steering/dr_ste.o steering/dr_send.o \
-@@ -133,17 +132,17 @@ mlx5_core-$(CONFIG_MLX5_SW_STEERING) += steering/dr_domain.o steering/dr_table.o
+@@ -133,17 +135,17 @@ mlx5_core-$(CONFIG_MLX5_SW_STEERING) += steering/dr_domain.o steering/dr_table.o
  #
  # SF device
  #
@@ -333,6 +337,7 @@ index ad3931d..16e62e1 100644
 +
  	mlx5e_params_print_info(mdev, &priv->channels.params);
  	return 0;
+ 
 @@ -7544,6 +7602,11 @@ static int _mlx5e_probe(struct auxiliary_device *adev)
  
  	mlx5e_dcbnl_init_app(priv);
@@ -462,3 +467,16 @@ index 04459c5..08109d3 100644
  			nbytes += wi->num_bytes;
  		}
  	}
+diff --git a/mlx5/include/linux/mlx5/driver.h b/mlx5/include/linux/mlx5/driver.h
+--- a/mlx5/include/linux/mlx5/driver.h
++++ b/mlx5/include/linux/mlx5/driver.h
+@@ -63,7 +63,9 @@
+ #include <linux/llist.h>
+ 
+ 
++#ifndef MLX5_ADEV_NAME
+ #define MLX5_ADEV_NAME "mlx5_core"
++#endif
+ 
+ #define MLX5_IRQ_EQ_CTRL (U8_MAX)
+ 
