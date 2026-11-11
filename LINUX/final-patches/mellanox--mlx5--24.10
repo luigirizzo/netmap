@@ -333,6 +333,7 @@ index ad3931d..16e62e1 100644
 +
  	mlx5e_params_print_info(mdev, &priv->channels.params);
  	return 0;
+ 
 @@ -7544,6 +7602,11 @@ static int _mlx5e_probe(struct auxiliary_device *adev)
  
  	mlx5e_dcbnl_init_app(priv);
